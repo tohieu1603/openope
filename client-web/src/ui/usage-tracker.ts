@@ -27,8 +27,12 @@ async function deductUsage(usage: ChatTokenUsage): Promise<void> {
 }
 
 function handleChatEvent(evt: ChatStreamEvent) {
-  // Debug: log ALL chat events to verify WS is delivering them
-  console.log("[usage-tracker] chat event:", evt.state, "runId:", evt.runId, "hasUsage:", !!(evt.usage ?? evt.message?.usage));
+  // Debug: log ALL chat events with full payload for final
+  if (evt.state === "final") {
+    console.log("[usage-tracker] FINAL payload:", JSON.stringify(evt, null, 2));
+  } else {
+    console.log("[usage-tracker] chat event:", evt.state, "runId:", evt.runId);
+  }
 
   if (evt.state !== "final") return;
 

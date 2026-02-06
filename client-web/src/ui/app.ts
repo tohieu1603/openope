@@ -772,6 +772,7 @@ export class OperisApp extends LitElement {
       this.chatConversationId = result.conversationId;
 
       // Report token usage from SSE response to Operis BE
+      console.log("[app] SSE result.usage:", result.usage);
       if (result.usage) {
         reportSSEUsage(result.usage);
       }
