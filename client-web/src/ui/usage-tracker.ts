@@ -73,6 +73,33 @@ function handleChatEvent(evt: ChatStreamEvent) {
   deductUsage(usage);
 }
 
+/**
+ * Report usage from SSE chat response (web UI direct chat).
+ * Called from app.ts after sendChatMessage() returns with usage data.
+ */
+export function reportSSEUsage(usage: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number }) {
+  if (!usage || (usage.input === 0 && usage.output === 0)) return;
+  if (!isAuthenticated()) return;
+
+  console.log("[usage-tracker] SSE chat usage:", usage);
+
+  // 1. Report analytics
+  reportUsage({
+    request_type: "web_chat",
+    input_tokens: usage.input,
+    output_tokens: usage.output,
+    cache_read_tokens: usage.cacheRead,
+    cache_write_tokens: usage.cacheWrite,
+    metadata: { source: "sse" },
+  });
+
+  // 2. Deduct tokens
+  const prompt_tokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  const completion_tokens = usage.output;
+  const total_tokens = prompt_tokens + completion_tokens;
+  deductUsage({ ...usage, prompt_tokens, completion_tokens, total_tokens });
+}
+
 /** Start listening to gateway chat events and reporting usage. Call once at app init. */
 export function startUsageTracker() {
   if (unsubscribe) return; // already started
