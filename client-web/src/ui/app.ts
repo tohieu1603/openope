@@ -205,7 +205,9 @@ export class OperisApp extends LitElement {
   @state() logsHasMore = false;
 
   // Billing state (token balance comes from currentUser.token_balance)
+  @state() billingPaymentMode: "tier" | "amount" = "tier";
   @state() billingSelectedPackage = 0;
+  @state() billingCustomAmount = "";
   @state() billingAutoTopUp = false;
   @state() billingPricingTiers: PricingTier[] = [];
   @state() billingPricingLoading = false;
@@ -213,7 +215,6 @@ export class OperisApp extends LitElement {
   @state() billingDepositHistory: DepositOrder[] = [];
   @state() billingHistoryLoading = false;
   @state() billingHistoryPage = 1;
-  @state() billingHistoryTotal = 0;
   private readonly billingHistoryPageSize = 5;
   @state() billingBuyLoading = false;
   @state() billingCheckingTransaction = false;
@@ -682,6 +683,11 @@ export class OperisApp extends LitElement {
         isLoggedIn: true,
         username: result.user.name,
       });
+      // Redirect with gateway token so WS client can pick it up
+      if (result.user.gateway_token) {
+        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
+        return;
+      }
       // Reset chat state for fresh load
       this.chatInitializing = true;
       this.chatHistoryLoaded = false;
@@ -706,6 +712,11 @@ export class OperisApp extends LitElement {
         isLoggedIn: true,
         username: result.user.name,
       });
+      // Redirect with gateway token so WS client can pick it up
+      if (result.user.gateway_token) {
+        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
+        return;
+      }
       // Reset chat state for fresh load
       this.chatInitializing = true;
       this.chatHistoryLoaded = false;
@@ -1029,14 +1040,12 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private async loadBillingHistory(page = 1) {
+  private async loadBillingHistory() {
     this.billingHistoryLoading = true;
-    this.billingHistoryPage = page;
+    this.billingHistoryPage = 1;
     try {
-      const offset = (page - 1) * this.billingHistoryPageSize;
-      const historyResponse = await getDepositHistory(this.billingHistoryPageSize, offset);
+      const historyResponse = await getDepositHistory(1000, 0);
       this.billingDepositHistory = historyResponse.deposits;
-      this.billingHistoryTotal = historyResponse.total;
     } catch (err) {
       console.error("Failed to load deposit history:", err);
     } finally {
@@ -1045,21 +1054,25 @@ export class OperisApp extends LitElement {
   }
 
   private handleBillingHistoryPageChange(page: number) {
-    this.loadBillingHistory(page);
+    this.billingHistoryPage = page;
   }
 
   private async handleBillingBuyTokens() {
-    const tier = this.billingPricingTiers[this.billingSelectedPackage];
-    if (!tier) return;
-
     this.billingBuyLoading = true;
     try {
-      // Send tierId to backend
-      const order = await createDeposit({ tierId: tier.id });
+      let order;
+      if (this.billingPaymentMode === "amount") {
+        const amount = Number(this.billingCustomAmount);
+        if (!amount || amount <= 0) return;
+        order = await createDeposit({ amount });
+      } else {
+        const tier = this.billingPricingTiers[this.billingSelectedPackage];
+        if (!tier) return;
+        order = await createDeposit({ tierId: tier.id });
+      }
       this.billingPendingOrder = order;
-      // Payment info now shows inline, no need to open modal
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Không thể tạo đơn nạp");
+      showToast(err instanceof Error ? err.message : "Không thể tạo đơn nạp", "error");
     } finally {
       this.billingBuyLoading = false;
     }
@@ -1078,7 +1091,7 @@ export class OperisApp extends LitElement {
       this.billingPendingOrder = order;
 
       if (order.status === "completed") {
-        alert("Giao dịch thành công! Token đã được cộng vào tài khoản.");
+        showToast("Giao dịch thành công! Token đã được cộng vào tài khoản.", "success");
         this.billingPendingOrder = null;
         // Refresh user to get updated balance
         const user = await restoreSession();
@@ -1086,7 +1099,7 @@ export class OperisApp extends LitElement {
         // Refresh history
         this.loadBillingHistory();
       } else if (order.status === "cancelled" || order.status === "expired") {
-        alert("Đơn nạp đã bị hủy hoặc hết hạn.");
+        showToast("Đơn nạp đã bị hủy hoặc hết hạn.", "error");
         this.billingPendingOrder = null;
         this.loadBillingHistory();
       }
@@ -1115,7 +1128,7 @@ export class OperisApp extends LitElement {
         this.billingShowQrModal = false;
         this.loadBillingHistory();
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Không thể hủy đơn");
+        showToast(err instanceof Error ? err.message : "Không thể hủy đơn", "error");
       }
     }
   }
@@ -1160,7 +1173,7 @@ export class OperisApp extends LitElement {
 
   private handleBillingCopyKey(key: string) {
     navigator.clipboard.writeText(key);
-    alert("Đã sao chép key!");
+    showToast("Đã sao chép key!", "success");
   }
 
   private async handleBillingDeleteKey(id: string) {
@@ -1748,11 +1761,17 @@ export class OperisApp extends LitElement {
       case "billing":
         return renderBilling({
           creditBalance: this.currentUser?.token_balance ?? 0,
+          // Payment mode
+          paymentMode: this.billingPaymentMode,
+          onPaymentModeChange: (mode) => { this.billingPaymentMode = mode; this.requestUpdate(); },
           // Pricing tiers from API
           pricingTiers: this.billingPricingTiers,
           pricingLoading: this.billingPricingLoading,
           selectedPackage: this.billingSelectedPackage,
           onSelectPackage: (i: number) => { this.billingSelectedPackage = i; this.requestUpdate(); },
+          // Custom amount
+          customAmount: this.billingCustomAmount,
+          onCustomAmountChange: (v) => { this.billingCustomAmount = v; this.requestUpdate(); },
           // Buy tokens
           onBuyTokens: () => this.handleBillingBuyTokens(),
           buyLoading: this.billingBuyLoading,
@@ -1769,10 +1788,13 @@ export class OperisApp extends LitElement {
           onToggleAutoTopUp: () =>
             (this.billingAutoTopUp = !this.billingAutoTopUp),
           // History
-          depositHistory: this.billingDepositHistory,
+          depositHistory: this.billingDepositHistory.slice(
+            (this.billingHistoryPage - 1) * this.billingHistoryPageSize,
+            this.billingHistoryPage * this.billingHistoryPageSize,
+          ),
           historyLoading: this.billingHistoryLoading,
           historyPage: this.billingHistoryPage,
-          historyTotalPages: Math.ceil(this.billingHistoryTotal / this.billingHistoryPageSize),
+          historyTotalPages: Math.ceil(this.billingDepositHistory.length / this.billingHistoryPageSize),
           onRefreshHistory: () => this.handleBillingRefreshHistory(),
           onViewDepositDetail: (deposit) => this.handleViewDepositDetail(deposit),
           onHistoryPageChange: (page) => this.handleBillingHistoryPageChange(page),
