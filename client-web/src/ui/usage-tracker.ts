@@ -1,12 +1,30 @@
 /**
  * Usage Tracker - Subscribe to gateway WS chat events and report token usage to Operis BE.
- * When a chat run finishes (state=final) with usage data, POST it to /analytics/usage with JWT auth.
+ * When a chat run finishes (state=final) with usage data:
+ * 1. POST analytics to /analytics/usage
+ * 2. Deduct tokens via POST /tokens/usage
  */
 import { subscribeToChatStream, type ChatStreamEvent, type ChatTokenUsage } from "./gateway-client";
 import { reportUsage } from "./analytics-api";
-import { isAuthenticated } from "./api-client";
+import apiClient, { isAuthenticated, getErrorMessage } from "./api-client";
 
 let unsubscribe: (() => void) | null = null;
+
+/** Deduct tokens from user balance via POST /tokens/usage */
+async function deductUsage(usage: ChatTokenUsage): Promise<void> {
+  try {
+    const res = await apiClient.post("/tokens/usage", {
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+      total_tokens: usage.total_tokens,
+      model: "claude-sonnet-4-5-20250929",
+      request_type: "gateway_chat",
+    });
+    console.log("[usage-tracker] deduct OK:", res.data);
+  } catch (error) {
+    console.warn("[usage-tracker] deduct failed:", getErrorMessage(error));
+  }
+}
 
 function handleChatEvent(evt: ChatStreamEvent) {
   if (evt.state !== "final") return;
@@ -15,9 +33,26 @@ function handleChatEvent(evt: ChatStreamEvent) {
   const usage: ChatTokenUsage | undefined = evt.usage ?? evt.message?.usage;
   if (!usage || (usage.input === 0 && usage.output === 0)) return;
 
-  // Only report if user is logged in (JWT available)
-  if (!isAuthenticated()) return;
+  // Debug log
+  console.log("[usage-tracker] final chat event:", {
+    runId: evt.runId,
+    sessionKey: evt.sessionKey,
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    prompt_tokens: usage.prompt_tokens,
+    completion_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens,
+  });
 
+  // Only report/deduct if user is logged in (JWT available)
+  if (!isAuthenticated()) {
+    console.log("[usage-tracker] skipped: not authenticated");
+    return;
+  }
+
+  // 1. Report analytics (existing)
   reportUsage({
     request_type: "gateway_chat",
     input_tokens: usage.input,
@@ -30,6 +65,9 @@ function handleChatEvent(evt: ChatStreamEvent) {
       source: "websocket",
     },
   });
+
+  // 2. Deduct tokens from balance
+  deductUsage(usage);
 }
 
 /** Start listening to gateway chat events and reporting usage. Call once at app init. */
