@@ -18,15 +18,20 @@ function readLastAssistantUsage(
 } | undefined {
   try {
     const { entry } = loadSessionEntry(sessionKey);
+    console.log(`[usage] session=${sessionKey} hasEntry=${!!entry} sessionId=${entry?.sessionId ?? "none"} sessionFile=${entry?.sessionFile ?? "none"}`);
     if (!entry?.sessionId) return undefined;
 
     const transcriptFile = entry.sessionFile;
-    if (!transcriptFile || !fs.existsSync(transcriptFile)) return undefined;
+    if (!transcriptFile || !fs.existsSync(transcriptFile)) {
+      console.log(`[usage] transcript missing: path=${transcriptFile} exists=${transcriptFile ? fs.existsSync(transcriptFile) : false}`);
+      return undefined;
+    }
 
     const content = fs.readFileSync(transcriptFile, "utf-8").trim();
-    if (!content) return undefined;
+    if (!content) { console.log("[usage] transcript empty"); return undefined; }
 
     const lines = content.split("\n");
+    console.log(`[usage] transcript lines=${lines.length}`);
     // Scan from end to find last assistant message with real usage
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
@@ -45,14 +50,19 @@ function readLastAssistantUsage(
           const prompt_tokens = input + cacheRead + cacheWrite;
           const completion_tokens = output;
           const total_tokens = prompt_tokens + completion_tokens;
+          console.log(`[usage] found: input=${input} output=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total_tokens}`);
           return { input, output, cacheRead, cacheWrite, totalTokens, prompt_tokens, completion_tokens, total_tokens };
+        }
+        if (msg.role === "assistant") {
+          console.log(`[usage] assistant msg at line ${i} hasUsage=${!!msg.usage} usageType=${typeof msg.usage}`);
         }
       } catch {
         /* skip invalid lines */
       }
     }
-  } catch {
-    /* ignore errors, usage is best-effort */
+    console.log("[usage] no assistant message with usage found in transcript");
+  } catch (err) {
+    console.log(`[usage] error: ${err}`);
   }
   return undefined;
 }
