@@ -3,6 +3,7 @@ import { normalizeVerboseLevel } from "../auto-reply/thinking.js";
 import { loadConfig } from "../config/config.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
@@ -21,9 +22,11 @@ function readLastAssistantUsage(
     console.log(`[usage] session=${sessionKey} hasEntry=${!!entry} sessionId=${entry?.sessionId ?? "none"} sessionFile=${entry?.sessionFile ?? "none"}`);
     if (!entry?.sessionId) return undefined;
 
-    const transcriptFile = entry.sessionFile;
-    if (!transcriptFile || !fs.existsSync(transcriptFile)) {
-      console.log(`[usage] transcript missing: path=${transcriptFile} exists=${transcriptFile ? fs.existsSync(transcriptFile) : false}`);
+    // Use resolveSessionFilePath to handle missing sessionFile (falls back to sessionId-based path)
+    const transcriptFile = resolveSessionFilePath(entry.sessionId, entry);
+    console.log(`[usage] resolved transcript: ${transcriptFile}`);
+    if (!fs.existsSync(transcriptFile)) {
+      console.log(`[usage] transcript not found at: ${transcriptFile}`);
       return undefined;
     }
 
