@@ -56,6 +56,7 @@ import {
   type WorkflowStatus,
 } from "./workflow-api";
 import { subscribeToCronEvents, subscribeToChatStream, type CronEvent, type ChatStreamEvent } from "./gateway-client";
+import { startUsageTracker, stopUsageTracker } from "./usage-tracker";
 import {
   login as authLogin,
   logout as authLogout,
@@ -369,6 +370,9 @@ export class OperisApp extends LitElement {
       this.handleChatStreamEvent(evt);
     });
 
+    // Start usage tracker - reports token usage from WS to Operis BE
+    startUsageTracker();
+
     // Try to restore session from stored tokens
     this.tryRestoreSession();
   }
@@ -497,6 +501,8 @@ export class OperisApp extends LitElement {
     // Unsubscribe from chat stream events
     this.chatStreamUnsubscribe?.();
     this.chatStreamUnsubscribe = null;
+    // Stop usage tracker
+    stopUsageTracker();
     super.disconnectedCallback();
   }
 

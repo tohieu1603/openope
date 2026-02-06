@@ -185,6 +185,32 @@ export async function getUsageHistory(
 }
 
 // =============================================================================
+// Report Usage - POST token usage from gateway WS events to Operis BE
+// =============================================================================
+
+export interface ReportUsagePayload {
+  request_type: string;
+  model?: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Report token usage to Operis BE (called when gateway WS chat event has state=final with usage)
+ */
+export async function reportUsage(payload: ReportUsagePayload): Promise<void> {
+  try {
+    await apiClient.post("/analytics/usage", payload);
+  } catch (error) {
+    // Best-effort: log but don't throw to avoid disrupting chat flow
+    console.warn("[analytics] failed to report usage:", getErrorMessage(error));
+  }
+}
+
+// =============================================================================
 // Transform Functions - Convert API response to UI-friendly format
 // =============================================================================
 
