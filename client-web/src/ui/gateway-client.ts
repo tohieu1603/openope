@@ -333,6 +333,19 @@ export type CronEvent = {
   nextRunAtMs?: number;
 };
 
+// Token usage from gateway agent runs
+export type ChatTokenUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  // OpenAI-compatible fields (same as HTTP server)
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
 // Chat streaming event type from gateway
 export type ChatStreamEvent = {
   runId: string;
@@ -343,7 +356,9 @@ export type ChatStreamEvent = {
     role: "assistant";
     content: Array<{ type: string; text?: string }>;
     timestamp?: number;
+    usage?: ChatTokenUsage;
   };
+  usage?: ChatTokenUsage;
   errorMessage?: string;
 };
 

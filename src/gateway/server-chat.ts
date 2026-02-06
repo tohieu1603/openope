@@ -1,9 +1,61 @@
+import fs from "node:fs";
 import { normalizeVerboseLevel } from "../auto-reply/thinking.js";
 import { loadConfig } from "../config/config.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
+
+/**
+ * Read the last assistant message's usage from the session transcript.
+ * Returns normalized usage or undefined if unavailable.
+ */
+function readLastAssistantUsage(
+  sessionKey: string,
+): {
+  input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number;
+  prompt_tokens: number; completion_tokens: number; total_tokens: number;
+} | undefined {
+  try {
+    const { entry } = loadSessionEntry(sessionKey);
+    if (!entry?.sessionId) return undefined;
+
+    const transcriptFile = entry.sessionFile;
+    if (!transcriptFile || !fs.existsSync(transcriptFile)) return undefined;
+
+    const content = fs.readFileSync(transcriptFile, "utf-8").trim();
+    if (!content) return undefined;
+
+    const lines = content.split("\n");
+    // Scan from end to find last assistant message with real usage
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const raw = JSON.parse(lines[i]);
+        // Handle both direct format {role, usage} and wrapped format {message: {role, usage}}
+        const msg = raw.message ?? raw;
+        if (msg.role === "assistant" && msg.usage && typeof msg.usage === "object") {
+          const u = msg.usage;
+          const input = u.input ?? u.inputTokens ?? u.input_tokens ?? u.promptTokens ?? u.prompt_tokens ?? 0;
+          const output = u.output ?? u.outputTokens ?? u.output_tokens ?? u.completionTokens ?? u.completion_tokens ?? 0;
+          const cacheRead = u.cacheRead ?? u.cache_read ?? u.cache_read_input_tokens ?? 0;
+          const cacheWrite = u.cacheWrite ?? u.cache_write ?? u.cache_creation_input_tokens ?? 0;
+          const totalTokens = u.total ?? u.totalTokens ?? u.total_tokens ?? (input + output + cacheRead + cacheWrite);
+          // Skip entries with all-zero usage (hardcoded defaults from injected messages)
+          if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) continue;
+          const prompt_tokens = input + cacheRead + cacheWrite;
+          const completion_tokens = output;
+          const total_tokens = prompt_tokens + completion_tokens;
+          return { input, output, cacheRead, cacheWrite, totalTokens, prompt_tokens, completion_tokens, total_tokens };
+        }
+      } catch {
+        /* skip invalid lines */
+      }
+    }
+  } catch {
+    /* ignore errors, usage is best-effort */
+  }
+  return undefined;
+}
 
 /**
  * Check if webchat broadcasts should be suppressed for heartbeat runs.
@@ -264,6 +316,8 @@ export function createAgentEventHandler({
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
     if (jobState === "done") {
+      // Read real token usage from the session transcript (best-effort)
+      const usage = readLastAssistantUsage(sessionKey);
       const payload = {
         runId: clientRunId,
         sessionKey,
@@ -274,8 +328,10 @@ export function createAgentEventHandler({
               role: "assistant",
               content: [{ type: "text", text }],
               timestamp: Date.now(),
+              ...(usage ? { usage } : {}),
             }
           : undefined,
+        ...(usage ? { usage } : {}),
       };
       // Suppress webchat broadcast for heartbeat runs when showOk is false
       if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {

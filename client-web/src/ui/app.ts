@@ -56,6 +56,7 @@ import {
   type WorkflowStatus,
 } from "./workflow-api";
 import { subscribeToCronEvents, subscribeToChatStream, type CronEvent, type ChatStreamEvent } from "./gateway-client";
+import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
 import {
   login as authLogin,
   logout as authLogout,
@@ -370,6 +371,9 @@ export class OperisApp extends LitElement {
       this.handleChatStreamEvent(evt);
     });
 
+    // Start usage tracker - reports token usage from WS to Operis BE
+    startUsageTracker();
+
     // Try to restore session from stored tokens
     this.tryRestoreSession();
   }
@@ -498,6 +502,8 @@ export class OperisApp extends LitElement {
     // Unsubscribe from chat stream events
     this.chatStreamUnsubscribe?.();
     this.chatStreamUnsubscribe = null;
+    // Stop usage tracker
+    stopUsageTracker();
     super.disconnectedCallback();
   }
 
@@ -775,6 +781,12 @@ export class OperisApp extends LitElement {
 
       // Store conversation ID for context
       this.chatConversationId = result.conversationId;
+
+      // Report token usage from SSE response to Operis BE
+      console.log("[app] SSE result.usage:", result.usage);
+      if (result.usage) {
+        reportSSEUsage(result.usage);
+      }
 
       // Get final text before clearing state
       const assistantText = extractTextContent(result.content) || this.chatStreamingText;
