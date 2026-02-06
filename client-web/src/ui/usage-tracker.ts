@@ -27,6 +27,9 @@ async function deductUsage(usage: ChatTokenUsage): Promise<void> {
 }
 
 function handleChatEvent(evt: ChatStreamEvent) {
+  // Debug: log ALL chat events to verify WS is delivering them
+  console.log("[usage-tracker] chat event:", evt.state, "runId:", evt.runId, "hasUsage:", !!(evt.usage ?? evt.message?.usage));
+
   if (evt.state !== "final") return;
 
   // Usage can be at top-level or nested in message
