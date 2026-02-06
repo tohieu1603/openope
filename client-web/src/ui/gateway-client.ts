@@ -81,7 +81,7 @@ export type GatewayClientOptions = {
   onConnected?: () => void;
 };
 
-const CLIENT_ID = "moltbot-control-ui";
+const CLIENT_ID = "openclaw-control-ui";
 const CLIENT_MODE = "ui";
 const ROLE = "operator";
 const SCOPES = ["operator.admin", "operator.approvals", "operator.pairing"];
