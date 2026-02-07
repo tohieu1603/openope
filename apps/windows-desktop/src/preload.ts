@@ -16,10 +16,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("gateway-status", handler);
   },
 
+  /** Listen for tunnel status changes */
+  onTunnelStatus: (callback: (status: string, detail?: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: string, detail?: string) =>
+      callback(status, detail);
+    ipcRenderer.on("tunnel-status", handler);
+    return () => ipcRenderer.removeListener("tunnel-status", handler);
+  },
+
   /** Submit first-run onboarding tokens */
   submitOnboard: (data: { anthropicToken: string; cfTunnelToken?: string }) =>
     ipcRenderer.invoke("onboard-submit", data),
 
-  /** Signal main process that onboarding is complete */
-  onboardComplete: () => ipcRenderer.send("onboard-complete"),
+  /** Signal main process that onboarding is complete, optionally with CF token */
+  onboardComplete: (data?: { cfTunnelToken?: string }) =>
+    ipcRenderer.send("onboard-complete", data),
 });

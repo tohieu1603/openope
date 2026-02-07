@@ -193,8 +193,9 @@
           setStatus("success", "Setup complete! Loading Agent Operis...");
           // Notify main process to switch to client-web UI
           setTimeout(() => {
-            // Main process listens for this to reload window
-            window.electronAPI.onboardComplete?.();
+            // Pass CF token to main process for encrypted storage
+            const completeData = cfToken ? { cfTunnelToken: cfToken } : undefined;
+            window.electronAPI.onboardComplete?.(completeData);
           }, 1000);
         } else {
           setStatus("error", "Setup failed: " + (result.output || "Unknown error"));

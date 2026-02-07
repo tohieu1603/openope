@@ -202,10 +202,21 @@ apps/windows-desktop/
 - **Status events**: `starting | running | error | stopped` sent to renderer via IPC with optional detail msg.
 - **Electron lifecycle**: Gateway starts after first-run onboarding completes, stops on app quit.
 
-### Phase 03 roadmap
+### Phase 03 (Complete)
+
+**Cloudflare Tunnel Integration implemented.**
+
+- **TunnelManager** encrypts CF tunnel token via Windows safeStorage (DPAPI).
+- **cloudflared binary resolution**: checks bundled resources, then userData directory.
+- **Auto-start**: tunnel starts when gateway becomes healthy.
+- **Status monitoring**: "connecting" → "connected" → "disconnected"/"error".
+- **Graceful stop**: SIGTERM → 5s wait → taskkill force-kill.
+- **Token management**: secure storage via safeStorage, passed from first-run setup.
+
+### Phase 04 roadmap
 
 - Tray integration + minimize-to-tray behavior.
-- Tunnel status display (CF tunnel connection UI).
+- Tunnel status display UI + visual indicators.
 - System notifications for gateway health + message events.
 
 Contributions welcome.

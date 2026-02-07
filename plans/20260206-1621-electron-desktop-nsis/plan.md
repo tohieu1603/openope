@@ -41,7 +41,7 @@ Package Agent Operis as a Windows desktop app using Electron. Main process spawn
 |---|-------|--------|------|------------|
 | 1 | Electron Project Setup + First-Run Onboarding | DONE (2026-02-07) | [phase-01](./phase-01-electron-project-setup.md) | -- |
 | 2 | Gateway Process Manager | DONE (2026-02-08) | [phase-02](./phase-02-gateway-process-manager.md) | Phase 1 |
-| 3 | Cloudflare Tunnel Integration | pending | [phase-03](./phase-03-cloudflare-tunnel-integration.md) | Phase 2 |
+| 3 | Cloudflare Tunnel Integration | DONE (2026-02-08) | [phase-03](./phase-03-cloudflare-tunnel-integration.md) | Phase 2 |
 | 4 | System Tray & Auto-Start | pending | [phase-04](./phase-04-system-tray-auto-start.md) | Phase 2 |
 | 5 | NSIS Installer & Build Pipeline | pending | [phase-05](./phase-05-nsis-installer-build.md) | Phases 1-4 |
 

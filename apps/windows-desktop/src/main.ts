@@ -6,12 +6,14 @@
  * 2a. No config (first run) -> show setup.html -> user enters tokens -> onboard
  * 2b. Config exists -> start gateway + load client-web UI
  * 3. Gateway managed by GatewayManager (spawn, health check, crash recovery)
- * 4. On quit -> graceful gateway shutdown (SIGTERM -> 5s -> force kill)
+ * 4. Once gateway running -> start Cloudflare tunnel (if token configured)
+ * 5. On quit -> graceful shutdown (tunnel first, then gateway)
  */
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { OnboardManager } from "./onboard-manager";
 import { GatewayManager } from "./gateway-manager";
+import { TunnelManager } from "./tunnel-manager";
 import { GATEWAY_PORT, IPC } from "./types";
 
 /** Resolve path to bundled resources (works in both dev and packaged mode) */
@@ -31,6 +33,7 @@ function resolveSetupPath(): string {
 
 let mainWindow: BrowserWindow | null = null;
 const gateway = new GatewayManager();
+const tunnel = new TunnelManager();
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -61,13 +64,26 @@ function loadClientWeb(win: BrowserWindow): void {
   win.loadFile(uiIndex);
 }
 
-/** Start gateway and forward status events to renderer */
-function startGatewayWithStatus(win: BrowserWindow): void {
+/** Start gateway and forward status events to renderer. Start tunnel when gateway is running. */
+function startServicesWithStatus(win: BrowserWindow): void {
+  // Forward gateway status to renderer
   gateway.onStatus((status, detail) => {
     if (!win.isDestroyed()) {
       win.webContents.send(IPC.GATEWAY_STATUS, status, detail);
     }
+    // Auto-start tunnel once gateway is healthy
+    if (status === "running" && tunnel.hasToken()) {
+      tunnel.start();
+    }
   });
+
+  // Forward tunnel status to renderer
+  tunnel.onStatus((status, detail) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC.TUNNEL_STATUS, status, detail);
+    }
+  });
+
   gateway.start();
 }
 
@@ -84,25 +100,38 @@ app.whenReady().then(async () => {
     // First run: show setup page for token entry
     mainWindow.loadFile(resolveSetupPath());
 
-    // After successful onboard, start gateway and switch to client-web
-    ipcMain.once("onboard-complete", () => {
+    // After successful onboard, save CF token if provided, then start services
+    ipcMain.once("onboard-complete", (_event, data?: { cfTunnelToken?: string }) => {
+      // Save CF tunnel token if user provided one during setup
+      if (data?.cfTunnelToken) {
+        try {
+          tunnel.saveToken(data.cfTunnelToken);
+        } catch {
+          // Non-fatal: tunnel token save failed, user can configure later
+        }
+      }
+
       if (mainWindow) {
-        startGatewayWithStatus(mainWindow);
+        startServicesWithStatus(mainWindow);
         loadClientWeb(mainWindow);
       }
     });
   } else {
-    // Normal startup: start gateway and load client-web UI
-    startGatewayWithStatus(mainWindow);
+    // Normal startup: start services and load client-web UI
+    startServicesWithStatus(mainWindow);
     loadClientWeb(mainWindow);
   }
 });
 
-// Graceful shutdown: stop gateway before quitting
+// Graceful shutdown: stop tunnel first, then gateway
 app.on("before-quit", (e) => {
-  if (gateway.currentStatus !== "stopped") {
+  const needsGatewayStop = gateway.currentStatus !== "stopped";
+  const needsTunnelStop = tunnel.currentStatus !== "disconnected";
+
+  if (needsGatewayStop || needsTunnelStop) {
     e.preventDefault();
-    gateway.stop().finally(() => {
+    // Stop tunnel first (faster), then gateway
+    Promise.all([tunnel.stop(), gateway.stop()]).finally(() => {
       app.exit(0);
     });
   }
@@ -117,7 +146,7 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     mainWindow = createWindow();
-    startGatewayWithStatus(mainWindow);
+    startServicesWithStatus(mainWindow);
     loadClientWeb(mainWindow);
   }
 });

@@ -18,6 +18,7 @@ export type OnboardSubmitData = {
 export const IPC = {
   GET_GATEWAY_PORT: "get-gateway-port",
   GATEWAY_STATUS: "gateway-status",
+  TUNNEL_STATUS: "tunnel-status",
   ONBOARD_SUBMIT: "onboard-submit",
   ONBOARD_RESULT: "onboard-result",
 } as const;
