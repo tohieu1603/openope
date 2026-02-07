@@ -30,11 +30,12 @@ Last updated: 2026-01-22
 - Validates inbound frames against JSON Schema.
 - Emits events like `agent`, `chat`, `presence`, `health`, `heartbeat`, `cron`.
 
-### Clients (mac app / CLI / web admin)
+### Clients (macOS app / Windows Electron app / CLI / web admin)
 
 - One WS connection per client.
 - Send requests (`health`, `status`, `send`, `agent`, `system-presence`).
 - Subscribe to events (`tick`, `agent`, `presence`, `shutdown`).
+- **Windows Electron app** (Phase 01): First-run setup, config-driven, bundles gateway + client-web UI via NSIS installer.
 
 ### Nodes (macOS / iOS / Android / headless)
 

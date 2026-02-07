@@ -1,0 +1,24 @@
+/**
+ * Preload script - security bridge between main and renderer.
+ * Exposes minimal API via contextBridge. No Node APIs leak to renderer.
+ */
+import { contextBridge, ipcRenderer } from "electron";
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  /** Get the gateway port number */
+  getGatewayPort: (): Promise<number> => ipcRenderer.invoke("get-gateway-port"),
+
+  /** Listen for gateway status changes */
+  onGatewayStatus: (callback: (status: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: string) => callback(status);
+    ipcRenderer.on("gateway-status", handler);
+    return () => ipcRenderer.removeListener("gateway-status", handler);
+  },
+
+  /** Submit first-run onboarding tokens */
+  submitOnboard: (data: { anthropicToken: string; cfTunnelToken?: string }) =>
+    ipcRenderer.invoke("onboard-submit", data),
+
+  /** Signal main process that onboarding is complete */
+  onboardComplete: () => ipcRenderer.send("onboard-complete"),
+});

@@ -69,6 +69,10 @@ apps/ios/*.mobileprovision
 # local tooling
 .serena/
 
+# Electron desktop app build artifacts
+apps/windows-desktop/dist-electron/
+apps/windows-desktop/release/
+
 # Agent credentials and memory (NEVER COMMIT)
 /memory/
 .agent/*.json

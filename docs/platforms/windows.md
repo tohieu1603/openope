@@ -153,7 +153,49 @@ openclaw onboard
 
 Full guide: [Getting Started](/start/getting-started)
 
-## Windows companion app
+## Windows Electron app (Phase 01)
 
-We do not have a Windows companion app yet. Contributions are welcome if you want
-contributions to make it happen.
+**Status: First-run onboarding scaffold complete.**
+
+A native Windows Electron app is under development at `apps/windows-desktop/`. Phase 01 includes:
+
+- **Electron 33+** + **electron-builder 25+** for packaging/NSIS installer
+- **First-run detection** via `~/.openclaw/openclaw.json` config check
+- **Setup page** (setup.html) for token input (Anthropic + optional CF tunnel)
+- **IPC bridge** (preload.ts) exposing `getGatewayPort()`, `onGatewayStatus`, `submitOnboard()`, `onboardComplete`
+- **Onboard manager** handling non-interactive setup via `openclaw onboard --non-interactive`
+- **NSIS installer** with bundled Gateway + client-web UI (extraResources)
+
+### Project structure
+
+```
+apps/windows-desktop/
+  ├── src/
+  │   ├── main.ts              # BrowserWindow + first-run flow
+  │   ├── preload.ts           # contextBridge IPC
+  │   ├── onboard-manager.ts   # Config check + onboard spawn
+  │   └── types.ts             # Shared types (GatewayStatus, TunnelStatus)
+  ├── resources/
+  │   ├── setup.html           # First-run token form
+  │   └── icon.ico             # App icon (placeholder)
+  ├── package.json             # Electron + electron-builder
+  ├── electron-builder.yml     # NSIS config + extraResources
+  └── tsconfig.json            # ES2022 → dist-electron/
+```
+
+### Key features
+
+- **First-run UX**: On launch, checks for `~/.openclaw/openclaw.json`. If missing, shows setup.html.
+- **Setup form**: User enters Anthropic token (required) + optional CF tunnel token.
+- **Non-interactive onboard**: Submits tokens to `gateway/entry.js onboard --non-interactive`.
+- **Bundled gateway**: electron-builder extraResources bundles `gateway/` dist + `client-web/` UI.
+- **Port**: Gateway runs on localhost:18789 by design (loopback).
+
+### Phase 02 roadmap
+
+- Gateway process lifecycle management (spawn, monitor, restart).
+- Tray integration + minimize-to-tray behavior.
+- Tunnel status display (CF tunnel connection UI).
+- System notifications for gateway health + message events.
+
+Contributions welcome.

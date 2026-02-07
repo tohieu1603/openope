@@ -1,0 +1,39 @@
+appId: com.operis.agent
+productName: Agent Operis
+copyright: Copyright (c) 2026 Agent Operis
+
+directories:
+  output: release
+  buildResources: resources
+
+asar: true
+
+win:
+  target: nsis
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+
+extraResources:
+  # Gateway dist (entry.js + deps)
+  - from: "../../dist"
+    to: "gateway"
+    filter:
+      - "**/*"
+      - "!control-ui/**"
+  # Client-web UI build
+  - from: "../../dist/control-ui"
+    to: "client-web"
+  # First-run setup page
+  - from: "resources/setup.html"
+    to: "setup.html"
+
+files:
+  - "dist-electron/**/*"
+  - "!node_modules"

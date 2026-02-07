@@ -1,0 +1,18 @@
+{
+  "name": "agent-operis-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agent Operis Windows Desktop App (Electron + NSIS)",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json && electron dist-electron/main.js",
+    "build:electron": "tsc -p tsconfig.json",
+    "build:installer": "electron-builder --win --config electron-builder.yml",
+    "build": "pnpm build:electron && pnpm build:installer"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0",
+    "typescript": "^5.7.0"
+  }
+}
