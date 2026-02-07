@@ -4,12 +4,14 @@
  * Lifecycle:
  * 1. App ready -> check if OpenClaw config exists
  * 2a. No config (first run) -> show setup.html -> user enters tokens -> onboard
- * 2b. Config exists -> load client-web UI (normal startup)
- * 3. Gateway process management added in Phase 2
+ * 2b. Config exists -> start gateway + load client-web UI
+ * 3. Gateway managed by GatewayManager (spawn, health check, crash recovery)
+ * 4. On quit -> graceful gateway shutdown (SIGTERM -> 5s -> force kill)
  */
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { OnboardManager } from "./onboard-manager";
+import { GatewayManager } from "./gateway-manager";
 import { GATEWAY_PORT, IPC } from "./types";
 
 /** Resolve path to bundled resources (works in both dev and packaged mode) */
@@ -28,6 +30,7 @@ function resolveSetupPath(): string {
 }
 
 let mainWindow: BrowserWindow | null = null;
+const gateway = new GatewayManager();
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -58,6 +61,16 @@ function loadClientWeb(win: BrowserWindow): void {
   win.loadFile(uiIndex);
 }
 
+/** Start gateway and forward status events to renderer */
+function startGatewayWithStatus(win: BrowserWindow): void {
+  gateway.onStatus((status, detail) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC.GATEWAY_STATUS, status, detail);
+    }
+  });
+  gateway.start();
+}
+
 app.whenReady().then(async () => {
   mainWindow = createWindow();
 
@@ -71,15 +84,27 @@ app.whenReady().then(async () => {
     // First run: show setup page for token entry
     mainWindow.loadFile(resolveSetupPath());
 
-    // After successful onboard, reload to client-web
+    // After successful onboard, start gateway and switch to client-web
     ipcMain.once("onboard-complete", () => {
       if (mainWindow) {
+        startGatewayWithStatus(mainWindow);
         loadClientWeb(mainWindow);
       }
     });
   } else {
-    // Normal startup: load client-web UI directly
+    // Normal startup: start gateway and load client-web UI
+    startGatewayWithStatus(mainWindow);
     loadClientWeb(mainWindow);
+  }
+});
+
+// Graceful shutdown: stop gateway before quitting
+app.on("before-quit", (e) => {
+  if (gateway.currentStatus !== "stopped") {
+    e.preventDefault();
+    gateway.stop().finally(() => {
+      app.exit(0);
+    });
   }
 });
 
@@ -92,6 +117,7 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     mainWindow = createWindow();
+    startGatewayWithStatus(mainWindow);
     loadClientWeb(mainWindow);
   }
 });

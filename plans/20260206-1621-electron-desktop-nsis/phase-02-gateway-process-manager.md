@@ -1,7 +1,8 @@
 # Phase 02: Gateway Process Manager
 
 **Parent:** [plan.md](./plan.md) | **Deps:** Phase 1 | **Blocks:** Phases 3, 4, 5
-**Date:** 2026-02-06 | **Priority:** High | **Status:** Pending
+**Date:** 2026-02-06 | **Priority:** High | **Status:** ✅ Completed (2026-02-08)
+**Review:** [code-reviewer-260208-phase02-gateway-manager.md](reports/code-reviewer-260208-phase02-gateway-manager.md)
 
 ## Overview
 
@@ -218,19 +219,21 @@ app.on("before-quit", async (e) => {
 
 ## Todo
 
-- [ ] Create `apps/windows-desktop/src/gateway-manager.ts`
-- [ ] Implement spawn with proper entry path resolution (dev vs packaged)
-- [ ] Use `process.execPath` (Electron's Node) to spawn gateway, NOT system node
-- [ ] Implement HTTP health check loop (5s interval)
-- [ ] Implement exponential backoff restart (1s base, 30s max)
-- [ ] Implement graceful shutdown (SIGTERM -> 5s -> SIGKILL)
-- [ ] Gate gateway start on `OnboardManager.isConfigured()` (Phase 1)
-- [ ] Wire GatewayManager lifecycle to `app.whenReady` / `before-quit`
-- [ ] Send IPC `gateway-status` events to renderer
-- [ ] Add logging to `%APPDATA%/AgentOperis/logs/`
-- [ ] Test: start gateway, verify health check succeeds
-- [ ] Test: kill gateway process, verify auto-restart
-- [ ] Test: first run without config -> gateway does NOT start until onboard complete
+- [x] Create `apps/windows-desktop/src/gateway-manager.ts` ✅
+- [x] Implement spawn with proper entry path resolution (dev vs packaged) ✅
+- [x] Use `process.execPath` (Electron's Node) to spawn gateway, NOT system node ✅
+- [x] Implement TCP health check loop (5s interval) ✅ *Changed from HTTP - gateway has no /api/health endpoint*
+- [x] Implement exponential backoff restart (1s base, 30s max) ✅
+- [x] Implement graceful shutdown (SIGTERM -> 5s -> SIGKILL) ✅
+- [x] Gate gateway start on `OnboardManager.isConfigured()` (Phase 1) ✅
+- [x] Wire GatewayManager lifecycle to `app.whenReady` / `before-quit` ✅
+- [x] Send IPC `gateway-status` events to renderer ✅
+- [ ] Add logging to `%APPDATA%/AgentOperis/logs/` ⚠️ *Deferred - stdout/stderr stubbed for future*
+- [x] Test: start gateway, verify health check succeeds ✅
+- [x] Test: kill gateway process, verify auto-restart ✅
+- [x] Test: first run without config -> gateway does NOT start until onboard complete ✅
+
+**Completion:** 12/13 tasks (92%). Logging deferred to Phase 03 or pre-release. Phase marked DONE 2026-02-08.
 
 ## Success Criteria
 

@@ -191,9 +191,19 @@ apps/windows-desktop/
 - **Bundled gateway**: electron-builder extraResources bundles `gateway/` dist + `client-web/` UI.
 - **Port**: Gateway runs on localhost:18789 by design (loopback).
 
-### Phase 02 roadmap
+### Phase 02 (Complete)
 
-- Gateway process lifecycle management (spawn, monitor, restart).
+**Gateway process lifecycle management implemented.**
+
+- **GatewayManager** spawns Node.js gateway via `process.execPath` + `entry.js`.
+- **Health check**: TCP connection test every 5s (3s timeout).
+- **Crash recovery**: Exponential backoff restart (1s → 30s max, reset on successful run).
+- **Graceful shutdown**: SIGTERM → 5s wait → taskkill force-kill (Windows).
+- **Status events**: `starting | running | error | stopped` sent to renderer via IPC with optional detail msg.
+- **Electron lifecycle**: Gateway starts after first-run onboarding completes, stops on app quit.
+
+### Phase 03 roadmap
+
 - Tray integration + minimize-to-tray behavior.
 - Tunnel status display (CF tunnel connection UI).
 - System notifications for gateway health + message events.

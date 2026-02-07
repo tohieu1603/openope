@@ -35,7 +35,9 @@ Last updated: 2026-01-22
 - One WS connection per client.
 - Send requests (`health`, `status`, `send`, `agent`, `system-presence`).
 - Subscribe to events (`tick`, `agent`, `presence`, `shutdown`).
-- **Windows Electron app** (Phase 01): First-run setup, config-driven, bundles gateway + client-web UI via NSIS installer.
+- **Windows Electron app**:
+  - Phase 01: First-run setup, config-driven, bundles gateway + client-web UI via NSIS installer.
+  - Phase 02: GatewayManager spawns gateway process, monitors via TCP health checks every 5s, handles crash recovery (exponential backoff 1s-30s), graceful shutdown (SIGTERM → 5s timeout → force kill), emits status events to renderer (starting/running/error/stopped).
 
 ### Nodes (macOS / iOS / Android / headless)
 

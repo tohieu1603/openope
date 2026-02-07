@@ -9,8 +9,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getGatewayPort: (): Promise<number> => ipcRenderer.invoke("get-gateway-port"),
 
   /** Listen for gateway status changes */
-  onGatewayStatus: (callback: (status: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, status: string) => callback(status);
+  onGatewayStatus: (callback: (status: string, detail?: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: string, detail?: string) =>
+      callback(status, detail);
     ipcRenderer.on("gateway-status", handler);
     return () => ipcRenderer.removeListener("gateway-status", handler);
   },
