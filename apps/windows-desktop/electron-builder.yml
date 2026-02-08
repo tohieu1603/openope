@@ -33,6 +33,15 @@ extraResources:
   # First-run setup page
   - from: "resources/setup.html"
     to: "setup.html"
+  # Tray status icons
+  - from: "resources/tray-green.ico"
+    to: "tray-green.ico"
+  - from: "resources/tray-yellow.ico"
+    to: "tray-yellow.ico"
+  - from: "resources/tray-red.ico"
+    to: "tray-red.ico"
+  - from: "resources/tray-gray.ico"
+    to: "tray-gray.ico"
 
 files:
   - "dist-electron/**/*"
