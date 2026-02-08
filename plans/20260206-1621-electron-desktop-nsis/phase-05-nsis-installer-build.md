@@ -1,7 +1,7 @@
 # Phase 05: NSIS Installer & Build Pipeline
 
 **Parent:** [plan.md](./plan.md) | **Deps:** Phases 1-4 | **Blocks:** None
-**Date:** 2026-02-06 | **Priority:** High | **Status:** Pending
+**Date:** 2026-02-06 | **Priority:** High | **Status:** DONE | **Completed:** 2026-02-08
 
 ## Overview
 

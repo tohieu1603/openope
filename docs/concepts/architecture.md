@@ -7,7 +7,7 @@ title: "Gateway Architecture"
 
 # Gateway architecture
 
-Last updated: 2026-01-22
+Last updated: 2026-02-08
 
 ## Overview
 
@@ -39,6 +39,8 @@ Last updated: 2026-01-22
   - Phase 01: First-run setup, config-driven, bundles gateway + client-web UI via NSIS installer.
   - Phase 02: GatewayManager spawns gateway process, monitors via TCP health checks every 5s, handles crash recovery (exponential backoff 1s-30s), graceful shutdown (SIGTERM → 5s timeout → force kill), emits status events to renderer (starting/running/error/stopped).
   - Phase 03: TunnelManager handles Cloudflare Tunnel integration (cloudflared process), encrypts CF token via safeStorage (Windows DPAPI), auto-starts tunnel when gateway becomes healthy, monitors tunnel status (connecting/connected/disconnected/error), graceful shutdown with force-kill fallback.
+  - Phase 04: Tray integration (minimize-to-tray, status icons), tunnel status UI display, system notifications for health + events.
+  - Phase 05: NSIS installer build pipeline complete (electron-builder config with asarUnpack, file exclusions, sourcemap removal, cloudflared bundling, registry cleanup on uninstall, 43+ tests).
 
 ### Nodes (macOS / iOS / Android / headless)
 

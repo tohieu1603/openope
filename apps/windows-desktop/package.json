@@ -6,9 +6,11 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "tsc -p tsconfig.json && electron dist-electron/main.js",
+    "prebuild": "node scripts/download-cloudflared.mjs",
+    "build:gateway": "cd ../.. && pnpm build",
     "build:electron": "tsc -p tsconfig.json",
     "build:installer": "electron-builder --win --config electron-builder.yml",
-    "build": "pnpm build:electron && pnpm build:installer"
+    "build": "pnpm build:gateway && pnpm build:electron && pnpm build:installer"
   },
   "devDependencies": {
     "electron": "^33.0.0",

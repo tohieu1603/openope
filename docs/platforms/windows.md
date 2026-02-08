@@ -213,10 +213,79 @@ apps/windows-desktop/
 - **Graceful stop**: SIGTERM → 5s wait → taskkill force-kill.
 - **Token management**: secure storage via safeStorage, passed from first-run setup.
 
-### Phase 04 roadmap
+### Phase 04 (Complete)
 
-- Tray integration + minimize-to-tray behavior.
-- Tunnel status display UI + visual indicators.
+**Tray integration + UI improvements implemented.**
+
+- Tray icon integration with status indicators.
+- Minimize-to-tray behavior + taskbar suppression.
+- Tunnel status display UI + visual status icons.
 - System notifications for gateway health + message events.
+
+### Phase 05 (Complete)
+
+**NSIS Installer Build Pipeline finalized.**
+
+- **Full NSIS build config**: electron-builder.yml with asarUnpack, file exclusions, sourcemap removal.
+- **Custom installer script**: installer.nsh handles Windows registry cleanup (auto-start entry removal on uninstall).
+- **Cloudflared bundling**: download-cloudflared.mjs downloads cloudflared.exe binary pre-build.
+- **Complete build chain**: prebuild → build:gateway → build:electron → build:installer.
+- **Test coverage**: 43+ comprehensive electron-builder config tests (electron-builder-config.test.ts).
+
+#### Build workflow
+
+Build the Windows installer:
+
+```bash
+cd apps/windows-desktop/
+pnpm build
+```
+
+This runs the full pipeline:
+1. `pnpm prebuild` - Downloads cloudflared.exe to resources/
+2. `pnpm build:gateway` - Builds gateway + client-web dist
+3. `pnpm build:electron` - Compiles TypeScript → dist-electron/
+4. `pnpm build:installer` - Runs electron-builder (NSIS packaging)
+
+Output: `release/Agent Operis.exe` (installer + bundled gateway/UI/cloudflared).
+
+#### Installer features
+
+- **One-click setup** disabled (perMachine: false, allowToChangeInstallationDirectory: true).
+- **Desktop + Start Menu shortcuts** auto-created.
+- **Auto-start registry**: AgentOperis entry added on install.
+- **Clean uninstall**: Registry cleanup removes auto-start entry.
+- **ASAR unpacking**: Node native modules (sharp, better-sqlite3, *.node) extracted for runtime compatibility.
+- **Sourcemap exclusion**: Production builds omit *.map files (size optimization).
+
+#### Project structure (Phase 05)
+
+```
+apps/windows-desktop/
+  ├── scripts/
+  │   └── download-cloudflared.mjs   # Pre-build cloudflared fetch
+  ├── src/
+  │   ├── main.ts
+  │   ├── preload.ts
+  │   ├── onboard-manager.ts
+  │   ├── types.ts
+  │   └── __tests__/
+  │       └── electron-builder-config.test.ts  # 43+ tests
+  ├── resources/
+  │   ├── setup.html
+  │   ├── icon.ico + tray icons
+  │   └── cloudflared.exe  # Downloaded by prebuild
+  ├── package.json         # Build scripts updated
+  ├── electron-builder.yml # Full NSIS + asarUnpack config
+  ├── installer.nsh        # Registry cleanup on uninstall
+  └── tsconfig.json
+```
+
+#### Development notes
+
+- cloudflared binary is fetched from Cloudflare releases (pre-build step).
+- NSIS script handles Windows-specific cleanup (registry, auto-start).
+- Electron Builder v25+ ensures cross-platform compatibility.
+- All build outputs are tested via 43+ unit tests.
 
 Contributions welcome.

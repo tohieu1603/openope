@@ -1,6 +1,6 @@
 # Plan: Agent Operis Windows Desktop App (Electron + NSIS)
 
-**Date:** 2026-02-06 | **Status:** Draft | **Priority:** High
+**Date:** 2026-02-06 | **Status:** COMPLETE | **Priority:** High | **Completed:** 2026-02-08
 
 ## Summary
 
@@ -43,7 +43,7 @@ Package Agent Operis as a Windows desktop app using Electron. Main process spawn
 | 2 | Gateway Process Manager | DONE (2026-02-08) | [phase-02](./phase-02-gateway-process-manager.md) | Phase 1 |
 | 3 | Cloudflare Tunnel Integration | DONE (2026-02-08) | [phase-03](./phase-03-cloudflare-tunnel-integration.md) | Phase 2 |
 | 4 | System Tray & Auto-Start | DONE (2026-02-08) | [phase-04](./phase-04-system-tray-auto-start.md) | Phase 2 |
-| 5 | NSIS Installer & Build Pipeline | pending | [phase-05](./phase-05-nsis-installer-build.md) | Phases 1-4 |
+| 5 | NSIS Installer & Build Pipeline | DONE (2026-02-08) | [phase-05](./phase-05-nsis-installer-build.md) | Phases 1-4 |
 
 ## Dependency Graph
 

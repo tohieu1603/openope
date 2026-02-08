@@ -7,18 +7,31 @@ directories:
   buildResources: resources
 
 asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/better-sqlite3/**/*"
+  - "**/*.node"
 
 win:
-  target: nsis
+  target:
+    - target: nsis
+      arch: [x64]
   icon: resources/icon.ico
+  requestedExecutionLevel: asInvoker
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent Operis
+  uninstallDisplayName: Agent Operis
   installerIcon: resources/icon.ico
   uninstallerIcon: resources/icon.ico
   installerHeaderIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+  include: installer.nsh
 
 extraResources:
   # Gateway dist (entry.js + deps)
@@ -27,9 +40,17 @@ extraResources:
     filter:
       - "**/*"
       - "!control-ui/**"
+      - "!**/*.map"
+      - "!**/*.d.ts"
   # Client-web UI build
   - from: "../../dist/control-ui"
     to: "client-web"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  # Cloudflare tunnel binary
+  - from: "resources/cloudflared.exe"
+    to: "cloudflared.exe"
   # First-run setup page
   - from: "resources/setup.html"
     to: "setup.html"
@@ -45,4 +66,6 @@ extraResources:
 
 files:
   - "dist-electron/**/*"
-  - "!node_modules"
+  - "!node_modules/@lydell/node-pty/**"
+  - "!node_modules/playwright-core/**"
+  - "!**/*.map"
