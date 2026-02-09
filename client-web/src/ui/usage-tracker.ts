@@ -18,7 +18,7 @@ async function deductUsage(usage: ChatTokenUsage): Promise<void> {
       completion_tokens: usage.completion_tokens,
       total_tokens: usage.total_tokens,
       model: "claude-sonnet-4-5-20250929",
-      request_type: "gateway_chat",
+      request_type: "chat",
     });
     console.log("[usage-tracker] deduct OK:", res.data);
   } catch (error) {
