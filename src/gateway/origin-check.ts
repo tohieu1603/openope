@@ -28,8 +28,12 @@ function parseOrigin(
   }
   try {
     const url = new URL(trimmed);
+    // file:// (and other opaque-origin schemes) have url.origin === "null" per spec.
+    // Preserve the original scheme://authority so allowlist entries like "file://" work.
+    const origin =
+      url.origin === "null" ? trimmed.toLowerCase() : url.origin.toLowerCase();
     return {
-      origin: url.origin.toLowerCase(),
+      origin,
       host: url.host.toLowerCase(),
       hostname: url.hostname.toLowerCase(),
     };

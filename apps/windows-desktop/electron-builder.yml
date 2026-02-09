@@ -18,6 +18,7 @@ win:
       arch: [x64]
   icon: resources/icon.ico
   requestedExecutionLevel: asInvoker
+  signAndEditExecutable: false
 
 nsis:
   oneClick: false
@@ -34,17 +35,15 @@ nsis:
   include: installer.nsh
 
 extraResources:
-  # Gateway dist (entry.js + deps)
-  - from: "../../dist"
-    to: "gateway"
-    filter:
-      - "**/*"
-      - "!control-ui/**"
-      - "!**/*.map"
-      - "!**/*.d.ts"
-  # Client-web UI build
+  # Gateway: esbuild-bundled single file (all npm deps inlined)
+  - from: "dist-gateway/entry.js"
+    to: "gateway/entry.js"
+  # ESM package.json for gateway
+  - from: "resources/gateway-package.json"
+    to: "gateway/package.json"
+  # Client-web UI build (must be "control-ui" so gateway resolveControlUiRootSync finds it)
   - from: "../../dist/control-ui"
-    to: "client-web"
+    to: "control-ui"
     filter:
       - "**/*"
       - "!**/*.map"
@@ -54,6 +53,14 @@ extraResources:
   # First-run setup page
   - from: "resources/setup.html"
     to: "setup.html"
+  # jiti babel.cjs for loading .ts extensions at runtime
+  - from: "resources/jiti-babel.cjs"
+    to: "dist/babel.cjs"
+  # Built-in plugins (pre-compiled, renamed to .ts for upgrade compat)
+  - from: "dist-extensions"
+    to: "extensions"
+    filter:
+      - "**/*"
   # Tray status icons
   - from: "resources/tray-green.ico"
     to: "tray-green.ico"
@@ -63,6 +70,13 @@ extraResources:
     to: "tray-red.ico"
   - from: "resources/tray-gray.ico"
     to: "tray-gray.ico"
+
+extraFiles:
+  # Workspace templates at app root
+  - from: "../../docs/reference/templates"
+    to: "docs/reference/templates"
+    filter:
+      - "**/*"
 
 files:
   - "dist-electron/**/*"

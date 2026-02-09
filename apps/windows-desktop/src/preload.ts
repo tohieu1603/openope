@@ -25,10 +25,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   /** Submit first-run onboarding tokens */
-  submitOnboard: (data: { anthropicToken: string; cfTunnelToken?: string }) =>
-    ipcRenderer.invoke("onboard-submit", data),
+  submitOnboard: (data: { anthropicToken: string }) => ipcRenderer.invoke("onboard-submit", data),
 
   /** Signal main process that onboarding is complete, optionally with CF token */
   onboardComplete: (data?: { cfTunnelToken?: string }) =>
     ipcRenderer.send("onboard-complete", data),
+
+  /** Get recent gateway logs (in-memory buffer) */
+  getGatewayLogs: (): Promise<string[]> => ipcRenderer.invoke("get-gateway-logs"),
+
+  /** Get path to gateway log file on disk */
+  getGatewayLogPath: (): Promise<string> => ipcRenderer.invoke("get-gateway-log-path"),
 });

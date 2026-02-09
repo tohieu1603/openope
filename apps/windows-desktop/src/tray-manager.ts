@@ -10,6 +10,8 @@ import type { GatewayStatus, TunnelStatus } from "./types";
 type TrayActionHandler = {
   onRestartGateway: () => void;
   onRestartTunnel: () => void;
+  onSetTunnelToken: () => void;
+  onOpenLogs: () => void;
 };
 
 const ICON_MAP: Record<GatewayStatus, string> = {
@@ -102,7 +104,15 @@ export class TrayManager {
         label: "Reconnect Tunnel",
         click: () => this.actions?.onRestartTunnel(),
       },
+      {
+        label: "Set Tunnel Token...",
+        click: () => this.actions?.onSetTunnelToken(),
+      },
       { type: "separator" },
+      {
+        label: "Open Gateway Logs",
+        click: () => this.actions?.onOpenLogs(),
+      },
       {
         label: "Start on Login",
         type: "checkbox",

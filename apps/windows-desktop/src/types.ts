@@ -1,18 +1,6 @@
-/** Shared types for Agent Operis Desktop App */
-
-export type GatewayStatus = "starting" | "running" | "stopped" | "error";
-
-export type TunnelStatus = "connecting" | "connected" | "disconnected" | "error";
-
-export type OnboardResult = {
-  success: boolean;
-  output: string;
-};
-
-export type OnboardSubmitData = {
-  anthropicToken: string;
-  cfTunnelToken?: string;
-};
+/**
+ * IPC channel names and shared types for main <-> renderer communication
+ */
 
 /** IPC channel names used between main <-> renderer */
 export const IPC = {
@@ -21,6 +9,20 @@ export const IPC = {
   TUNNEL_STATUS: "tunnel-status",
   ONBOARD_SUBMIT: "onboard-submit",
   ONBOARD_RESULT: "onboard-result",
+  GET_GATEWAY_LOGS: "get-gateway-logs",
+  GET_GATEWAY_LOG_PATH: "get-gateway-log-path",
 } as const;
 
 export const GATEWAY_PORT = 18789;
+
+export type GatewayStatus = "stopped" | "starting" | "running" | "error";
+export type TunnelStatus = "disconnected" | "connecting" | "connected" | "error";
+
+export interface OnboardSubmitData {
+  anthropicToken: string;
+}
+
+export interface OnboardResult {
+  success: boolean;
+  output: string;
+}

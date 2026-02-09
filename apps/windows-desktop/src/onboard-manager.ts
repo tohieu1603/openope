@@ -16,19 +16,69 @@ export class OnboardManager {
   }
 
   /**
-   * Check if OpenClaw config already exists.
+   * Path to OpenClaw config file.
    * Config lives at ~/.openclaw/openclaw.json on all platforms.
    */
-  isConfigured(): boolean {
+  private get configFilePath(): string {
     const home = process.env.USERPROFILE || process.env.HOME || "";
-    const configFile = path.join(home, ".openclaw", "openclaw.json");
-    return fs.existsSync(configFile);
+    return path.join(home, ".openclaw", "openclaw.json");
+  }
+
+  /**
+   * Check if OpenClaw config already exists.
+   */
+  isConfigured(): boolean {
+    return fs.existsSync(this.configFilePath);
+  }
+
+  /**
+   * Read the gateway auth token from config (for passing to UI via URL query).
+   */
+  readGatewayToken(): string | null {
+    try {
+      const raw = fs.readFileSync(this.configFilePath, "utf-8");
+      return JSON.parse(raw)?.gateway?.auth?.token ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Ensure gateway config has Electron-specific settings (idempotent).
+   * Called after onboard and on every app startup.
+   * - Enables /v1/chat/completions HTTP endpoint
+   * - Allows file:// origin for WebSocket (Electron loads UI from file://)
+   */
+  ensureElectronConfig(): void {
+    try {
+      const raw = fs.readFileSync(this.configFilePath, "utf-8");
+      const config = JSON.parse(raw);
+
+      // Enable chatCompletions endpoint
+      config.gateway ??= {};
+      config.gateway.http ??= {};
+      config.gateway.http.endpoints ??= {};
+      config.gateway.http.endpoints.chatCompletions ??= {};
+      config.gateway.http.endpoints.chatCompletions.enabled = true;
+
+      // Allow file:// origin for WebSocket
+      config.gateway.controlUi ??= {};
+      const origins = config.gateway.controlUi.allowedOrigins ?? [];
+      if (!origins.includes("file://")) {
+        origins.push("file://");
+        config.gateway.controlUi.allowedOrigins = origins;
+      }
+
+      fs.writeFileSync(this.configFilePath, JSON.stringify(config, null, 2), "utf-8");
+    } catch {
+      // Config may not exist yet
+    }
   }
 
   /**
    * Run non-interactive onboarding with provided tokens.
-   * Spawns: node dist/entry.js onboard --non-interactive ...
-   * Uses process.execPath (Electron's bundled Node) as the runtime.
+   * Spawns: node gateway/entry.js onboard --non-interactive ...
+   * Uses process.execPath (Electron's bundled Node) as the runtime with ELECTRON_RUN_AS_NODE=1.
    */
   async runOnboard(data: OnboardSubmitData): Promise<OnboardResult> {
     const entryPath = this.resolveResource("gateway", "entry.js");
@@ -42,12 +92,19 @@ export class OnboardManager {
       "onboard",
       "--non-interactive",
       "--accept-risk",
-      "--auth-choice", "setup-token",
-      "--token", data.anthropicToken,
-      "--gateway-port", "18789",
-      "--gateway-bind", "loopback",
+      "--auth-choice",
+      "token",
+      "--token-provider",
+      "anthropic",
+      "--token",
+      data.anthropicToken,
+      "--gateway-port",
+      "18789",
+      "--gateway-bind",
+      "loopback",
       "--skip-channels",
       "--skip-skills",
+      "--skip-health",
       "--json",
     ];
 
@@ -60,9 +117,18 @@ export class OnboardManager {
         }
       };
 
+      // Resolve bundled plugins directory so onboard can validate config
+      const pluginsDir = app.isPackaged
+        ? path.join(process.resourcesPath, "extensions")
+        : path.join(__dirname, "..", "dist-extensions");
+
       const child = spawn(process.execPath, args, {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: "1",
+          OPENCLAW_BUNDLED_PLUGINS_DIR: pluginsDir,
+        },
         windowsHide: true,
       });
 
@@ -78,10 +144,16 @@ export class OnboardManager {
         done({ success: false, output: err.message });
       });
       child.on("exit", (code) => {
+        const success = code === 0;
         done({
-          success: code === 0,
-          output: code === 0 ? stdout : stderr || `exit code ${code}`,
+          success,
+          output: success ? stdout : stderr || `exit code ${code}`,
         });
+
+        // After successful onboard, ensure Electron-specific config is set
+        if (success) {
+          this.ensureElectronConfig();
+        }
       });
     });
   }

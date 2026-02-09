@@ -13,7 +13,7 @@
     "build": "pnpm build:gateway && pnpm build:electron && pnpm build:installer"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^35.0.0",
     "electron-builder": "^25.1.0",
     "typescript": "^5.7.0"
   }

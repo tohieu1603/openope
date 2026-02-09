@@ -1,7 +1,8 @@
 /**
  * Gateway process manager for Electron desktop app.
  * Spawns Node.js gateway as child process, monitors health via TCP,
- * handles crash recovery with exponential backoff, graceful shutdown.
+ * handles crash recovery with exponential backoff, graceful shutdown,
+ * and captures stdout/stderr to log file for debugging.
  */
 import { spawn, type ChildProcess, execFile } from "node:child_process";
 import { app } from "electron";
@@ -17,6 +18,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 3_000;
 const MAX_BACKOFF_MS = 30_000;
 const BASE_BACKOFF_MS = 1_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
+const MAX_LOG_LINES = 200;
 
 export class GatewayManager {
   private child: ChildProcess | null = null;
@@ -26,6 +28,8 @@ export class GatewayManager {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners: StatusListener[] = [];
   private shuttingDown = false;
+  private logStream: fs.WriteStream | null = null;
+  private recentLogs: string[] = [];
 
   get currentStatus(): GatewayStatus {
     return this.status;
@@ -52,10 +56,52 @@ export class GatewayManager {
     return path.join(base, "entry.js");
   }
 
+  /** Get recent gateway logs (in-memory buffer) */
+  getRecentLogs(): string[] {
+    return [...this.recentLogs];
+  }
+
+  /** Get path to gateway log file */
+  getLogFilePath(): string {
+    return path.join(app.getPath("userData"), "gateway.log");
+  }
+
+  /** Append line to both log file and in-memory buffer */
+  private appendLog(source: string, text: string): void {
+    const line = `[${new Date().toISOString()}] [${source}] ${text}`;
+    this.recentLogs.push(line);
+    if (this.recentLogs.length > MAX_LOG_LINES) {
+      this.recentLogs = this.recentLogs.slice(-MAX_LOG_LINES);
+    }
+    if (this.logStream) {
+      this.logStream.write(line + "\n");
+    }
+  }
+
+  /** Open log file stream for writing */
+  private openLogStream(): void {
+    try {
+      const logPath = this.getLogFilePath();
+      this.logStream = fs.createWriteStream(logPath, { flags: "a" });
+      this.appendLog("system", "--- Gateway starting ---");
+    } catch {
+      // Log directory may not exist yet
+    }
+  }
+
+  /** Close log file stream */
+  private closeLogStream(): void {
+    if (this.logStream) {
+      this.logStream.end();
+      this.logStream = null;
+    }
+  }
+
   /** Start the gateway process. No-op if already running. */
   async start(): Promise<void> {
     if (this.child) return;
     this.shuttingDown = false;
+    this.openLogStream();
     this.spawnGateway();
   }
 
@@ -68,43 +114,65 @@ export class GatewayManager {
     }
 
     this.emit("starting");
+    this.appendLog("system", "Starting gateway process...");
+
+    // Resolve bundled plugins directory
+    const pluginsDir = app.isPackaged
+      ? path.join(process.resourcesPath, "extensions")
+      : path.join(__dirname, "..", "..", "..", "dist-extensions");
 
     const child = spawn(process.execPath, [entryPath, "gateway"], {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
+        // Run Node.js embedded in Electron binary as standalone Node
+        ELECTRON_RUN_AS_NODE: "1",
         // Prevent entry.ts self-respawn loop
         OPENCLAW_NO_RESPAWN: "1",
+        // Point to bundled plugins directory
+        OPENCLAW_BUNDLED_PLUGINS_DIR: pluginsDir,
       },
       windowsHide: true,
     });
 
     this.child = child;
 
-    child.stdout?.on("data", () => {
-      /* gateway stdout - could pipe to log file in future */
+    // Capture stdout
+    child.stdout?.on("data", (chunk: Buffer) => {
+      this.appendLog("stdout", chunk.toString().trimEnd());
     });
-    child.stderr?.on("data", () => {
-      /* gateway stderr - could pipe to log file in future */
+
+    // Capture stderr
+    let lastStderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString().trimEnd();
+      lastStderr = text;
+      this.appendLog("stderr", text);
     });
 
     child.on("error", (err) => {
+      this.appendLog("error", err.message);
       this.child = null;
       this.stopHealthCheck();
       if (!this.shuttingDown) {
-        this.emit("error", err.message);
+        const detail = lastStderr ? `${err.message}: ${lastStderr}` : err.message;
+        this.emit("error", detail);
         this.scheduleRestart();
       }
     });
 
     child.on("exit", (code) => {
+      this.appendLog("exit", `code ${code}`);
       this.child = null;
       this.stopHealthCheck();
       if (this.shuttingDown) {
         this.emit("stopped");
         return;
       }
-      this.emit("error", `Gateway exited with code ${code}`);
+      const detail = lastStderr
+        ? `Gateway exited with code ${code}: ${lastStderr}`
+        : `Gateway exited with code ${code}`;
+      this.emit("error", detail);
       this.scheduleRestart();
     });
 
@@ -142,6 +210,7 @@ export class GatewayManager {
         .then((ok) => {
           if (ok && this.status !== "running") {
             this.restartCount = 0;
+            this.appendLog("health", "Gateway is healthy");
             this.emit("running");
           }
         })
@@ -162,6 +231,7 @@ export class GatewayManager {
 
     const delay = Math.min(BASE_BACKOFF_MS * 2 ** this.restartCount, MAX_BACKOFF_MS);
     this.restartCount++;
+    this.appendLog("system", `Scheduling restart in ${delay}ms (attempt ${this.restartCount})`);
 
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -175,6 +245,7 @@ export class GatewayManager {
   async stop(): Promise<void> {
     this.shuttingDown = true;
     this.stopHealthCheck();
+    this.closeLogStream();
 
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);

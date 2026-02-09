@@ -71,11 +71,8 @@ describe("Types and Constants", () => {
       };
       expect(data1.anthropicToken).toBeDefined();
 
-      const data2: OnboardSubmitData = {
-        anthropicToken: "sk-ant-test",
-        cfTunnelToken: "eyJ..."
-      };
-      expect(data2.cfTunnelToken).toBeDefined();
+      // cfTunnelToken was removed from OnboardSubmitData interface
+      // It's now handled separately in onboard-complete IPC event
     });
   });
 
