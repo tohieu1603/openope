@@ -18,7 +18,8 @@
     "nav content";
   gap: 0;
   animation: dashboard-enter 0.4s var(--ease-out);
-  transition: grid-template-columns var(--shell-focus-duration) var(--shell-focus-ease);
+  transition: grid-template-columns var(--shell-focus-duration)
+    var(--shell-focus-ease);
   overflow: hidden;
 }
 
@@ -159,6 +160,97 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
+}
+
+/* Token usage indicator in header */
+.topbar-token {
+  position: relative;
+}
+.topbar-token-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.topbar-token-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--card);
+}
+.topbar-token-circle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.topbar-token-circle svg {
+  width: 28px;
+  height: 28px;
+  transform: rotate(-90deg);
+}
+.topbar-token-circle-bg {
+  fill: none;
+  stroke-width: 3;
+}
+.topbar-token-circle-fg {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition:
+    stroke-dashoffset 0.5s ease,
+    stroke 0.3s;
+}
+.topbar-token-pct {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Dropdown panel */
+.topbar-token-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 50;
+  animation: topbar-dropdown-in 0.15s ease-out;
+}
+.topbar-token-dropdown.open {
+  display: block;
+}
+@keyframes topbar-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.topbar-token-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.topbar-token-label {
+  color: var(--muted);
+}
+.topbar-token-value {
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ===========================================
