@@ -1,6 +1,46 @@
 import { html, nothing } from "lit";
+import flatpickr from "flatpickr";
+import "flatpickr/dist/flatpickr.min.css";
 import { icons } from "../icons";
 import type { DailyUsage, TypeUsage, UsageStats } from "../analytics-api";
+
+const Vietnamese: flatpickr.CustomLocale = {
+  weekdays: { shorthand: ["CN", "T2", "T3", "T4", "T5", "T6", "T7"], longhand: ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"] },
+  months: { shorthand: ["Th1", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7", "Th8", "Th9", "Th10", "Th11", "Th12"], longhand: ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"] },
+  firstDayOfWeek: 1,
+  rangeSeparator: " đến ",
+};
+
+// Module-level ref to avoid stale closure in flatpickr onChange
+let _onRangeChange: ((start: string, end: string) => void) | null = null;
+
+function toISO(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function initDatePicker(el: HTMLElement, isStart: boolean) {
+  if ((el as any)._flatpickr) {
+    (el as any)._flatpickr.open();
+    return;
+  }
+  const fp = flatpickr(el, {
+    locale: Vietnamese,
+    dateFormat: "d/m/Y",
+    maxDate: "today",
+    onChange: ([date]) => {
+      if (!date) return;
+      const iso = toISO(date);
+      // Read the other picker's selected date from DOM
+      const container = el.closest(".date-range-picker");
+      const otherEl = container?.querySelector(isStart ? ".fp-end" : ".fp-start") as any;
+      const otherDate = otherEl?._flatpickr?.selectedDates[0];
+      const otherIso = otherDate ? toISO(otherDate) : "";
+      if (isStart) _onRangeChange?.(iso, otherIso);
+      else _onRangeChange?.(otherIso, iso);
+    },
+  });
+  fp.open();
+}
 
 export interface AnalyticsProps {
   loading?: boolean;
@@ -16,8 +56,12 @@ export interface AnalyticsProps {
   // Type breakdown (chat, cronjob, api)
   typeUsage?: TypeUsage[];
   // Period selection
-  selectedPeriod?: "7d" | "30d" | "90d";
-  onPeriodChange?: (period: "7d" | "30d" | "90d") => void;
+  selectedPeriod?: "1d" | "7d" | "30d" | "90d" | "custom";
+  onPeriodChange?: (period: "1d" | "7d" | "30d" | "90d" | "custom") => void;
+  // Custom date range
+  rangeStart?: string;
+  rangeEnd?: string;
+  onRangeChange?: (start: string, end: string) => void;
   // Refresh
   onRefresh?: () => void;
 }
@@ -183,6 +227,9 @@ function renderDonutChart(types: TypeUsage[]) {
 }
 
 export function renderAnalytics(props: AnalyticsProps) {
+  // Update module-level ref so flatpickr onChange always calls the latest callback
+  _onRangeChange = props.onRangeChange ?? null;
+
   const loading = props.loading ?? false;
   const error = props.error ?? null;
   const tokenBalance = props.tokenBalance ?? 0;
@@ -243,6 +290,31 @@ export function renderAnalytics(props: AnalyticsProps) {
         background: var(--card);
         color: var(--text-strong);
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .date-range-picker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .date-input {
+        padding: 7px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        color: var(--text);
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.2s ease;
+        width: 120px;
+      }
+      .date-input:focus, .date-input.active {
+        border-color: var(--accent);
+      }
+      .date-range-sep {
+        color: var(--muted);
+        font-size: 14px;
       }
       .refresh-btn {
         display: flex;
@@ -394,6 +466,47 @@ export function renderAnalytics(props: AnalyticsProps) {
       .stat-sub span {
         color: var(--text);
         font-weight: 500;
+      }
+
+      /* Custom tooltip for stat values */
+      [data-tooltip] {
+        position: relative;
+        cursor: default;
+      }
+      [data-tooltip]::before,
+      [data-tooltip]::after {
+        position: absolute;
+        left: 50%;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+      }
+      [data-tooltip]::after {
+        content: attr(data-tooltip);
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%) translateY(4px);
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        background: var(--text-strong, #1a1a2e);
+        color: var(--bg, #fff);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10;
+      }
+      [data-tooltip]::before {
+        content: "";
+        bottom: calc(100% + 2px);
+        transform: translateX(-50%) translateY(4px);
+        border: 5px solid transparent;
+        border-top-color: var(--text-strong, #1a1a2e);
+        z-index: 10;
+      }
+      [data-tooltip]:hover::before,
+      [data-tooltip]:hover::after {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
       }
 
       /* Charts Row */
@@ -721,6 +834,100 @@ export function renderAnalytics(props: AnalyticsProps) {
         0% { background-position: 200% 0; }
         100% { background-position: -200% 0; }
       }
+
+      /* Flatpickr theme overrides */
+      .flatpickr-calendar {
+        background: var(--card, #fff);
+        border: 1px solid var(--border, #e5e7eb);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        font-family: inherit;
+      }
+      .flatpickr-calendar.arrowTop::before,
+      .flatpickr-calendar.arrowTop::after { display: none; }
+      .flatpickr-months {
+        padding: 8px 4px 0;
+      }
+      .flatpickr-months .flatpickr-month {
+        background: transparent;
+        color: var(--text-strong, #1a1a2e);
+        fill: var(--text-strong, #1a1a2e);
+        height: 36px;
+      }
+      .flatpickr-months .flatpickr-prev-month,
+      .flatpickr-months .flatpickr-next-month {
+        fill: var(--muted, #9ca3af);
+        padding: 6px 10px;
+      }
+      .flatpickr-months .flatpickr-prev-month:hover,
+      .flatpickr-months .flatpickr-next-month:hover {
+        fill: var(--text, #374151);
+      }
+      .flatpickr-current-month {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-strong, #1a1a2e);
+      }
+      .flatpickr-current-month .flatpickr-monthDropdown-months {
+        background: transparent;
+        color: var(--text-strong, #1a1a2e);
+        font-weight: 600;
+      }
+      .flatpickr-current-month input.cur-year {
+        color: var(--text-strong, #1a1a2e);
+        font-weight: 600;
+      }
+      span.flatpickr-weekday {
+        background: transparent;
+        color: var(--muted, #9ca3af);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .flatpickr-day {
+        color: var(--text, #374151);
+        border-radius: 8px;
+        font-size: 13px;
+        border: none;
+        max-width: 36px;
+        height: 36px;
+        line-height: 36px;
+      }
+      .flatpickr-day:hover {
+        background: var(--secondary, #f3f4f6);
+        border: none;
+      }
+      .flatpickr-day.today {
+        border: 1px solid var(--accent, #3b82f6);
+        color: var(--accent, #3b82f6);
+        font-weight: 600;
+      }
+      .flatpickr-day.today:hover {
+        background: var(--accent, #3b82f6);
+        color: #fff;
+      }
+      .flatpickr-day.selected {
+        background: var(--accent, #3b82f6);
+        color: #fff;
+        border: none;
+        font-weight: 600;
+      }
+      .flatpickr-day.selected:hover {
+        background: var(--accent, #3b82f6);
+        filter: brightness(1.1);
+      }
+      .flatpickr-day.flatpickr-disabled,
+      .flatpickr-day.flatpickr-disabled:hover {
+        color: var(--muted, #9ca3af);
+        opacity: 0.4;
+      }
+      .flatpickr-day.prevMonthDay,
+      .flatpickr-day.nextMonthDay {
+        color: var(--muted, #9ca3af);
+        opacity: 0.5;
+      }
+      .flatpickr-innerContainer {
+        padding: 4px 8px 8px;
+      }
     </style>
 
     <div class="analytics-layout">
@@ -733,6 +940,12 @@ export function renderAnalytics(props: AnalyticsProps) {
       <div class="analytics-header">
         <div class="header-actions">
           <div class="period-selector">
+            <button
+              class="period-btn ${selectedPeriod === "1d" ? "active" : ""}"
+              @click=${() => props.onPeriodChange?.("1d")}
+            >
+              Hôm nay
+            </button>
             <button
               class="period-btn ${selectedPeriod === "7d" ? "active" : ""}"
               @click=${() => props.onPeriodChange?.("7d")}
@@ -751,7 +964,32 @@ export function renderAnalytics(props: AnalyticsProps) {
             >
               90 ngày
             </button>
+            <button
+              class="period-btn ${selectedPeriod === "custom" ? "active" : ""}"
+              @click=${() => props.onPeriodChange?.("custom")}
+            >
+              Tùy chỉnh
+            </button>
           </div>
+          ${selectedPeriod === "custom" ? html`
+            <div class="date-range-picker">
+              <input
+                type="text"
+                class="date-input fp-start"
+                placeholder="Từ ngày"
+                readonly
+                @click=${(e: Event) => initDatePicker(e.target as HTMLElement, true)}
+              />
+              <span class="date-range-sep">→</span>
+              <input
+                type="text"
+                class="date-input fp-end"
+                placeholder="Đến ngày"
+                readonly
+                @click=${(e: Event) => initDatePicker(e.target as HTMLElement, false)}
+              />
+            </div>
+          ` : nothing}
           <button class="refresh-btn" @click=${() => props.onRefresh?.()} title="Làm mới">
             ${icons.refresh}
           </button>
@@ -765,7 +1003,7 @@ export function renderAnalytics(props: AnalyticsProps) {
           </div>
           <div class="stat-content">
             <span class="stat-label">Số dư hiện tại</span>
-            <span class="stat-value">${formatNumber(tokenBalance)}</span>
+            <span class="stat-value" data-tooltip="${tokenBalance.toLocaleString("vi-VN")} tokens">${formatNumber(tokenBalance)}</span>
             <span class="stat-sub">tokens khả dụng</span>
           </div>
         </div>
@@ -784,7 +1022,7 @@ export function renderAnalytics(props: AnalyticsProps) {
           </div>
           <div class="stat-content">
             <span class="stat-label">Đã sử dụng</span>
-            <span class="stat-value">${formatNumber(stats?.totalTokens ?? 0)}</span>
+            <span class="stat-value" data-tooltip="${(stats?.totalTokens ?? 0).toLocaleString("vi-VN")} tokens">${formatNumber(stats?.totalTokens ?? 0)}</span>
             <span class="stat-sub">tokens trong kỳ</span>
           </div>
         </div>
@@ -803,7 +1041,7 @@ export function renderAnalytics(props: AnalyticsProps) {
           </div>
           <div class="stat-content">
             <span class="stat-label">Tổng yêu cầu</span>
-            <span class="stat-value">${formatNumber(stats?.totalRequests ?? 0)}</span>
+            <span class="stat-value" data-tooltip="${(stats?.totalRequests ?? 0).toLocaleString("vi-VN")} lượt">${formatNumber(stats?.totalRequests ?? 0)}</span>
             <span class="stat-sub">lượt gọi API</span>
           </div>
         </div>
@@ -814,9 +1052,9 @@ export function renderAnalytics(props: AnalyticsProps) {
           </div>
           <div class="stat-content">
             <span class="stat-label">Input / Output</span>
-            <span class="stat-value">${formatNumber(stats?.inputTokens ?? 0)}</span>
+            <span class="stat-value" data-tooltip="${(stats?.inputTokens ?? 0).toLocaleString("vi-VN")} tokens">${formatNumber(stats?.inputTokens ?? 0)}</span>
             <span class="stat-sub">
-              Output: <span>${formatNumber(stats?.outputTokens ?? 0)}</span>
+              Output: <span data-tooltip="${(stats?.outputTokens ?? 0).toLocaleString("vi-VN")} tokens">${formatNumber(stats?.outputTokens ?? 0)}</span>
             </span>
           </div>
         </div>

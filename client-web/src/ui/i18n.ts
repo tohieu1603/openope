@@ -48,6 +48,12 @@ export const translations = {
   chatTeachMe: "Dạy tôi về",
   chatPlanDay: "Giúp tôi lên kế hoạch",
 
+  // Chat sidebar
+  chatSidebarTitle: "Hội thoại",
+  chatSidebarNew: "Cuộc hội thoại mới",
+  chatSidebarEmpty: "Chưa có hội thoại nào",
+  chatSidebarNoPreview: "Cuộc hội thoại trống",
+
   // Workflow
   workflowTitle: "Luồng Công Việc",
   workflowSubtitle: "Tự động hóa công việc với AI",
