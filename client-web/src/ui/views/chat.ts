@@ -3,6 +3,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import { icons } from "../icons";
 import { t } from "../i18n";
+import type { Conversation } from "../chat-api";
 
 // Configure marked for safe inline rendering
 marked.setOptions({
@@ -32,8 +33,18 @@ export interface ChatProps {
   streamingText?: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  onStop: () => void;
   onLoginClick: () => void;
   onScroll?: (e: Event) => void;
+  // Sidebar props
+  conversations?: Conversation[];
+  conversationsLoading?: boolean;
+  currentConversationId?: string | null;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onNewConversation?: () => void;
+  onSwitchConversation?: (id: string) => void;
+  onDeleteConversation?: (id: string) => void;
 }
 
 function formatTime(timestamp?: string | Date): string {
@@ -100,8 +111,17 @@ export function renderChat(props: ChatProps) {
     streamingText = "",
     onDraftChange,
     onSend,
+    onStop,
     onLoginClick,
     onScroll,
+    conversations = [],
+    conversationsLoading = false,
+    currentConversationId = null,
+    sidebarCollapsed = false,
+    onToggleSidebar,
+    onNewConversation,
+    onSwitchConversation,
+    onDeleteConversation,
   } = props;
   const isEmpty = messages.length === 0;
   const displayName = username || "Bạn";
@@ -136,17 +156,176 @@ export function renderChat(props: ChatProps) {
 
   return html`
     <style>
-      /* Full-width Chat Container - fill parent completely */
+      /* Full-width Chat Container - grid with sidebar + main */
       .gc-wrapper {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 280px 1fr;
         background: var(--bg);
         overflow: hidden;
+        transition: grid-template-columns 0.2s ease;
+      }
+      .gc-wrapper.gc-sidebar-collapsed {
+        grid-template-columns: 0px 1fr;
+      }
+      .gc-main {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* Sidebar */
+      .gc-sidebar {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        background: var(--bg);
+        overflow: hidden;
+        min-width: 0;
+        transition: opacity 0.2s ease;
+      }
+      .gc-sidebar-collapsed .gc-sidebar {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .gc-sidebar-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .gc-sidebar-title {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-strong);
+      }
+      .gc-sidebar-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-md, 8px);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .gc-sidebar-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text);
+      }
+      .gc-sidebar-btn svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5;
+      }
+      .gc-sidebar-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      .gc-sidebar-list::-webkit-scrollbar { width: 6px; }
+      .gc-sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+      .gc-sidebar-empty {
+        padding: 24px 16px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      /* Conversation item */
+      .gc-conv-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: var(--radius-md, 8px);
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.15s ease;
+      }
+      .gc-conv-item:hover { background: var(--bg-hover); }
+      .gc-conv-item--active {
+        background: var(--accent-subtle);
+        border-color: var(--accent-subtle);
+      }
+      .gc-conv-item-content { flex: 1; min-width: 0; }
+      .gc-conv-item-preview {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .gc-conv-item--active .gc-conv-item-preview { color: var(--text-strong); }
+      .gc-conv-item-meta {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .gc-conv-item-delete {
+        width: 28px;
+        height: 28px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-md, 8px);
+        color: var(--muted);
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .gc-conv-item:hover .gc-conv-item-delete { display: flex; }
+      .gc-conv-item-delete:hover { background: var(--destructive, #dc2626); color: white; }
+      .gc-conv-item-delete svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+      /* Open sidebar button (shown when collapsed) */
+      .gc-sidebar-open-btn {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        width: 32px;
+        height: 32px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md, 8px);
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .gc-sidebar-open-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+      .gc-sidebar-open-btn:hover { background: var(--bg-hover); color: var(--text); }
+      .gc-sidebar-collapsed .gc-sidebar-open-btn { display: flex; }
+
+      @media (max-width: 768px) {
+        .gc-wrapper { grid-template-columns: 1fr; }
+        .gc-sidebar {
+          position: fixed;
+          top: 0; left: 0; bottom: 0;
+          width: 220px;
+          z-index: 50;
+          box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+          transition: transform 0.25s ease;
+        }
+        .gc-sidebar-collapsed .gc-sidebar { transform: translateX(-100%); opacity: 1; pointer-events: auto; }
+        .gc-sidebar-collapsed .gc-sidebar-open-btn { display: flex; }
       }
 
       /* Empty State - Gemini Style */
@@ -345,6 +524,33 @@ export function renderChat(props: ChatProps) {
         stroke-width: 2;
       }
 
+      .gc-stop-btn {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--destructive, #dc2626);
+        border: none;
+        border-radius: 50%;
+        color: white;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        animation: gc-stop-pop 0.2s ease-out;
+      }
+      .gc-stop-btn:hover {
+        background: var(--destructive-hover, #b91c1c);
+        transform: scale(1.05);
+      }
+      .gc-stop-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      @keyframes gc-stop-pop {
+        from { transform: scale(0.8); opacity: 0.5; }
+        to { transform: scale(1); opacity: 1; }
+      }
+
       /* Suggestions */
       .gc-suggestions {
         display: flex;
@@ -401,6 +607,8 @@ export function renderChat(props: ChatProps) {
         position: relative;
         height: 100%;
         overflow-y: auto;
+        overflow-x: hidden;
+        overflow-anchor: none;
         padding: 24px;
         padding-top: 24px;
         padding-bottom: 24px;
@@ -447,7 +655,6 @@ export function renderChat(props: ChatProps) {
       .gc-scroll-spacer {
         flex-shrink: 0;
         height: 0;
-        transition: height 0.15s ease-out;
       }
 
       .gc-avatar {
@@ -691,7 +898,7 @@ export function renderChat(props: ChatProps) {
         text-align: center;
         font-size: 12px;
         color: var(--muted);
-        margin-top: 12px;
+        margin-top: 8px;
       }
 
       /* Loading Skeleton */
@@ -785,7 +992,47 @@ export function renderChat(props: ChatProps) {
       }
     </style>
 
-    <div class="gc-wrapper">
+    <div class="gc-wrapper ${sidebarCollapsed ? 'gc-sidebar-collapsed' : ''}">
+      <!-- Sidebar -->
+      <aside class="gc-sidebar">
+        <div class="gc-sidebar-header">
+          <button class="gc-sidebar-btn" @click=${onToggleSidebar} title="Thu gọn">
+            ${icons.panelLeft}
+          </button>
+          <span class="gc-sidebar-title">${t("chatSidebarTitle")}</span>
+          <button class="gc-sidebar-btn" @click=${onNewConversation} title="${t("chatSidebarNew")}">
+            ${icons.messageSquarePlus}
+          </button>
+        </div>
+        <div class="gc-sidebar-list">
+          ${conversationsLoading
+            ? html`${[1,2,3,4].map(() => html`<div class="gc-skeleton" style="height:52px;border-radius:8px;margin-bottom:8px"></div>`)}`
+            : conversations.length === 0
+              ? html`<div class="gc-sidebar-empty">${t("chatSidebarEmpty")}</div>`
+              : conversations.map((conv) => html`
+                  <div
+                    class="gc-conv-item ${conv.conversation_id === currentConversationId ? 'gc-conv-item--active' : ''}"
+                    @click=${() => onSwitchConversation?.(conv.conversation_id)}
+                  >
+                    <div class="gc-conv-item-content">
+                      <div class="gc-conv-item-preview">${conv.last_message ? conv.last_message.slice(0, 60).replace(/\n/g, " ") : t("chatSidebarNoPreview")}</div>
+                      <div class="gc-conv-item-meta">${formatTime(conv.created_at)}</div>
+                    </div>
+                    <button
+                      class="gc-conv-item-delete"
+                      @click=${(e: Event) => { e.stopPropagation(); onDeleteConversation?.(conv.conversation_id); }}
+                      title="Xóa"
+                    >${icons.trash}</button>
+                  </div>
+                `)}
+        </div>
+      </aside>
+
+      <!-- Main chat area -->
+      <div class="gc-main">
+        <button class="gc-sidebar-open-btn" @click=${onToggleSidebar} title="Mở sidebar">
+          ${icons.panelLeft}
+        </button>
       ${loading
         ? html`
             <!-- Loading Skeleton -->
@@ -993,15 +1240,24 @@ export function renderChat(props: ChatProps) {
                         >
                           ${icons.mic}
                         </button>
-                        <button
-                          type="button"
-                          class="gc-send-btn"
-                          @click=${handleSendClick}
-                          ?disabled=${!draft.trim() || sending}
-                          title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
-                        >
-                          ${icons.arrowUp}
-                        </button>
+                        ${sending
+                          ? html`<button
+                              type="button"
+                              class="gc-stop-btn"
+                              @click=${onStop}
+                              title="Dừng"
+                            >
+                              ${icons.stop}
+                            </button>`
+                          : html`<button
+                              type="button"
+                              class="gc-send-btn"
+                              @click=${handleSendClick}
+                              ?disabled=${!draft.trim()}
+                              title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
+                            >
+                              ${icons.arrowUp}
+                            </button>`}
                       </div>
                     </div>
                   </div>
@@ -1009,6 +1265,7 @@ export function renderChat(props: ChatProps) {
                 <p class="gc-disclaimer">${t("chatDisclaimer")}</p>
               </div>
             `}
+      </div>
     </div>
   `;
 }

@@ -2,15 +2,23 @@ import { html, nothing } from "lit";
 import { icons } from "../icons";
 import type { PricingTier, DepositOrder } from "../deposits-api";
 
+export type PaymentMode = "tier" | "amount";
+
 export interface BillingProps {
   // Balance
   creditBalance?: number;
+  // Payment mode: select tier or enter custom amount
+  paymentMode?: PaymentMode;
+  onPaymentModeChange?: (mode: PaymentMode) => void;
   // Pricing tiers from API
   pricingTiers?: PricingTier[];
   pricingLoading?: boolean;
   // Package selection
   selectedPackage?: number;
   onSelectPackage?: (index: number) => void;
+  // Custom amount
+  customAmount?: string;
+  onCustomAmountChange?: (value: string) => void;
   // Buy Tokens / QR Payment
   onBuyTokens?: () => void;
   buyLoading?: boolean;
@@ -135,9 +143,11 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 
 export function renderBilling(props: BillingProps) {
   const creditBalance = props.creditBalance ?? 0;
+  const paymentMode = props.paymentMode ?? "tier";
   const pricingTiers = props.pricingTiers ?? [];
   const pricingLoading = props.pricingLoading ?? false;
   const selectedPackage = props.selectedPackage ?? 0;
+  const customAmount = props.customAmount ?? "";
   const autoTopUp = props.autoTopUp ?? false;
   const apiKeys = props.apiKeys ?? [];
   const showCreateKeyModal = props.showCreateKeyModal ?? false;
@@ -490,13 +500,25 @@ export function renderBilling(props: BillingProps) {
         flex-direction: column;
         gap: 12px;
         padding: 16px;
+        padding-left: 20px;
         background: var(--bg);
         border-radius: var(--radius-md);
         border: 1px solid var(--border);
+        border-left: 3px solid var(--border);
         transition: border-color 0.15s;
       }
       .history-item:hover {
         border-color: var(--border-strong);
+      }
+      .history-item.item-completed {
+        border-left-color: #16a34a;
+      }
+      .history-item.item-pending {
+        border-left-color: #d97706;
+      }
+      .history-item.item-cancelled,
+      .history-item.item-expired {
+        border-left-color: var(--danger, #dc2626);
       }
       .history-item-main {
         display: flex;
@@ -539,24 +561,32 @@ export function renderBilling(props: BillingProps) {
       .history-tokens {
         font-size: 15px;
         font-weight: 700;
-        color: var(--accent);
+        color: #16a34a;
+      }
+      .history-tokens.tokens-pending {
+        color: #d97706;
+      }
+      .history-tokens.tokens-error {
+        color: var(--muted);
+        text-decoration: line-through;
       }
       .history-status {
         font-size: 12px;
-        padding: 4px 8px;
+        font-weight: 600;
+        padding: 4px 10px;
         border-radius: var(--radius-sm);
       }
       .status-pending {
-        background: var(--warning-subtle, #fef3c7);
-        color: var(--warning, #d97706);
+        background: #fef3c7;
+        color: #92400e;
       }
       .status-success {
-        background: var(--success-subtle, #dcfce7);
-        color: var(--success, #16a34a);
+        background: #dcfce7;
+        color: #166534;
       }
       .status-error {
-        background: var(--danger-subtle, #fee2e2);
-        color: var(--danger, #dc2626);
+        background: #fee2e2;
+        color: #991b1b;
       }
       .history-item-footer {
         display: flex;
@@ -572,16 +602,16 @@ export function renderBilling(props: BillingProps) {
         padding: 6px 12px;
         font-size: 12px;
         font-weight: 500;
-        color: var(--accent);
+        color: var(--text);
         background: transparent;
-        border: 1px solid var(--accent);
+        border: 1px solid var(--border);
         border-radius: var(--radius-sm);
         cursor: pointer;
         transition: all 0.15s;
       }
       .history-detail-btn:hover {
-        background: var(--accent);
-        color: var(--accent-foreground);
+        background: var(--secondary);
+        border-color: var(--border-strong);
       }
       .history-detail-btn svg {
         width: 14px;
@@ -1356,6 +1386,64 @@ export function renderBilling(props: BillingProps) {
         padding: 40px;
         color: var(--muted);
       }
+      .payment-mode-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+      .payment-mode-tab {
+        flex: 1;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        background: var(--bg);
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-align: center;
+      }
+      .payment-mode-tab:not(:last-child) {
+        border-right: 1px solid var(--border);
+      }
+      .payment-mode-tab.active {
+        background: var(--accent);
+        color: var(--accent-foreground);
+        font-weight: 600;
+      }
+      .payment-mode-tab:hover:not(.active) {
+        background: var(--bg-hover);
+        color: var(--text);
+      }
+      .custom-amount-input {
+        width: 100%;
+        padding: 14px 16px;
+        font-size: 18px;
+        font-weight: 600;
+        background: var(--bg);
+        border: 2px solid var(--border);
+        border-radius: var(--radius-md);
+        color: var(--text-strong);
+        outline: none;
+        transition: border-color 0.15s;
+        box-sizing: border-box;
+      }
+      .custom-amount-input:focus {
+        border-color: var(--accent);
+      }
+      .custom-amount-input::placeholder {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 14px;
+      }
+      .custom-amount-hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
     </style>
 
     <div class="billing-layout">
@@ -1535,104 +1623,168 @@ export function renderBilling(props: BillingProps) {
                   </div>
                 `
               : html`
-                  <!-- Chọn gói khi chưa có đơn pending -->
-                  <div class="form-label" style="margin-bottom: 12px;">
-                    Chọn Gói
+                  <!-- Payment mode tabs -->
+                  <div class="payment-mode-tabs">
+                    <button
+                      class="payment-mode-tab ${paymentMode === "tier" ? "active" : ""}"
+                      @click=${() => props.onPaymentModeChange?.("tier")}
+                    >
+                      Chọn Gói
+                    </button>
+                    <button
+                      class="payment-mode-tab ${paymentMode === "amount" ? "active" : ""}"
+                      @click=${() => props.onPaymentModeChange?.("amount")}
+                    >
+                      Nhập Số Tiền
+                    </button>
                   </div>
-                  ${pricingLoading
+
+                  ${paymentMode === "tier"
                     ? html`
-                        <div class="packages-grid">
-                          ${[1, 2, 3].map(
-                            () => html`
-                              <div
-                                class="loading-skeleton"
-                                style="height: 100px;"
-                              ></div>
-                            `,
-                          )}
-                        </div>
-                      `
-                    : pricingTiers.length === 0
-                      ? html`
-                          <div class="history-empty">Không có gói nào</div>
-                        `
-                      : html`
-                          <div class="packages-grid">
-                            ${pricingTiers.map(
-                              (tier, i) => html`
-                                <div
-                                  class="package-card ${selectedPackage === i
-                                    ? "selected"
-                                    : ""} ${tier.popular ? "popular" : ""}"
-                                  @click=${() => props.onSelectPackage?.(i)}
-                                >
-                                  ${tier.popular
-                                    ? html`<div class="package-badge">
-                                        PHỔ BIẾN
-                                      </div>`
-                                    : nothing}
-                                  <div class="package-name">${tier.name}</div>
-                                  <div class="package-price">
-                                    ${formatVND(tier.price)}
-                                  </div>
-                                  <div class="package-tokens">
-                                    ${formatNumber(tier.tokens)} tokens
-                                  </div>
-                                  ${tier.bonus > 0
-                                    ? html`<div class="package-bonus">
-                                        +${formatNumber(tier.bonus)} bonus
-                                      </div>`
-                                    : nothing}
-                                </div>
-                              `,
-                            )}
-                          </div>
-                        `}
-                  ${selectedTier
-                    ? html`
-                        <div class="order-summary">
-                          <div class="order-summary-title">
-                            Tóm tắt đơn hàng
-                          </div>
-                          <div class="order-summary-row">
-                            <span class="order-summary-label"
-                              >Bạn sẽ nhận được</span
-                            >
-                            <span class="order-summary-tokens"
-                              >${formatNumber(
-                                selectedTier.tokens + selectedTier.bonus,
-                              )}
-                              tokens</span
-                            >
-                          </div>
-                          <div class="order-summary-row">
-                            <span class="order-summary-label"
-                              >Phương thức thanh toán</span
-                            >
-                            <div class="payment-method-badge">
-                              ${icons.qrCode}
-                              <div class="payment-method-info">
-                                <span class="payment-method-name"
-                                  >QR Ngân hàng</span
-                                >
-                                <span class="payment-method-desc"
-                                  >Quét mã QR để chuyển khoản</span
-                                >
+                        ${pricingLoading
+                          ? html`
+                              <div class="packages-grid">
+                                ${[1, 2, 3].map(
+                                  () => html`
+                                    <div
+                                      class="loading-skeleton"
+                                      style="height: 100px;"
+                                    ></div>
+                                  `,
+                                )}
                               </div>
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          class="buy-btn"
-                          ?disabled=${buyLoading}
-                          @click=${() => props.onBuyTokens?.()}
-                        >
-                          ${buyLoading
-                            ? html`<span>Đang xử lý...</span>`
-                            : html`${icons.qrCode} Mua Tokens`}
-                        </button>
+                            `
+                          : pricingTiers.length === 0
+                            ? html`
+                                <div class="history-empty">Không có gói nào</div>
+                              `
+                            : html`
+                                <div class="packages-grid">
+                                  ${pricingTiers.map(
+                                    (tier, i) => html`
+                                      <div
+                                        class="package-card ${selectedPackage === i
+                                          ? "selected"
+                                          : ""} ${tier.popular ? "popular" : ""}"
+                                        @click=${() => props.onSelectPackage?.(i)}
+                                      >
+                                        ${tier.popular
+                                          ? html`<div class="package-badge">
+                                              PHỔ BIẾN
+                                            </div>`
+                                          : nothing}
+                                        <div class="package-name">${tier.name}</div>
+                                        <div class="package-price">
+                                          ${formatVND(tier.price)}
+                                        </div>
+                                        <div class="package-tokens">
+                                          ${formatNumber(tier.tokens)} tokens
+                                        </div>
+                                        ${tier.bonus > 0
+                                          ? html`<div class="package-bonus">
+                                              +${formatNumber(tier.bonus)} bonus
+                                            </div>`
+                                          : nothing}
+                                      </div>
+                                    `,
+                                  )}
+                                </div>
+                              `}
+                        ${selectedTier
+                          ? html`
+                              <div class="order-summary">
+                                <div class="order-summary-title">
+                                  Tóm tắt đơn hàng
+                                </div>
+                                <div class="order-summary-row">
+                                  <span class="order-summary-label"
+                                    >Bạn sẽ nhận được</span
+                                  >
+                                  <span class="order-summary-tokens"
+                                    >${formatNumber(
+                                      selectedTier.tokens + selectedTier.bonus,
+                                    )}
+                                    tokens</span
+                                  >
+                                </div>
+                                <div class="order-summary-row">
+                                  <span class="order-summary-label"
+                                    >Phương thức thanh toán</span
+                                  >
+                                  <div class="payment-method-badge">
+                                    ${icons.qrCode}
+                                    <div class="payment-method-info">
+                                      <span class="payment-method-name"
+                                        >QR Ngân hàng</span
+                                      >
+                                      <span class="payment-method-desc"
+                                        >Quét mã QR để chuyển khoản</span
+                                      >
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                class="buy-btn"
+                                ?disabled=${buyLoading}
+                                @click=${() => props.onBuyTokens?.()}
+                              >
+                                ${buyLoading
+                                  ? html`<span>Đang xử lý...</span>`
+                                  : html`${icons.qrCode} Mua Tokens`}
+                              </button>
+                            `
+                          : nothing}
                       `
-                    : nothing}
+                    : html`
+                        <!-- Custom amount input -->
+                        <div class="form-label" style="margin-bottom: 8px;">Số tiền (VNĐ)</div>
+                        <input
+                          type="text"
+                          inputmode="numeric"
+                          class="custom-amount-input"
+                          placeholder="Nhập số tiền, VD: 100000"
+                          .value=${customAmount}
+                          @input=${(e: Event) => {
+                            const raw = (e.target as HTMLInputElement).value.replace(/[^\d]/g, "");
+                            props.onCustomAmountChange?.(raw);
+                          }}
+                        />
+                        ${customAmount
+                          ? html`<div class="custom-amount-hint">${formatVND(Number(customAmount))}</div>`
+                          : html`<div class="custom-amount-hint">Nhập số tiền bạn muốn nạp</div>`}
+
+                        ${Number(customAmount) > 0
+                          ? html`
+                              <div class="order-summary">
+                                <div class="order-summary-title">Tóm tắt đơn hàng</div>
+                                <div class="order-summary-row">
+                                  <span class="order-summary-label">Số tiền</span>
+                                  <span class="order-summary-tokens">${formatVND(Number(customAmount))}</span>
+                                </div>
+                                <div class="order-summary-row">
+                                  <span class="order-summary-label">Phương thức thanh toán</span>
+                                  <div class="payment-method-badge">
+                                    ${icons.qrCode}
+                                    <div class="payment-method-info">
+                                      <span class="payment-method-name">QR Ngân hàng</span>
+                                      <span class="payment-method-desc">Quét mã QR để chuyển khoản</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                class="buy-btn"
+                                ?disabled=${buyLoading}
+                                @click=${() => props.onBuyTokens?.()}
+                              >
+                                ${buyLoading
+                                  ? html`<span>Đang xử lý...</span>`
+                                  : html`${icons.qrCode} Mua Tokens`}
+                              </button>
+                            `
+                          : nothing}
+                      `}
                 `}
           </div>
         </div>
@@ -1687,7 +1839,7 @@ export function renderBilling(props: BillingProps) {
                   <div class="history-list">
                     ${depositHistory.map(
                       (deposit) => html`
-                        <div class="history-item">
+                        <div class="history-item item-${deposit.status}">
                           <div class="history-item-main">
                             <div class="history-info">
                               <div class="history-order-code">${deposit.orderCode}</div>
@@ -1705,8 +1857,8 @@ export function renderBilling(props: BillingProps) {
                                 )}"
                                 >${getStatusLabel(deposit.status)}</span
                               >
-                              <div class="history-tokens">
-                                +${formatNumber(deposit.tokens)} tokens
+                              <div class="history-tokens ${deposit.status === "pending" ? "tokens-pending" : deposit.status === "cancelled" || deposit.status === "expired" ? "tokens-error" : ""}">
+                                ${deposit.status === "cancelled" || deposit.status === "expired" ? "" : "+"}${formatNumber(deposit.tokens)} tokens
                               </div>
                             </div>
                           </div>

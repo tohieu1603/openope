@@ -28,6 +28,8 @@ export interface AuthUser {
   name: string;
   role: string;
   token_balance: number;
+  gateway_url?: string;
+  gateway_token?: string;
 }
 
 export interface AuthResult {
@@ -59,6 +61,32 @@ export async function apiRequest<T>(
   }
 }
 
+// Gateway token storage
+const GATEWAY_TOKEN_KEY = "operis_gateway_token";
+const GATEWAY_URL_KEY = "operis_gateway_url";
+
+export function getStoredGatewayToken(): string | null {
+  return localStorage.getItem(GATEWAY_TOKEN_KEY);
+}
+
+export function getStoredGatewayUrl(): string | null {
+  return localStorage.getItem(GATEWAY_URL_KEY);
+}
+
+function storeGatewayConfig(user: AuthUser): void {
+  if (user.gateway_token) {
+    localStorage.setItem(GATEWAY_TOKEN_KEY, user.gateway_token);
+  }
+  if (user.gateway_url) {
+    localStorage.setItem(GATEWAY_URL_KEY, user.gateway_url);
+  }
+}
+
+export function clearGatewayConfig(): void {
+  localStorage.removeItem(GATEWAY_TOKEN_KEY);
+  localStorage.removeItem(GATEWAY_URL_KEY);
+}
+
 // Auth API functions
 export async function login(email: string, password: string): Promise<AuthResult> {
   const response = await apiClient.post<AuthResult>("/auth/login", {
@@ -66,8 +94,9 @@ export async function login(email: string, password: string): Promise<AuthResult
     password,
   });
 
-  // Store tokens
+  // Store tokens and gateway config
   setTokens(response.data.accessToken, response.data.refreshToken);
+  storeGatewayConfig(response.data.user);
 
   return response.data;
 }
@@ -83,8 +112,9 @@ export async function register(
     name,
   });
 
-  // Store tokens
+  // Store tokens and gateway config
   setTokens(response.data.accessToken, response.data.refreshToken);
+  storeGatewayConfig(response.data.user);
 
   return response.data;
 }
@@ -114,10 +144,12 @@ export async function logout(): Promise<void> {
     // Ignore logout errors - just clear tokens
   }
   clearTokens();
+  clearGatewayConfig();
 }
 
 export async function getMe(): Promise<AuthUser> {
   const response = await apiClient.get<AuthUser>("/auth/me");
+  storeGatewayConfig(response.data);
   return response.data;
 }
 

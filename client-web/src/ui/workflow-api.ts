@@ -48,15 +48,10 @@ function cronJobToWorkflow(job: CronJob): Workflow {
 }
 
 export async function listWorkflows(): Promise<Workflow[]> {
-  try {
-    const client = await waitForConnection();
-    const result = await client.request<{ jobs?: CronJob[] }>("cron.list", { includeDisabled: true });
-    const jobs = Array.isArray(result.jobs) ? result.jobs : [];
-    return jobs.map(cronJobToWorkflow);
-  } catch (error) {
-    console.error("Failed to list workflows:", error);
-    return [];
-  }
+  const client = await waitForConnection();
+  const result = await client.request<{ jobs?: CronJob[] }>("cron.list", { includeDisabled: true });
+  const jobs = Array.isArray(result.jobs) ? result.jobs : [];
+  return jobs.map(cronJobToWorkflow);
 }
 
 export async function createWorkflow(form: WorkflowFormState): Promise<boolean> {
@@ -119,14 +114,9 @@ export type WorkflowStatus = {
 };
 
 export async function getWorkflowStatus(): Promise<WorkflowStatus | null> {
-  try {
-    const client = await waitForConnection();
-    const result = await client.request<WorkflowStatus>("cron.status", {});
-    return result;
-  } catch (error) {
-    console.error("Failed to get workflow status:", error);
-    return null;
-  }
+  const client = await waitForConnection();
+  const result = await client.request<WorkflowStatus>("cron.status", {});
+  return result;
 }
 
 export async function getWorkflowRuns(id: string): Promise<WorkflowRun[]> {
