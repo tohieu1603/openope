@@ -215,13 +215,15 @@ export async function reportUsage(payload: ReportUsagePayload): Promise<void> {
 // =============================================================================
 
 export function transformDailyUsage(daily: ApiDaily[]): DailyUsage[] {
-  return daily.map((d) => ({
-    date: d.date,
-    tokensUsed: d.total_tokens,
-    requests: d.total_requests,
-    inputTokens: d.total_input_tokens,
-    outputTokens: d.total_output_tokens,
-  }));
+  return [...daily]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({
+      date: d.date,
+      tokensUsed: d.total_tokens,
+      requests: d.total_requests,
+      inputTokens: d.total_input_tokens,
+      outputTokens: d.total_output_tokens,
+    }));
 }
 
 export function transformTypeUsage(byType: ApiByType[]): TypeUsage[] {

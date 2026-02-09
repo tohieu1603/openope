@@ -69,6 +69,8 @@ import {
   extractTextContent,
   getConversations,
   getConversationHistory,
+  deleteConversation,
+  type Conversation,
 } from "./chat-api";
 import {
   getChannelsStatus,
@@ -86,6 +88,7 @@ import {
 } from "./user-api";
 import {
   getDailyUsage,
+  getRangeUsage,
   transformDailyUsage,
   transformTypeUsage,
   transformStats,
@@ -174,6 +177,16 @@ export class OperisApp extends LitElement {
   // Streaming state
   @state() chatStreamingText = "";
   @state() chatStreamingRunId: string | null = null;
+  // Session token tracking
+  @state() chatSessionTokens = 0;
+  @state() chatTokenBalance = 0;
+  // Abort controller for stopping chat stream
+  private chatAbortController: AbortController | null = null;
+  // Chat sidebar state
+  @state() chatConversations: Conversation[] = [];
+  @state() chatConversationsLoading = false;
+  // Token dropdown in header
+  @state() tokenDropdownOpen = false;
 
   // Login state
   @state() loginLoading = false;
@@ -301,12 +314,15 @@ export class OperisApp extends LitElement {
   @state() analyticsStats: UsageStats | null = null;
   @state() analyticsDailyUsage: DailyUsage[] = [];
   @state() analyticsTypeUsage: TypeUsage[] = [];
-  @state() analyticsPeriod: "7d" | "30d" | "90d" = "30d";
+  @state() analyticsPeriod: "1d" | "7d" | "30d" | "90d" | "custom" = "30d";
+  @state() analyticsRangeStart = "";
+  @state() analyticsRangeEnd = "";
 
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null =
     null;
   private popStateHandler = () => this.handlePopState();
+  private clickOutsideHandler = () => { this.tokenDropdownOpen = false; };
   private cronEventUnsubscribe: (() => void) | null = null;
   private chatStreamUnsubscribe: (() => void) | null = null;
 
@@ -360,6 +376,8 @@ export class OperisApp extends LitElement {
 
     // Listen for browser navigation
     window.addEventListener("popstate", this.popStateHandler);
+    // Close token dropdown on outside click
+    document.addEventListener("click", this.clickOutsideHandler);
 
     // Subscribe to cron events for real-time workflow updates
     this.cronEventUnsubscribe = subscribeToCronEvents((evt: CronEvent) => {
@@ -426,6 +444,12 @@ export class OperisApp extends LitElement {
         ];
       }
 
+      // Accumulate WS token usage
+      const wsUsage = evt.usage ?? evt.message?.usage;
+      if (wsUsage) {
+        this.chatSessionTokens += wsUsage.totalTokens || ((wsUsage.input || 0) + (wsUsage.output || 0)) || 0;
+      }
+
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatSending = false;
@@ -449,6 +473,7 @@ export class OperisApp extends LitElement {
       const user = await restoreSession();
       if (user) {
         this.currentUser = user;
+        this.chatTokenBalance = user.token_balance ?? 0;
         this.applySettings({
           ...this.settings,
           isLoggedIn: true,
@@ -476,6 +501,8 @@ export class OperisApp extends LitElement {
     // Reset chat state
     this.chatMessages = [];
     this.chatConversationId = null;
+    this.chatSessionTokens = 0;
+    this.chatTokenBalance = 0;
     this.chatHistoryLoaded = false;
     this.chatInitializing = false;
     // Reset settings
@@ -496,6 +523,7 @@ export class OperisApp extends LitElement {
       this.themeMedia.removeEventListener("change", this.themeMediaHandler);
     }
     window.removeEventListener("popstate", this.popStateHandler);
+    document.removeEventListener("click", this.clickOutsideHandler);
     // Unsubscribe from cron events
     this.cronEventUnsubscribe?.();
     this.cronEventUnsubscribe = null;
@@ -565,26 +593,11 @@ export class OperisApp extends LitElement {
     }
 
     try {
-      // Get latest conversation
+      // Load sidebar conversation list only — show welcome state (like ChatGPT/Gemini)
       const { conversations } = await getConversations();
-      if (conversations.length === 0) {
-        this.chatInitializing = false;
-        return;
-      }
-
-      // Load the most recent conversation
-      const latest = conversations[0];
-      this.chatConversationId = latest.conversation_id;
-
-      const { messages } = await getConversationHistory(latest.conversation_id);
-      this.chatMessages = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-        timestamp: m.created_at ? new Date(m.created_at) : undefined,
-      }));
+      conversations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      this.chatConversations = conversations;
       this.chatHistoryLoaded = true;
-      // Scroll to bottom after loading
-      this.scrollChatToBottom();
     } catch (err) {
       console.error("[chat] Failed to load history:", err);
       // Don't show error to user, just start fresh
@@ -603,7 +616,6 @@ export class OperisApp extends LitElement {
       return;
     }
 
-    // Find last user message to calculate exact spacer needed
     const userMessages = messagesEl.querySelectorAll(".gc-message--user");
     const lastUserMsg = userMessages[userMessages.length - 1] as HTMLElement;
     if (!lastUserMsg) {
@@ -611,42 +623,51 @@ export class OperisApp extends LitElement {
       return;
     }
 
-    // Reset spacer to get true content height
+    // Reset spacer to measure true content height
     spacer.style.height = "0px";
 
-    const viewportHeight = messagesEl.clientHeight;
-    const scrollPosition = lastUserMsg.offsetTop - 24; // where we want to scroll to
-    const contentHeight = messagesEl.scrollHeight;
-
-    // Spacer = just enough so scrollHeight = scrollPosition + viewportHeight
-    // This means maxScrollTop = scrollPosition (can scroll to user msg, but not beyond)
-    const neededScrollHeight = scrollPosition + viewportHeight;
-    const spacerHeight = Math.max(0, neededScrollHeight - contentHeight);
+    // Use getBoundingClientRect for reliable position in flex layout
+    const containerRect = messagesEl.getBoundingClientRect();
+    const msgRect = lastUserMsg.getBoundingClientRect();
+    const targetScrollTop = messagesEl.scrollTop + (msgRect.top - containerRect.top) - 24;
+    const neededScrollHeight = targetScrollTop + messagesEl.clientHeight;
+    const spacerHeight = Math.max(0, neededScrollHeight - messagesEl.scrollHeight);
     spacer.style.height = `${spacerHeight}px`;
+    messagesEl.scrollTop = targetScrollTop;
   }
 
   private async scrollChatToBottom() {
     await this.updateComplete;
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((r) => requestAnimationFrame(r));
 
     const messagesEl = this.renderRoot.querySelector(".gc-messages") as HTMLElement;
     if (!messagesEl) return;
 
-    // Calculate and set exact spacer height
-    this.updateDynamicSpacer(true);
-
-    // Wait for layout update
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-
-    // Find last user message and scroll it to top
     const userMessages = messagesEl.querySelectorAll(".gc-message--user");
     const lastUserMsg = userMessages[userMessages.length - 1] as HTMLElement;
 
-    if (lastUserMsg) {
-      const scrollPosition = lastUserMsg.offsetTop - 24;
-      messagesEl.scrollTop = Math.max(0, scrollPosition);
-    } else {
+    if (!lastUserMsg) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+
+    // Set generous spacer first to guarantee scroll room
+    const spacer = messagesEl.querySelector(".gc-scroll-spacer") as HTMLElement;
+    if (spacer) spacer.style.height = `${messagesEl.clientHeight}px`;
+
+    await new Promise((r) => requestAnimationFrame(r));
+
+    // Use getBoundingClientRect for reliable scroll calc in flex containers
+    const containerRect = messagesEl.getBoundingClientRect();
+    const msgRect = lastUserMsg.getBoundingClientRect();
+    messagesEl.scrollTop += msgRect.top - containerRect.top - 24;
+
+    // Shrink spacer to exact needed size (avoid excess empty space on history load)
+    if (spacer) {
+      const currentSpacerH = parseFloat(spacer.style.height) || 0;
+      const contentWithoutSpacer = messagesEl.scrollHeight - currentSpacerH;
+      const neededTotal = messagesEl.scrollTop + messagesEl.clientHeight;
+      spacer.style.height = `${Math.max(0, neededTotal - contentWithoutSpacer)}px`;
     }
   }
 
@@ -748,18 +769,21 @@ export class OperisApp extends LitElement {
     if (!this.chatDraft.trim() || this.chatSending) return;
 
     const userMessage = this.chatDraft.trim();
+    const isNewConversation = !this.chatConversationId;
     this.chatDraft = "";
     this.chatSending = true;
     this.chatError = null;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
+    this.chatAbortController = new AbortController();
 
     // Add user message
     this.chatMessages = [
       ...this.chatMessages,
       { role: "user", content: userMessage, timestamp: new Date() },
     ];
-    this.scrollChatToBottom();
+    // Scroll user message to top of viewport before streaming starts
+    await this.scrollChatToBottom();
 
     try {
       // Call real Operis Chat API with SSE streaming
@@ -770,22 +794,48 @@ export class OperisApp extends LitElement {
         (text: string) => {
           this.chatStreamingText = text;
           this.chatStreamingRunId = "sse-stream";
-          // Recalculate spacer as content grows (spacer shrinks to keep user msg at top, no extra whitespace)
-          this.updateDynamicSpacer(true);
+          // Spacer stays at viewport height (set by scrollChatToBottom before streaming).
+          // overflow-anchor:none keeps scroll position stable as content grows.
         },
         // onDone - mark streaming complete
         () => {
           // Will be handled below when result arrives
         },
+        this.chatAbortController?.signal,
       );
 
       // Store conversation ID for context
       this.chatConversationId = result.conversationId;
 
+      // Update sidebar: new conversation → full refresh, existing → move to top
+      if (isNewConversation) {
+        this.loadConversationList();
+      } else {
+        // Move current conversation to top of sidebar list
+        const convId = result.conversationId;
+        const idx = this.chatConversations.findIndex((c) => c.conversation_id === convId);
+        if (idx > 0) {
+          const updated = [...this.chatConversations];
+          const [conv] = updated.splice(idx, 1);
+          conv.last_message = userMessage;
+          updated.unshift(conv);
+          this.chatConversations = updated;
+        }
+      }
+
       // Report token usage from SSE response to Operis BE
-      console.log("[app] SSE result.usage:", result.usage);
+      console.log("[app] SSE result.usage:", result.usage, "balance:", result.tokenBalance);
       if (result.usage) {
         reportSSEUsage(result.usage);
+        const usedTokens = result.usage.totalTokens || ((result.usage.input || 0) + (result.usage.output || 0));
+        this.chatSessionTokens += usedTokens || 0;
+      }
+      if (result.tokenBalance !== undefined) {
+        this.chatTokenBalance = result.tokenBalance;
+        // Sync to currentUser so analytics/billing tabs show updated balance
+        if (this.currentUser) {
+          this.currentUser = { ...this.currentUser, token_balance: result.tokenBalance };
+        }
       }
 
       // Get final text before clearing state
@@ -803,9 +853,28 @@ export class OperisApp extends LitElement {
           { role: "assistant", content: assistantText, timestamp: new Date() },
         ];
       }
-      // Collapse spacer after response done (remove whitespace)
-      this.updateDynamicSpacer(false);
+      // Recalculate spacer to exact needed size (user msg stays at top, no excess space)
+      await this.updateComplete;
+      this.updateDynamicSpacer(true);
     } catch (err) {
+      // User aborted — keep whatever was streamed so far as the final message
+      if (err instanceof DOMException && err.name === "AbortError") {
+        const partialText = this.chatStreamingText;
+        this.chatStreamingText = "";
+        this.chatStreamingRunId = null;
+        this.chatSending = false;
+        this.chatAbortController = null;
+        if (partialText) {
+          this.chatMessages = [
+            ...this.chatMessages,
+            { role: "assistant", content: partialText, timestamp: new Date() },
+          ];
+        }
+        await this.updateComplete;
+        this.updateDynamicSpacer(true);
+        return;
+      }
+
       const errorMsg =
         err instanceof Error ? err.message : "Không thể gửi tin nhắn";
 
@@ -836,7 +905,107 @@ export class OperisApp extends LitElement {
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatSending = false;
+      this.chatAbortController = null;
       // Don't scroll - user message stays at top
+    }
+  }
+
+  private handleStopChat() {
+    if (this.chatAbortController) {
+      this.chatAbortController.abort();
+      this.chatAbortController = null;
+    }
+  }
+
+  // --- Chat sidebar handlers ---
+
+  private toggleChatSidebar() {
+    this.applySettings({
+      ...this.settings,
+      chatSidebarCollapsed: !this.settings.chatSidebarCollapsed,
+    });
+  }
+
+  private async loadConversationList() {
+    this.chatConversationsLoading = true;
+    try {
+      const { conversations } = await getConversations();
+      conversations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      this.chatConversations = conversations;
+    } catch (err) {
+      console.error("[chat] Failed to load conversations:", err);
+    } finally {
+      this.chatConversationsLoading = false;
+    }
+  }
+
+  private handleNewConversation() {
+    this.chatConversationId = null;
+    this.chatMessages = [];
+    this.chatSessionTokens = 0;
+    this.chatStreamingText = "";
+    this.chatStreamingRunId = null;
+    this.chatSending = false;
+    this.chatError = null;
+  }
+
+  private async handleSwitchConversation(conversationId: string) {
+    if (conversationId === this.chatConversationId) return;
+
+    this.chatConversationId = conversationId;
+    this.chatMessages = [];
+    this.chatInitializing = true;
+    this.chatSessionTokens = 0;
+    this.chatError = null;
+
+    try {
+      const { messages, usage } = await getConversationHistory(conversationId);
+      this.chatMessages = messages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        timestamp: m.created_at ? new Date(m.created_at) : undefined,
+      }));
+      if (usage?.total_tokens) {
+        this.chatSessionTokens = usage.total_tokens;
+      }
+      this.scrollChatToBottom();
+    } catch (err) {
+      console.error("[chat] Failed to load conversation:", err);
+      this.chatError = "Không thể tải hội thoại";
+    } finally {
+      this.chatInitializing = false;
+    }
+  }
+
+  private async handleDeleteConversation(conversationId: string) {
+    const confirmed = await showConfirm({
+      title: "Xóa hội thoại?",
+      message: "Bạn có chắc muốn xóa cuộc hội thoại này?",
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+
+    const original = this.chatConversations;
+    this.chatConversations = this.chatConversations.filter(
+      (c) => c.conversation_id !== conversationId,
+    );
+
+    try {
+      await deleteConversation(conversationId);
+      showToast("Đã xóa hội thoại", "success");
+
+      if (conversationId === this.chatConversationId) {
+        if (this.chatConversations.length > 0) {
+          await this.handleSwitchConversation(this.chatConversations[0].conversation_id);
+        } else {
+          this.handleNewConversation();
+        }
+      }
+    } catch (err) {
+      this.chatConversations = original;
+      showToast(err instanceof Error ? err.message : "Không thể xóa hội thoại", "error");
     }
   }
 
@@ -1024,10 +1193,9 @@ export class OperisApp extends LitElement {
       // Transform to LogEntry format
       const entries: LogEntry[] = conversations.map((c) => ({
         id: c.conversation_id,
-        date: c.last_message_at,
+        date: c.created_at,
         type: "chat" as const,
-        preview: c.preview || "(Cuộc hội thoại)",
-        messageCount: c.message_count,
+        preview: c.last_message ? c.last_message.slice(0, 80).replace(/\n/g, " ") : "(Cuộc hội thoại)",
       }));
 
       this.logsEntries = entries;
@@ -1580,10 +1748,14 @@ export class OperisApp extends LitElement {
     this.analyticsLoading = true;
     this.analyticsError = null;
     try {
-      // Get number of days based on period
-      const days = this.analyticsPeriod === "7d" ? 7 : this.analyticsPeriod === "30d" ? 30 : 90;
-
-      const result = await getDailyUsage(days);
+      let result;
+      if (this.analyticsPeriod === "custom") {
+        if (!this.analyticsRangeStart || !this.analyticsRangeEnd) return;
+        result = await getRangeUsage(this.analyticsRangeStart, this.analyticsRangeEnd);
+      } else {
+        const days = this.analyticsPeriod === "1d" ? 1 : this.analyticsPeriod === "7d" ? 7 : this.analyticsPeriod === "30d" ? 30 : 90;
+        result = await getDailyUsage(days);
+      }
 
       this.analyticsStats = transformStats(result.stats);
       this.analyticsDailyUsage = transformDailyUsage(result.daily);
@@ -1595,9 +1767,15 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private handleAnalyticsPeriodChange(period: "7d" | "30d" | "90d") {
+  private handleAnalyticsPeriodChange(period: "1d" | "7d" | "30d" | "90d" | "custom") {
     this.analyticsPeriod = period;
-    this.loadAnalytics();
+    if (period !== "custom") this.loadAnalytics();
+  }
+
+  private handleAnalyticsRangeChange(start: string, end: string) {
+    this.analyticsRangeStart = start;
+    this.analyticsRangeEnd = end;
+    if (start && end) this.loadAnalytics();
   }
 
   private handleThemeClick(mode: ThemeMode, event: MouseEvent) {
@@ -1634,6 +1812,42 @@ export class OperisApp extends LitElement {
           <span class="theme-switcher-icon">${icons.moon}</span>
           <span class="theme-switcher-label">${t("themeDark")}</span>
         </button>
+      </div>
+    `;
+  }
+
+  private renderTokenIndicator() {
+    const maxTokens = 200000;
+    const pct = Math.min(Math.round((this.chatSessionTokens / maxTokens) * 100), 100);
+    const r = 11;
+    const circ = 2 * Math.PI * r;
+    const offset = circ - (pct / 100) * circ;
+    const color = pct >= 90 ? "#dc2626" : pct >= 70 ? "#d97706" : "#16a34a";
+
+    return html`
+      <div class="topbar-token">
+        <button class="topbar-token-btn" @click=${(e: Event) => { e.stopPropagation(); this.tokenDropdownOpen = !this.tokenDropdownOpen; }}>
+          <div class="topbar-token-circle">
+            <svg viewBox="0 0 28 28">
+              <circle class="topbar-token-circle-bg" cx="14" cy="14" r="${r}" stroke="${color}" opacity="0.2"/>
+              <circle class="topbar-token-circle-fg" cx="14" cy="14" r="${r}"
+                stroke="${color}"
+                stroke-dasharray="${circ}"
+                stroke-dashoffset="${offset}"/>
+            </svg>
+          </div>
+          <span class="topbar-token-pct" style="color:${color}">${pct}%</span>
+        </button>
+        <div class="topbar-token-dropdown ${this.tokenDropdownOpen ? 'open' : ''}" @click=${(e: Event) => e.stopPropagation()}>
+          <div class="topbar-token-row">
+            <span class="topbar-token-label">Đã dùng</span>
+            <span class="topbar-token-value">${this.chatSessionTokens.toLocaleString()}</span>
+          </div>
+          <div class="topbar-token-row">
+            <span class="topbar-token-label">Tối đa</span>
+            <span class="topbar-token-value">${maxTokens.toLocaleString()}</span>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -1756,7 +1970,17 @@ export class OperisApp extends LitElement {
           streamingText: this.chatStreamingText,
           onDraftChange: (value) => (this.chatDraft = value),
           onSend: () => this.handleSendMessage(),
+          onStop: () => this.handleStopChat(),
           onLoginClick: () => this.setTab("login"),
+          // Sidebar props
+          conversations: this.chatConversations,
+          conversationsLoading: this.chatConversationsLoading,
+          currentConversationId: this.chatConversationId,
+          sidebarCollapsed: this.settings.chatSidebarCollapsed,
+          onToggleSidebar: () => this.toggleChatSidebar(),
+          onNewConversation: () => this.handleNewConversation(),
+          onSwitchConversation: (id: string) => this.handleSwitchConversation(id),
+          onDeleteConversation: (id: string) => this.handleDeleteConversation(id),
         });
       case "analytics":
         return renderAnalytics({
@@ -1768,6 +1992,9 @@ export class OperisApp extends LitElement {
           typeUsage: this.analyticsTypeUsage,
           selectedPeriod: this.analyticsPeriod,
           onPeriodChange: (period) => this.handleAnalyticsPeriodChange(period),
+          rangeStart: this.analyticsRangeStart,
+          rangeEnd: this.analyticsRangeEnd,
+          onRangeChange: (start: string, end: string) => this.handleAnalyticsRangeChange(start, end),
           onRefresh: () => this.loadAnalytics(),
         });
       case "billing":
@@ -2048,6 +2275,7 @@ export class OperisApp extends LitElement {
             </div>
           </div>
           <div class="topbar-right">
+            ${this.settings.isLoggedIn && this.tab === "chat" && this.chatConversationId ? this.renderTokenIndicator() : nothing}
             ${this.renderThemeToggle()}
             ${this.settings.isLoggedIn
               ? html`

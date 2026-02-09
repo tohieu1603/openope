@@ -104,6 +104,7 @@ export async function sendMessage(
   conversationId?: string,
   onDelta?: (text: string) => void,
   onDone?: (result: ChatResult) => void,
+  signal?: AbortSignal,
 ): Promise<ChatResult> {
   const url = `${API_CONFIG.baseUrl}/chat/stream`;
 
@@ -116,6 +117,7 @@ export async function sendMessage(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ message, conversationId }),
+      signal,
     });
   }
 
@@ -187,16 +189,27 @@ export async function sendMessage(
             accumulatedText = data.content;
             onDelta?.(accumulatedText);
           } else if (currentEvent === "done") {
+            // Normalize usage from backend (may be snake_case or camelCase)
+            const raw = data.usage;
+            const usage: TokenUsage = raw ? {
+              input: raw.input ?? raw.input_tokens ?? 0,
+              output: raw.output ?? raw.output_tokens ?? 0,
+              cacheRead: raw.cacheRead ?? raw.cache_read_tokens ?? 0,
+              cacheWrite: raw.cacheWrite ?? raw.cache_write_tokens ?? raw.cache_creation_input_tokens ?? 0,
+              totalTokens: raw.totalTokens ?? raw.total_tokens ?? 0,
+              cost: raw.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+
             // Build final result from done event
             finalResult = {
               role: "assistant",
               content: [{ type: "text", text: accumulatedText }],
               model: "unknown",
               provider: "unknown",
-              usage: data.usage || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+              usage,
               stopReason: "end_turn",
               conversationId: data.conversationId || convId,
-              tokenBalance: data.tokenBalance || 0,
+              tokenBalance: data.tokenBalance ?? data.token_balance ?? 0,
             };
             onDone?.(finalResult);
           } else if (currentEvent === "error") {
@@ -246,9 +259,8 @@ export async function getChatBalance(): Promise<{ balance: number }> {
 // Conversation types
 export interface Conversation {
   conversation_id: string;
-  last_message_at: string;
-  message_count: number;
-  preview?: string;
+  last_message: string;
+  created_at: string;
 }
 
 export interface HistoryMessage {
@@ -268,10 +280,17 @@ export async function getConversations(): Promise<{ conversations: Conversation[
   }
 }
 
+// Conversation usage stats from API
+export interface ConversationUsage {
+  total_tokens: number;
+  total_cost: number;
+  message_count: number;
+}
+
 // Get conversation history
-export async function getConversationHistory(conversationId: string): Promise<{ messages: HistoryMessage[] }> {
+export async function getConversationHistory(conversationId: string): Promise<{ messages: HistoryMessage[]; usage?: ConversationUsage }> {
   try {
-    const response = await apiClient.get<{ messages: HistoryMessage[] }>(`/chat/conversations/${conversationId}`);
+    const response = await apiClient.get<{ messages: HistoryMessage[]; usage?: ConversationUsage }>(`/chat/conversations/${conversationId}`);
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
