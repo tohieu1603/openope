@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Operis - Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #12141a;
+      color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .setup-card {
+      background: #1a1d24;
+      border: 1px solid #2a2d35;
+      border-radius: 12px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    .subtitle {
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: #ccc;
+    }
+    .required::after {
+      content: " *";
+      color: #ef4444;
+    }
+    input[type="password"],
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 14px;
+      background: #12141a;
+      border: 1px solid #2a2d35;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      border-color: #6366f1;
+    }
+    .field {
+      margin-bottom: 20px;
+    }
+    .field-hint {
+      font-size: 0.78rem;
+      color: #666;
+      margin-top: 4px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+    button:hover:not(:disabled) {
+      background: #4f46e5;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .status.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+    .status.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #4ade80;
+    }
+    .status.loading {
+      display: block;
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #a5b4fc;
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #a5b4fc;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="setup-card">
+    <h1>Welcome to Agent Operis</h1>
+    <p class="subtitle">Enter your API token to get started.</p>
+
+    <form id="setup-form">
+      <div class="field">
+        <label for="anthropic-token" class="required">Anthropic API Token</label>
+        <input type="password" id="anthropic-token" placeholder="sk-ant-..." required autocomplete="off" />
+        <p class="field-hint">Required. Get your key from console.anthropic.com</p>
+      </div>
+
+      <div class="field">
+        <label for="cf-token">Cloudflare Tunnel Token</label>
+        <input type="text" id="cf-token" placeholder="eyJ..." autocomplete="off" />
+        <p class="field-hint">Optional. You can configure this later in Settings.</p>
+      </div>
+
+      <button type="submit" id="submit-btn">Complete Setup</button>
+    </form>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById("setup-form");
+    const btn = document.getElementById("submit-btn");
+    const status = document.getElementById("status");
+    const tokenInput = document.getElementById("anthropic-token");
+
+    function setStatus(type, message) {
+      status.className = "status " + type;
+      status.textContent = "";
+      if (type === "loading") {
+        const spinner = document.createElement("span");
+        spinner.className = "spinner";
+        status.appendChild(spinner);
+        status.appendChild(document.createTextNode(message));
+      } else {
+        status.textContent = message;
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const anthropicToken = tokenInput.value.trim();
+      if (!anthropicToken) {
+        setStatus("error", "Anthropic API token is required.");
+        return;
+      }
+
+      btn.disabled = true;
+      setStatus("loading", "Setting up Agent Operis...");
+
+      try {
+        const cfToken = document.getElementById("cf-token").value.trim();
+        const data = { anthropicToken };
+        if (cfToken) data.cfTunnelToken = cfToken;
+
+        const result = await window.electronAPI.submitOnboard(data);
+
+        if (result.success) {
+          setStatus("success", "Setup complete! Loading Agent Operis...");
+          // Notify main process to switch to client-web UI
+          setTimeout(() => {
+            // Pass CF token to main process for encrypted storage
+            const completeData = cfToken ? { cfTunnelToken: cfToken } : undefined;
+            window.electronAPI.onboardComplete?.(completeData);
+          }, 1000);
+        } else {
+          setStatus("error", "Setup failed: " + (result.output || "Unknown error"));
+          btn.disabled = false;
+        }
+      } catch (err) {
+        setStatus("error", "Error: " + err.message);
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

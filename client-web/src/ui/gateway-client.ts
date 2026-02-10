@@ -423,8 +423,8 @@ function getGatewayWsUrl(): string {
   // If running on gateway port directly, use current host
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = window.location.host;
-  // Check if we're running on dev server (port 5173) - connect to gateway instead
-  if (host.includes(":5173")) {
+  // Electron file:// or dev server (port 5173) - connect to local gateway
+  if (!host || window.location.protocol === "file:" || host.includes(":5173")) {
     return "ws://127.0.0.1:18789/";
   }
   return `${protocol}//${host}/`;

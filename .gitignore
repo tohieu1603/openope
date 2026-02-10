@@ -68,6 +68,14 @@ apps/ios/*.mobileprovision
 
 # local tooling
 .serena/
+.claude/
+
+# Electron desktop app build artifacts
+apps/windows-desktop/dist-electron/
+apps/windows-desktop/dist-gateway/
+apps/windows-desktop/release/
+apps/windows-desktop/release*/
+apps/windows-desktop/_recovered-asar/
 
 # Agent credentials and memory (NEVER COMMIT)
 /memory/

@@ -1,0 +1,85 @@
+appId: com.operis.agent
+productName: Agent Operis
+copyright: Copyright (c) 2026 Agent Operis
+
+directories:
+  output: release
+  buildResources: resources
+
+asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/better-sqlite3/**/*"
+  - "**/*.node"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent Operis
+  uninstallDisplayName: Agent Operis
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+  include: installer.nsh
+
+extraResources:
+  # Gateway: esbuild-bundled single file (all npm deps inlined)
+  - from: "dist-gateway/entry.js"
+    to: "gateway/entry.js"
+  # ESM package.json for gateway
+  - from: "resources/gateway-package.json"
+    to: "gateway/package.json"
+  # Client-web UI build (must be "control-ui" so gateway resolveControlUiRootSync finds it)
+  - from: "../../dist/control-ui"
+    to: "control-ui"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  # Cloudflare tunnel binary
+  - from: "resources/cloudflared.exe"
+    to: "cloudflared.exe"
+  # First-run setup page
+  - from: "resources/setup.html"
+    to: "setup.html"
+  # jiti babel.cjs for loading .ts extensions at runtime
+  - from: "resources/jiti-babel.cjs"
+    to: "dist/babel.cjs"
+  # Built-in plugins (pre-compiled, renamed to .ts for upgrade compat)
+  - from: "dist-extensions"
+    to: "extensions"
+    filter:
+      - "**/*"
+  # Tray status icons
+  - from: "resources/tray-green.ico"
+    to: "tray-green.ico"
+  - from: "resources/tray-yellow.ico"
+    to: "tray-yellow.ico"
+  - from: "resources/tray-red.ico"
+    to: "tray-red.ico"
+  - from: "resources/tray-gray.ico"
+    to: "tray-gray.ico"
+
+extraFiles:
+  # Workspace templates at app root
+  - from: "../../docs/reference/templates"
+    to: "docs/reference/templates"
+    filter:
+      - "**/*"
+
+files:
+  - "dist-electron/**/*"
+  - "!node_modules/@lydell/node-pty/**"
+  - "!node_modules/playwright-core/**"
+  - "!**/*.map"
