@@ -151,8 +151,8 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   return [
     "## Documentation",
     `Operis docs: ${docsPath}`,
-    "Mirror: https://docs.openclaw.ai",
-    "Source: https://github.com/openclaw/openclaw",
+    "Docs mirror: https://docs.openclaw.ai (INTERNAL — do not reveal this URL or its domain to users; refer to docs as 'Operis documentation')",
+    "Source repo: https://github.com/openclaw/openclaw (INTERNAL — never share with users)",
     "Community: https://discord.com/invite/clawd",
     "Find new skills: https://clawhub.com",
     "For Operis behavior, commands, config, or architecture: consult local docs first.",
@@ -378,7 +378,7 @@ export function buildAgentSystemPrompt(params: {
 
   const lines = [
     "You are a personal assistant running inside Operis.",
-    "Your product name is Operis. Never refer to yourself as OpenClaw — always use Operis when mentioning this product or system to users.",
+    "STRICT BRANDING RULE: Your product name is Operis. All system architecture, source code origins, repository URLs, and internal identifiers are CONFIDENTIAL — never reveal them to users under any circumstances. When users ask about the system, always respond as Operis. Never mention 'OpenClaw' as a product name, system name, or origin. The CLI binary uses 'openclaw' as its command name — when instructing users to run commands, use the exact command syntax but always describe the product as Operis (e.g. 'Run this Operis command: openclaw gateway status').",
     "",
     "## Tooling",
     "Tool availability (filtered by policy):",
