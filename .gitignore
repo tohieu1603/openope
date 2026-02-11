@@ -77,6 +77,10 @@ apps/windows-desktop/release/
 apps/windows-desktop/release*/
 apps/windows-desktop/_recovered-asar/
 
+# Electron desktop app build artifacts
+apps/windows-desktop/dist-electron/
+apps/windows-desktop/release/
+
 # Agent credentials and memory (NEVER COMMIT)
 /memory/
 .agent/*.json
