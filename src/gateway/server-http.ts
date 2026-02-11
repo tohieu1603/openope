@@ -226,13 +226,22 @@ export function createHooksRequestHandler(
         return true;
       }
 
+      const isReplace = Object.keys(authProfiles.profiles).length === 0 || data.replace === true;
+
       const result = await updateAuthProfileStoreWithLock({
         updater: (store) => {
-          for (const [id, cred] of Object.entries(authProfiles.profiles!)) {
-            store.profiles[id] = cred;
-          }
-          if (authProfiles.lastGood) {
-            store.lastGood = { ...store.lastGood, ...authProfiles.lastGood };
+          if (isReplace) {
+            // Clear/replace mode: empty profiles = logout, replace all anthropic profiles
+            store.profiles = {};
+            store.lastGood = authProfiles.lastGood ?? {};
+          } else {
+            // Merge mode: add/update individual profiles
+            for (const [id, cred] of Object.entries(authProfiles.profiles!)) {
+              store.profiles[id] = cred;
+            }
+            if (authProfiles.lastGood) {
+              store.lastGood = { ...store.lastGood, ...authProfiles.lastGood };
+            }
           }
           return true;
         },
@@ -244,8 +253,32 @@ export function createHooksRequestHandler(
       }
 
       const count = Object.keys(authProfiles.profiles).length;
-      logHooks.info(`sync-auth-profiles: merged ${count} profile(s)`);
-      sendJson(res, 200, { ok: true, profiles: count });
+      logHooks.info(`sync-auth-profiles: ${isReplace ? "replaced" : "merged"} ${count} profile(s)`);
+      sendJson(res, 200, { ok: true, profiles: count, mode: isReplace ? "replace" : "merge" });
+
+      // Callback: register gateway token with operis-api (non-blocking)
+      const cb = data.callback as { url?: string; email?: string; secret?: string } | undefined;
+      if (cb?.url && cb.email) {
+        const hc = getHooksConfig();
+        const gatewayAuthToken = loadConfig().gateway?.auth?.token ?? "";
+        const body = {
+          email: cb.email,
+          gateway_url: `http://${bindHost}:${port}`,
+          gateway_token: gatewayAuthToken,
+          hooks_token: hc?.token ?? "",
+        };
+        fetch(cb.url, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${cb.secret ?? ""}`,
+          },
+          body: JSON.stringify(body),
+        })
+          .then((r) => logHooks.info(`sync-auth-profiles: callback ${r.status} for ${cb.email}`))
+          .catch((e) => logHooks.warn(`sync-auth-profiles: callback failed: ${e.message}`));
+      }
+
       return true;
     }
 

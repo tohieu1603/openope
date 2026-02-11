@@ -158,77 +158,86 @@ export async function sendMessage(
   let currentEvent = "";
   let convId = conversationId || "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  // Cancel reader immediately on abort to close TCP connection → server stops processing
+  const onAbort = () => reader.cancel();
+  signal?.addEventListener("abort", onAbort, { once: true });
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      // Parse event name
-      if (line.startsWith("event: ")) {
-        currentEvent = line.slice(7).trim();
-        continue;
-      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
-      // Parse data
-      if (line.startsWith("data: ")) {
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr || jsonStr === "[DONE]") continue;
+      for (const line of lines) {
+        // Parse event name
+        if (line.startsWith("event: ")) {
+          currentEvent = line.slice(7).trim();
+          continue;
+        }
 
-        try {
-          const data = JSON.parse(jsonStr);
+        // Parse data
+        if (line.startsWith("data: ")) {
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr || jsonStr === "[DONE]") continue;
 
-          // Handle based on event type from backend
-          if (currentEvent === "meta" && data.conversationId) {
-            convId = data.conversationId;
-          } else if (currentEvent === "content" && data.content !== undefined) {
-            // Backend sends full accumulated content in each chunk
-            accumulatedText = data.content;
-            onDelta?.(accumulatedText);
-          } else if (currentEvent === "done") {
-            // Normalize usage from backend (may be snake_case or camelCase)
-            const raw = data.usage;
-            const usage: TokenUsage = raw ? {
-              input: raw.input ?? raw.input_tokens ?? 0,
-              output: raw.output ?? raw.output_tokens ?? 0,
-              cacheRead: raw.cacheRead ?? raw.cache_read_tokens ?? 0,
-              cacheWrite: raw.cacheWrite ?? raw.cache_write_tokens ?? raw.cache_creation_input_tokens ?? 0,
-              totalTokens: raw.totalTokens ?? raw.total_tokens ?? 0,
-              cost: raw.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-            } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+          try {
+            const data = JSON.parse(jsonStr);
 
-            // Build final result from done event
-            finalResult = {
-              role: "assistant",
-              content: [{ type: "text", text: accumulatedText }],
-              model: "unknown",
-              provider: "unknown",
-              usage,
-              stopReason: "end_turn",
-              conversationId: data.conversationId || convId,
-              tokenBalance: data.tokenBalance ?? data.token_balance ?? 0,
-            };
-            onDone?.(finalResult);
-          } else if (currentEvent === "error") {
-            // Mark as SSE error and throw
-            const err = new Error(data.error || "Stream error");
-            (err as Error & { isSSEError: boolean }).isSSEError = true;
-            throw err;
-          }
+            // Handle based on event type from backend
+            if (currentEvent === "meta" && data.conversationId) {
+              convId = data.conversationId;
+            } else if (currentEvent === "content" && data.content !== undefined) {
+              // Backend sends full accumulated content in each chunk
+              accumulatedText = data.content;
+              onDelta?.(accumulatedText);
+            } else if (currentEvent === "done") {
+              // Normalize usage from backend (may be snake_case or camelCase)
+              const raw = data.usage;
+              const usage: TokenUsage = raw ? {
+                input: raw.input ?? raw.input_tokens ?? 0,
+                output: raw.output ?? raw.output_tokens ?? 0,
+                cacheRead: raw.cacheRead ?? raw.cache_read_tokens ?? 0,
+                cacheWrite: raw.cacheWrite ?? raw.cache_write_tokens ?? raw.cache_creation_input_tokens ?? 0,
+                totalTokens: raw.totalTokens ?? raw.total_tokens ?? 0,
+                cost: raw.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
-          // Reset event after processing
-          currentEvent = "";
-        } catch (e) {
-          // Re-throw SSE errors from backend, skip malformed JSON parsing errors
-          if (e instanceof Error && (e as Error & { isSSEError?: boolean }).isSSEError) {
-            throw e;
+              // Build final result from done event
+              finalResult = {
+                role: "assistant",
+                content: [{ type: "text", text: accumulatedText }],
+                model: "unknown",
+                provider: "unknown",
+                usage,
+                stopReason: "end_turn",
+                conversationId: data.conversationId || convId,
+                tokenBalance: data.tokenBalance ?? data.token_balance ?? 0,
+              };
+              onDone?.(finalResult);
+            } else if (currentEvent === "error") {
+              // Mark as SSE error and throw
+              const err = new Error(data.error || "Stream error");
+              (err as Error & { isSSEError: boolean }).isSSEError = true;
+              throw err;
+            }
+
+            // Reset event after processing
+            currentEvent = "";
+          } catch (e) {
+            // Re-throw SSE errors from backend, skip malformed JSON parsing errors
+            if (e instanceof Error && (e as Error & { isSSEError?: boolean }).isSSEError) {
+              throw e;
+            }
           }
         }
       }
     }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    reader.cancel().catch(() => {});
   }
 
   // Return final result or construct one from accumulated text
