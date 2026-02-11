@@ -153,7 +153,139 @@ openclaw onboard
 
 Full guide: [Getting Started](/start/getting-started)
 
-## Windows companion app
+## Windows Electron app (Phase 01)
 
-We do not have a Windows companion app yet. Contributions are welcome if you want
-contributions to make it happen.
+**Status: First-run onboarding scaffold complete.**
+
+A native Windows Electron app is under development at `apps/windows-desktop/`. Phase 01 includes:
+
+- **Electron 33+** + **electron-builder 25+** for packaging/NSIS installer
+- **First-run detection** via `~/.openclaw/openclaw.json` config check
+- **Setup page** (setup.html) for token input (Anthropic + optional CF tunnel)
+- **IPC bridge** (preload.ts) exposing `getGatewayPort()`, `onGatewayStatus`, `submitOnboard()`, `onboardComplete`
+- **Onboard manager** handling non-interactive setup via `openclaw onboard --non-interactive`
+- **NSIS installer** with bundled Gateway + client-web UI (extraResources)
+
+### Project structure
+
+```
+apps/windows-desktop/
+  ├── src/
+  │   ├── main.ts              # BrowserWindow + first-run flow
+  │   ├── preload.ts           # contextBridge IPC
+  │   ├── onboard-manager.ts   # Config check + onboard spawn
+  │   └── types.ts             # Shared types (GatewayStatus, TunnelStatus)
+  ├── resources/
+  │   ├── setup.html           # First-run token form
+  │   └── icon.ico             # App icon (placeholder)
+  ├── package.json             # Electron + electron-builder
+  ├── electron-builder.yml     # NSIS config + extraResources
+  └── tsconfig.json            # ES2022 → dist-electron/
+```
+
+### Key features
+
+- **First-run UX**: On launch, checks for `~/.openclaw/openclaw.json`. If missing, shows setup.html.
+- **Setup form**: User enters Anthropic token (required) + optional CF tunnel token.
+- **Non-interactive onboard**: Submits tokens to `gateway/entry.js onboard --non-interactive`.
+- **Bundled gateway**: electron-builder extraResources bundles `gateway/` dist + `client-web/` UI.
+- **Port**: Gateway runs on localhost:18789 by design (loopback).
+
+### Phase 02 (Complete)
+
+**Gateway process lifecycle management implemented.**
+
+- **GatewayManager** spawns Node.js gateway via `process.execPath` + `entry.js`.
+- **Health check**: TCP connection test every 5s (3s timeout).
+- **Crash recovery**: Exponential backoff restart (1s → 30s max, reset on successful run).
+- **Graceful shutdown**: SIGTERM → 5s wait → taskkill force-kill (Windows).
+- **Status events**: `starting | running | error | stopped` sent to renderer via IPC with optional detail msg.
+- **Electron lifecycle**: Gateway starts after first-run onboarding completes, stops on app quit.
+
+### Phase 03 (Complete)
+
+**Cloudflare Tunnel Integration implemented.**
+
+- **TunnelManager** encrypts CF tunnel token via Windows safeStorage (DPAPI).
+- **cloudflared binary resolution**: checks bundled resources, then userData directory.
+- **Auto-start**: tunnel starts when gateway becomes healthy.
+- **Status monitoring**: "connecting" → "connected" → "disconnected"/"error".
+- **Graceful stop**: SIGTERM → 5s wait → taskkill force-kill.
+- **Token management**: secure storage via safeStorage, passed from first-run setup.
+
+### Phase 04 (Complete)
+
+**Tray integration + UI improvements implemented.**
+
+- Tray icon integration with status indicators.
+- Minimize-to-tray behavior + taskbar suppression.
+- Tunnel status display UI + visual status icons.
+- System notifications for gateway health + message events.
+
+### Phase 05 (Complete)
+
+**NSIS Installer Build Pipeline finalized.**
+
+- **Full NSIS build config**: electron-builder.yml with asarUnpack, file exclusions, sourcemap removal.
+- **Custom installer script**: installer.nsh handles Windows registry cleanup (auto-start entry removal on uninstall).
+- **Cloudflared bundling**: download-cloudflared.mjs downloads cloudflared.exe binary pre-build.
+- **Complete build chain**: prebuild → build:gateway → build:electron → build:installer.
+- **Test coverage**: 43+ comprehensive electron-builder config tests (electron-builder-config.test.ts).
+
+#### Build workflow
+
+Build the Windows installer:
+
+```bash
+cd apps/windows-desktop/
+pnpm build
+```
+
+This runs the full pipeline:
+1. `pnpm prebuild` - Downloads cloudflared.exe to resources/
+2. `pnpm build:gateway` - Builds gateway + client-web dist
+3. `pnpm build:electron` - Compiles TypeScript → dist-electron/
+4. `pnpm build:installer` - Runs electron-builder (NSIS packaging)
+
+Output: `release/Agent Operis.exe` (installer + bundled gateway/UI/cloudflared).
+
+#### Installer features
+
+- **One-click setup** disabled (perMachine: false, allowToChangeInstallationDirectory: true).
+- **Desktop + Start Menu shortcuts** auto-created.
+- **Auto-start registry**: AgentOperis entry added on install.
+- **Clean uninstall**: Registry cleanup removes auto-start entry.
+- **ASAR unpacking**: Node native modules (sharp, better-sqlite3, *.node) extracted for runtime compatibility.
+- **Sourcemap exclusion**: Production builds omit *.map files (size optimization).
+
+#### Project structure (Phase 05)
+
+```
+apps/windows-desktop/
+  ├── scripts/
+  │   └── download-cloudflared.mjs   # Pre-build cloudflared fetch
+  ├── src/
+  │   ├── main.ts
+  │   ├── preload.ts
+  │   ├── onboard-manager.ts
+  │   ├── types.ts
+  │   └── __tests__/
+  │       └── electron-builder-config.test.ts  # 43+ tests
+  ├── resources/
+  │   ├── setup.html
+  │   ├── icon.ico + tray icons
+  │   └── cloudflared.exe  # Downloaded by prebuild
+  ├── package.json         # Build scripts updated
+  ├── electron-builder.yml # Full NSIS + asarUnpack config
+  ├── installer.nsh        # Registry cleanup on uninstall
+  └── tsconfig.json
+```
+
+#### Development notes
+
+- cloudflared binary is fetched from Cloudflare releases (pre-build step).
+- NSIS script handles Windows-specific cleanup (registry, auto-start).
+- Electron Builder v25+ ensures cross-platform compatibility.
+- All build outputs are tested via 43+ unit tests.
+
+Contributions welcome.
