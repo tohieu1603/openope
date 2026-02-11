@@ -1,0 +1,412 @@
+# Branding Rebrand Scout Report: "openclaw" → "operis"
+**Date:** 2026-02-11  
+**Scope:** Comprehensive branding touchpoints across the entire codebase
+
+---
+
+## Executive Summary
+
+The codebase contains **extensive branding references** to "openclaw" across multiple layers:
+- **Package/product names** (CLI, npm, apps)
+- **Configuration paths** (~/.openclaw directories, config files)
+- **URLs/domains** (docs.openclaw.ai, openclaw.ai, GitHub repos)
+- **Bundle IDs** (Android, iOS, macOS app identifiers)
+- **Source code identifiers** (module names, imports, build scripts)
+- **Documentation** (README, guides, inline comments)
+- **CI/CD** (workflows, scripts, versioning)
+- **Local network services** (Bonjour announcements, deep links)
+
+**Note:** "operis" branding already exists partially in `/client-web/src/ui/components/` (web UI components like `operis-input.ts`, `operis-modal.ts`), suggesting a gradual migration is underway.
+
+---
+
+## Category 1: Package & Module Names
+
+### Primary Package (NPM)
+- **File:** `/package.json`
+- **Fields requiring change:**
+  - `name`: `"openclaw"` → `"operis"`
+  - `bin.openclaw`: `"operis"` (command name)
+  - `description`: Consider updating product reference
+  - `keywords`: May reference product
+  - Scripts referencing `openclaw`: Many scripts refer to `openclaw` command
+
+- **Example lines:**
+  ```json
+  "name": "openclaw",
+  "bin": { "openclaw": "openclaw.mjs" },
+  "scripts": {
+    "openclaw": "node scripts/run-node.mjs",
+    "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json"
+  }
+  ```
+
+### Entry Point
+- **File:** `/openclaw.mjs`
+  - Rename to `/operis.mjs`
+
+### CLI Commands/Scripts
+- **File:** `/package.json` scripts section
+  - All references to `openclaw` command in npm scripts
+  - Environment variables: `OPENCLAW_SKIP_CHANNELS`, `OPENCLAW_PROFILE`, etc.
+
+### UI Package
+- **File:** `/ui/package.json`
+  - References to `openclaw` (parent package)
+
+### Web Client Package
+- **File:** `/client-web/package.json`
+  - References to `openclaw` API/branding
+
+---
+
+## Category 2: Configuration Paths & Environment Variables
+
+### State Directory
+- **Default path:** `~/.openclaw` → `~/.operis`
+- **Files involved:**
+  - `/src/config/paths.ts` (CRITICAL - defines all path resolution)
+    - `NEW_STATE_DIRNAME = ".openclaw"` → `".operis"`
+    - All functions in this file resolve paths
+  - `/src/config/types.gateway.ts`
+  - `/src/daemon/paths.test.ts`
+  - All tests referencing state dirs
+
+### Environment Variables
+- `OPENCLAW_STATE_DIR` → `OPERIS_STATE_DIR`
+- `OPENCLAW_CONFIG_PATH` → `OPERIS_CONFIG_PATH`
+- `OPENCLAW_OAUTH_DIR` → `OPERIS_OAUTH_DIR`
+- `OPENCLAW_GATEWAY_PORT` → `OPERIS_GATEWAY_PORT`
+- `OPENCLAW_NIX_MODE` → `OPERIS_NIX_MODE`
+- `OPENCLAW_SKIP_CHANNELS` → `OPERIS_SKIP_CHANNELS`
+- `OPENCLAW_PROFILE` → `OPERIS_PROFILE`
+- `OPENCLAW_E2E_MODELS` → `OPERIS_E2E_MODELS`
+- `OPENCLAW_LIVE_TEST` → `OPERIS_LIVE_TEST`
+
+### Config Filenames
+- `openclaw.json` → `operis.json`
+- `oauth.json` (location path changes to `~/.operis/credentials/`)
+
+**Files to update:**
+- `/src/config/paths.ts`
+- `/src/config/types.gateway.ts`
+- `/src/config/schema.ts`
+- `/src/infra/dotenv.ts`
+- `/src/daemon/paths.test.ts`
+- `/src/config/paths.test.ts`
+- All `.test.ts` files referencing env vars
+
+---
+
+## Category 3: Product Display Names
+
+### CLI Display Names
+- **File:** `/src/cli/program/register.agent.ts` and all command files
+- `"OpenClaw"` (capitalized) used in:
+  - Command descriptions
+  - Help text
+  - User-facing messages
+  - Terminal output
+
+**Scope:** All files in `/src/commands/` and `/src/cli/` that output to user
+
+### Documentation Links
+- **File:** `/src/terminal/links.ts` (CRITICAL)
+  - `DOCS_ROOT = "https://docs.openclaw.ai"` → `"https://docs.operis.ai"`
+  - All formatted doc links will use this root
+
+**Files affected:**
+- `/src/terminal/links.ts`
+- All command files that call `formatDocsLink()`
+
+### Git Repository References
+- Multiple files reference `github.com/openclaw/openclaw`
+- **Files:**
+  - `/src/agents/system-prompt.ts`
+  - `/src/commands/doctor-workspace.ts`
+  - `/src/cli/update-cli.ts`
+  - `/scripts/make_appcast.sh`
+  - Changelog/release scripts
+
+---
+
+## Category 4: Mobile & Desktop App Bundle IDs
+
+### Android
+- **File:** `/apps/android/app/build.gradle.kts`
+  - `namespace = "ai.openclaw.android"` → `"ai.operis.android"`
+  - `applicationId = "ai.openclaw.android"` → `"ai.operis.android"`
+  - Package references in build system
+
+### iOS
+- **File:** `/apps/ios/project.yml`
+  - `name: OpenClaw` → (product name)
+  - `bundleIdPrefix: ai.openclaw` → `ai.operis`
+  - All target names: `OpenClaw` → `Operis` (check if hardcoded or variable)
+
+- **File:** `/apps/ios/Sources/Info.plist`
+  - `<string>OpenClaw</string>` (CFBundleDisplayName) → Update to `Operis`
+  - Version numbers (leave as-is unless separately rebranded)
+
+- **File:** `/apps/ios/Tests/Info.plist`
+  - Similar bundle ID references
+
+- **Project configuration:**
+  - Xcode project files (`.pbxproj`) - generated by XcodeGen, will be overwritten
+  - Test targets naming
+
+### macOS
+- **File:** `/apps/macos/Sources/OpenClaw/Resources/Info.plist`
+  - `<string>ai.openclaw.mac</string>` (CFBundleIdentifier) → `ai.operis.mac`
+  - `<string>OpenClaw</string>` (CFBundleName) → `Operis`
+  - `<string>openclaw</string>` (CFBundleURLSchemes) → `operis`
+  - `<key>OpenClawBuildTimestamp</key>` → Rename to `OperisBuildTimestamp`
+  - Deep link registration
+
+- **Directory structure:**
+  - `/apps/macos/Sources/OpenClaw/` → may be renamed to `Operis/`
+  - Build app output: `dist/OpenClaw.app` → `dist/Operis.app`
+
+- **Package scripts:**
+  - `/scripts/package-mac-app.sh` - references `OpenClaw.app`, icon files, signing
+  - `/scripts/restart-mac.sh`
+
+### Shared Swift Framework
+- **Directory:** `/apps/shared/OpenClawKit/`
+  - May rename to `OperiKit/`
+  - Internal class/struct names: `OpenClawKit` → `OperiKit`
+  - Test target: `OpenClawKitTests`
+
+---
+
+## Category 5: Source Code Identifiers & Imports
+
+### Type Imports & Class Names
+- **Common pattern:** `import type { OpenClawConfig } from ...`
+- **Files across codebase:**
+  - `/src/config/types.gateway.ts`
+  - `/src/gateway/server-http.ts`
+  - All files importing `OpenClawConfig`
+
+- **Grep results show 50+ files** with `openclaw|OpenClaw|OPENCLAW` patterns
+
+### Module/Namespace References
+- `OpenClawProtocol` (Swift module)
+- `OpenClawChatUI` (Swift module)
+- `OpenClawKit` (Swift module)
+- These appear in:
+  - Swift source files (`/apps/ios/Sources/`, `/apps/macos/Sources/`, `/apps/shared/`)
+  - Import statements
+  - Package.swift definitions
+
+### Internal Constants
+- Various files defining branding constants:
+  - Product names in prompts
+  - Help text templates
+  - Agent system prompts
+
+---
+
+## Category 6: Build Scripts & CI/CD
+
+### GitHub Actions Workflows
+- **Directory:** `/.github/workflows/*.yml`
+- Files: `ci.yml`, `docker-release.yml`, `install-smoke.yml`, `formal-conformance.yml`, `workflow-sanity.yml`
+- Changes needed:
+  - Environment variables in workflow jobs
+  - Docker image names/tags (if using `openclaw` in registry)
+  - Artifact naming
+  - Release checksums/verification
+
+### Installation Scripts
+- **Location:** `../openclaw.ai/public/` (sibling repo, not in this repo)
+  - `install.sh`, `install-cli.sh`, `install.ps1`
+  - These reference `openclaw` command and npm package name
+
+### Build Scripts
+- `/scripts/package-mac-app.sh`
+  - References `OpenClaw.app`
+  - Icon/branding asset paths
+  
+- `/scripts/restart-mac.sh`
+
+- Version scripts:
+  - `/scripts/release-check.ts`
+  - `/scripts/sync-plugin-versions.ts`
+
+---
+
+## Category 7: Documentation
+
+### Main Documentation
+- **Directory:** `/docs/`
+  - Referenced in all doc links: `docs.openclaw.ai`
+  - All internal markdown links may reference "OpenClaw" or "openclaw"
+  
+### README Files
+- `/README.md` (large file - check header image reference)
+- `README-header.png` (may need branding update)
+- Extensions: `/extensions/*/README.md`
+
+### API/Protocol Documentation
+- `/docs/zh-CN/` (i18n generated docs)
+  - Auto-generated, check source English docs
+  
+- Channel docs:
+  - `/docs/channels/*.md`
+
+- Deployment docs:
+  - `/docs/platforms/mac/release.md`
+  - References to `OpenClaw.app`, version locations
+
+### Inline Documentation
+- Hook documentation: `/src/hooks/bundled/*/HOOK.md`
+- TypeScript JSDoc comments
+- Code comments referencing product
+
+---
+
+## Category 8: Local Network & Deep Link Schemes
+
+### Bonjour/mDNS Service Names
+- **File:** `/apps/ios/Sources/Info.plist`
+  - `<string>_openclaw-gw._tcp</string>` → `_operis-gw._tcp`
+
+- Service discovery throughout network code
+
+### Deep Link Schemes
+- macOS: `openclaw://` → `operis://`
+- iOS: `ai.openclaw.ios://` → `ai.operis.ios://`
+- Registered in:
+  - Info.plist files
+  - Deep link handling code
+  - URI parsing functions
+
+---
+
+## Category 9: Plugin/Extension System
+
+### Extension Package Names
+- **Directory:** `/extensions/*/package.json`
+  - Each extension may reference parent `openclaw` in dependencies/peerDependencies
+  - Plugin SDK imports: `openclaw/plugin-sdk` → `operis/plugin-sdk`
+
+**Extensions found:**
+- `/extensions/memory-lancedb`
+- `/extensions/zalouser`
+- `/extensions/zalo`
+- `/extensions/tlon`
+- `/extensions/discord`
+- `/extensions/open-prose`
+- `/extensions/qwen-portal-auth`
+- `/extensions/feishu`
+- `/extensions/lobster`
+
+---
+
+## Category 10: Testing & Configuration
+
+### Test Files
+- **Pattern:** `**/*.test.ts` and `**/*.e2e.test.ts`
+- Mock/fixture paths: Many tests reference `~/.openclaw` paths
+- Environment setup: `/test/test-env.ts`
+- Helper functions: `/test/helpers/temp-home.ts`
+
+**Key test files:**
+- `/src/config/paths.test.ts`
+- `/src/daemon/paths.test.ts`
+- `/src/config/config.multi-agent-agentdir-validation.test.ts`
+- All files importing from config/paths
+
+### Vitest Config
+- `/vitest.config.ts`
+- `/vitest.live.config.ts`
+- `/vitest.e2e.config.ts`
+- May reference test data paths
+
+---
+
+## Category 11: Web UI Components
+
+### Already Partially Rebranded (⚠️ IMPORTANT)
+- **Directory:** `/client-web/src/ui/components/`
+- Components already using `operis-` prefix:
+  - `operis-input.ts`
+  - `operis-modal.ts`
+  - `operis-toast.ts`
+  - `operis-confirm.ts`
+  - `operis-select.ts`
+  - `operis-datetime-picker.ts`
+  - `operis-onboarding.ts`
+
+- **Observation:** This suggests a gradual rebranding already in progress
+
+### API Client References
+- `/client-web/src/ui/api-client.ts`
+- `/client-web/src/ui/auth-api.ts`
+- May reference `openclaw` API endpoints
+
+### Storage & Device Identity
+- `/client-web/src/ui/storage.ts`
+- `/client-web/src/ui/device-auth.ts`
+- `/client-web/src/ui/device-identity.ts`
+- May use `openclaw` as storage keys
+
+---
+
+## Category 12: Versioning & Release
+
+### Version Locations
+- `/package.json` - `"version": "2026.2.4"`
+- `/apps/android/app/build.gradle.kts` - `versionName = "2026.2.4"`
+- `/apps/ios/Sources/Info.plist` - `CFBundleShortVersionString`
+- `/apps/macos/Sources/OpenClaw/Resources/Info.plist` - `CFBundleShortVersionString`
+- `/docs/install/updating.md` (external docs)
+
+### Changelog
+- `/CHANGELOG.md`
+- References to `openclaw` in past entries (keep for historical accuracy)
+
+---
+
+## Summary: Files Requiring Changes (Priority Order)
+
+### CRITICAL (Core Identity)
+1. `/package.json` - Package name, bin name, scripts
+2. `/openclaw.mjs` - Rename to `operis.mjs`
+3. `/src/config/paths.ts` - State dir, config file names
+4. `/src/terminal/links.ts` - Docs root URL
+5. `/apps/ios/project.yml` - Bundle ID prefix
+6. `/apps/android/app/build.gradle.kts` - App ID, namespace
+7. `/apps/macos/Sources/OpenClaw/Resources/Info.plist` - Bundle ID, display name
+8. `/apps/ios/Sources/Info.plist` - Display name, service names
+
+### HIGH (Functionality)
+9. All environment variable references (grep for `OPENCLAW_*`)
+10. `/src/**/*.ts` files importing/using `OpenClawConfig`, `OpenClawKit`
+11. `/scripts/package-mac-app.sh`
+12. `/src/agents/system-prompt.ts` - GitHub repo references
+13. `/client-web/src/ui/**/*.ts` - Remaining API references
+
+### MEDIUM (Documentation/Polish)
+14. `/README.md` and all markdown files
+15. All command help text files (`/src/commands/**/*.ts`)
+16. `/docs/**/*.md`
+17. `.github/labeler.yml` - Product references (optional)
+18. All inline comments and JSDoc
+
+### LOW (Legacy Support)
+19. Legacy config file names (keep for migration support initially)
+20. Deprecation warnings/compat code
+
+---
+
+## Unresolved Questions
+
+1. **Icon/Asset Rebranding:** Should app icons be updated? (Assuming separate design work)
+2. **GitHub Repository:** Will repo be renamed? Impact on CI/CD URLs?
+3. **npm Registry:** New package name already published or reserved?
+4. **Installer Scripts:** Are those in the sibling `openclaw.ai` repo that needs syncing?
+5. **macOS Directory Rename:** `/apps/macos/Sources/OpenClaw/` → `/apps/macos/Sources/Operis/`?
+6. **Legacy Migration:** How long should `.openclaw` paths be supported alongside `.operis`?
+7. **Discord/Telegram Docs:** Are external docs references that need updating?
