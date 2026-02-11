@@ -35,9 +35,12 @@ nsis:
   include: installer.nsh
 
 extraResources:
-  # Gateway: esbuild-bundled single file (all npm deps inlined)
-  - from: "dist-gateway/entry.js"
-    to: "gateway/entry.js"
+  # Gateway: esbuild-bundled entry + native modules (node_modules/)
+  - from: "dist-gateway/"
+    to: "gateway/"
+    filter:
+      - "**/*"
+      - "!**/*.map"
   # ESM package.json for gateway
   - from: "resources/gateway-package.json"
     to: "gateway/package.json"

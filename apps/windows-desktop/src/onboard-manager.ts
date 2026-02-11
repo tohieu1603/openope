@@ -48,6 +48,7 @@ export class OnboardManager {
    * Called after onboard and on every app startup.
    * - Enables /v1/chat/completions HTTP endpoint
    * - Allows file:// origin for WebSocket (Electron loads UI from file://)
+   * - Sets browser default profile to "openclaw" (independent browser, no Chrome extension needed)
    */
   ensureElectronConfig(): void {
     try {
@@ -65,12 +66,25 @@ export class OnboardManager {
         modified = true;
       }
 
-      // Allow file:// origin for WebSocket
+      // Disable control UI served by gateway (Electron loads UI from local file://)
+      // Prevents exposing the UI via Cloudflare tunnel — only API endpoints remain accessible
       config.gateway.controlUi ??= {};
+      if (config.gateway.controlUi.enabled !== false) {
+        config.gateway.controlUi.enabled = false;
+        modified = true;
+      }
       const origins = config.gateway.controlUi.allowedOrigins ?? [];
       if (!origins.includes("file://")) {
         origins.push("file://");
         config.gateway.controlUi.allowedOrigins = origins;
+        modified = true;
+      }
+
+      // Use independent openclaw browser (agent launches its own Chrome via CDP)
+      // instead of default "chrome" extension relay which requires a Chrome extension
+      config.browser ??= {};
+      if (config.browser.defaultProfile !== "openclaw") {
+        config.browser.defaultProfile = "openclaw";
         modified = true;
       }
 

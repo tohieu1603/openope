@@ -124,11 +124,17 @@ export class GatewayManager {
       ? path.join(process.resourcesPath, "extensions")
       : path.join(__dirname, "..", "..", "..", "dist-extensions");
 
+    // Resolve gateway node_modules for native packages (sharp, @lydell/node-pty)
+    const gatewayNodeModules = app.isPackaged
+      ? path.join(process.resourcesPath, "gateway", "node_modules")
+      : path.join(__dirname, "..", "..", "..", "node_modules");
+
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       ELECTRON_RUN_AS_NODE: "1",
       OPENCLAW_NO_RESPAWN: "1",
       OPENCLAW_BUNDLED_PLUGINS_DIR: pluginsDir,
+      NODE_PATH: gatewayNodeModules,
     };
     // Pass gateway token via env to survive config hot-reloads
     if (this.gatewayToken) {
