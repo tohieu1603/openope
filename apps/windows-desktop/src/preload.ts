@@ -31,6 +31,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onboardComplete: (data?: { cfTunnelToken?: string }) =>
     ipcRenderer.send("onboard-complete", data),
 
+  /** Write auth-profiles.json from client-side pull (after login) */
+  syncAuthProfiles: (profiles: Record<string, unknown>): Promise<boolean> =>
+    ipcRenderer.invoke("sync-auth-profiles", profiles),
+
+  /** Clear auth-profiles.json on logout */
+  clearAuthProfiles: (): Promise<boolean> =>
+    ipcRenderer.invoke("clear-auth-profiles"),
+
+  /** Save tunnel token and start cloudflared (after auto-provision) */
+  provisionTunnel: (token: string): Promise<boolean> =>
+    ipcRenderer.invoke("provision-tunnel", token),
+
+  /** Check if tunnel token is already saved locally */
+  hasTunnelToken: (): Promise<boolean> =>
+    ipcRenderer.invoke("has-tunnel-token"),
+
+  /** Get local gateway config (token + hooksToken) for registering with operismb */
+  getGatewayConfig: (): Promise<{ gatewayToken: string; hooksToken: string } | null> =>
+    ipcRenderer.invoke("get-gateway-config"),
+
   /** Get recent gateway logs (in-memory buffer) */
   getGatewayLogs: (): Promise<string[]> => ipcRenderer.invoke("get-gateway-logs"),
 

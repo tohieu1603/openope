@@ -45,7 +45,6 @@
       content: " *";
       color: #ef4444;
     }
-    input[type="password"],
     input[type="text"] {
       width: 100%;
       padding: 10px 14px;
@@ -130,19 +129,13 @@
 <body>
   <div class="setup-card">
     <h1>Welcome to Agent Operis</h1>
-    <p class="subtitle">Enter your API token to get started.</p>
+    <p class="subtitle">Enter your Cloudflare Tunnel token to connect.</p>
 
     <form id="setup-form">
       <div class="field">
-        <label for="anthropic-token" class="required">Anthropic API Token</label>
-        <input type="password" id="anthropic-token" placeholder="sk-ant-..." required autocomplete="off" />
-        <p class="field-hint">Required. Get your key from console.anthropic.com</p>
-      </div>
-
-      <div class="field">
-        <label for="cf-token">Cloudflare Tunnel Token</label>
-        <input type="text" id="cf-token" placeholder="eyJ..." autocomplete="off" />
-        <p class="field-hint">Optional. You can configure this later in Settings.</p>
+        <label for="cf-token" class="required">Cloudflare Tunnel Token</label>
+        <input type="text" id="cf-token" placeholder="eyJ..." required autocomplete="off" />
+        <p class="field-hint">Required. Get from Cloudflare Dashboard > Zero Trust > Networks > Tunnels</p>
       </div>
 
       <button type="submit" id="submit-btn">Complete Setup</button>
@@ -155,7 +148,7 @@
     const form = document.getElementById("setup-form");
     const btn = document.getElementById("submit-btn");
     const status = document.getElementById("status");
-    const tokenInput = document.getElementById("anthropic-token");
+    const cfTokenInput = document.getElementById("cf-token");
 
     function setStatus(type, message) {
       status.className = "status " + type;
@@ -173,9 +166,9 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const anthropicToken = tokenInput.value.trim();
-      if (!anthropicToken) {
-        setStatus("error", "Anthropic API token is required.");
+      const cfTunnelToken = cfTokenInput.value.trim();
+      if (!cfTunnelToken) {
+        setStatus("error", "Cloudflare Tunnel token is required.");
         return;
       }
 
@@ -183,24 +176,8 @@
       setStatus("loading", "Setting up Agent Operis...");
 
       try {
-        const cfToken = document.getElementById("cf-token").value.trim();
-        const data = { anthropicToken };
-        if (cfToken) data.cfTunnelToken = cfToken;
-
-        const result = await window.electronAPI.submitOnboard(data);
-
-        if (result.success) {
-          setStatus("success", "Setup complete! Loading Agent Operis...");
-          // Notify main process to switch to client-web UI
-          setTimeout(() => {
-            // Pass CF token to main process for encrypted storage
-            const completeData = cfToken ? { cfTunnelToken: cfToken } : undefined;
-            window.electronAPI.onboardComplete?.(completeData);
-          }, 1000);
-        } else {
-          setStatus("error", "Setup failed: " + (result.output || "Unknown error"));
-          btn.disabled = false;
-        }
+        window.electronAPI.onboardComplete({ cfTunnelToken });
+        setStatus("success", "Setup complete! Loading Agent Operis...");
       } catch (err) {
         setStatus("error", "Error: " + err.message);
         btn.disabled = false;

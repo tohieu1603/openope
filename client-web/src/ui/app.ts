@@ -62,6 +62,9 @@ import {
   logout as authLogout,
   register as authRegister,
   restoreSession,
+  pullAndSyncAuthProfiles,
+  clearLocalAuthProfiles,
+  provisionAndStartTunnel,
   type AuthUser,
 } from "./auth-api";
 import {
@@ -323,6 +326,7 @@ export class OperisApp extends LitElement {
     null;
   private popStateHandler = () => this.handlePopState();
   private clickOutsideHandler = () => { this.tokenDropdownOpen = false; };
+  private sessionExpiredHandler: (() => void) | null = null;
   private cronEventUnsubscribe: (() => void) | null = null;
   private chatStreamUnsubscribe: (() => void) | null = null;
 
@@ -391,6 +395,13 @@ export class OperisApp extends LitElement {
 
     // Start usage tracker - reports token usage from WS to Operis BE
     startUsageTracker();
+
+    // Listen for session expiry (fired by api-client interceptor when refresh fails)
+    this.sessionExpiredHandler = () => {
+      clearLocalAuthProfiles();
+      this.resetToLoggedOut();
+    };
+    window.addEventListener("auth:session-expired", this.sessionExpiredHandler);
 
     // Try to restore session from stored tokens
     this.tryRestoreSession();
@@ -479,6 +490,10 @@ export class OperisApp extends LitElement {
           isLoggedIn: true,
           username: user.name,
         });
+        // Sync auth profiles from token vault on session restore
+        pullAndSyncAuthProfiles();
+        // Auto-provision tunnel if in Electron and not yet provisioned
+        provisionAndStartTunnel();
         // Redirect from login page if logged in
         if (this.tab === "login") {
           this.chatInitializing = true;
@@ -524,6 +539,9 @@ export class OperisApp extends LitElement {
     }
     window.removeEventListener("popstate", this.popStateHandler);
     document.removeEventListener("click", this.clickOutsideHandler);
+    if (this.sessionExpiredHandler) {
+      window.removeEventListener("auth:session-expired", this.sessionExpiredHandler);
+    }
     // Unsubscribe from cron events
     this.cronEventUnsubscribe?.();
     this.cronEventUnsubscribe = null;
@@ -710,6 +728,10 @@ export class OperisApp extends LitElement {
         isLoggedIn: true,
         username: result.user.name,
       });
+      // Pull auth profiles from token vault and sync to local gateway
+      pullAndSyncAuthProfiles();
+      // Start cloudflared and wait for tunnel connection before proceeding
+      await provisionAndStartTunnel(result.tunnel?.tunnelToken);
       // Redirect with gateway token so WS client can pick it up
       if (result.user.gateway_token) {
         window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
@@ -739,6 +761,9 @@ export class OperisApp extends LitElement {
         isLoggedIn: true,
         username: result.user.name,
       });
+      // Sync auth profiles and wait for tunnel connection (same as login)
+      pullAndSyncAuthProfiles();
+      await provisionAndStartTunnel(result.tunnel?.tunnelToken);
       // Redirect with gateway token so WS client can pick it up
       if (result.user.gateway_token) {
         window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
@@ -762,6 +787,7 @@ export class OperisApp extends LitElement {
     } catch {
       // Ignore logout errors
     }
+    clearLocalAuthProfiles();
     this.resetToLoggedOut();
   }
 

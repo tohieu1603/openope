@@ -18,7 +18,7 @@ win:
       arch: [x64]
   icon: resources/icon.ico
   requestedExecutionLevel: asInvoker
-  signAndEditExecutable: false
+  signAndEditExecutable: true
 
 nsis:
   oneClick: false
@@ -73,6 +73,9 @@ extraResources:
     to: "tray-red.ico"
   - from: "resources/tray-gray.ico"
     to: "tray-gray.ico"
+  # App window icon
+  - from: "resources/icon.ico"
+    to: "icon.ico"
 
 extraFiles:
   # Workspace templates at app root

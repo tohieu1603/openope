@@ -3,9 +3,8 @@
  *
  * Lifecycle:
  * 1. Single instance lock -> prevent duplicate app
- * 2. App ready -> check if OpenClaw config exists
- * 3a. No config (first run) -> show setup.html -> onboard -> start services
- * 3b. Config exists -> start gateway + tunnel + load client-web UI
+ * 2. App ready -> auto-create config if needed -> start gateway -> load client-web
+ * 3. User logs in via client-web -> auth profiles synced -> tunnel auto-provisioned
  * 4. System tray: status icon, context menu, minimize-to-tray
  * 5. On quit -> graceful shutdown (tunnel + gateway)
  */
@@ -30,13 +29,6 @@ function resolveResourcePath(...segments: string[]): string {
     ? process.resourcesPath
     : path.join(__dirname, "..", "..", "..");
   return path.join(base, ...segments);
-}
-
-/** Resolve path to setup.html (different location in dev vs packaged) */
-function resolveSetupPath(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "setup.html")
-    : path.join(__dirname, "..", "resources", "setup.html");
 }
 
 /** Config file path: ~/.openclaw/openclaw.json */
@@ -71,6 +63,13 @@ const gateway = new GatewayManager();
 const tunnel = new TunnelManager();
 const tray = new TrayManager();
 
+/** Resolve app icon path (dev vs packaged) */
+function resolveIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "icon.ico")
+    : path.join(__dirname, "..", "resources", "icon.ico");
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1200,
@@ -78,6 +77,7 @@ function createWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     title: "Agent Operis",
+    icon: resolveIconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -160,88 +160,6 @@ function startServicesWithStatus(win: BrowserWindow): void {
   gateway.start();
 }
 
-/** Show a small dialog window for tunnel token input */
-function promptTunnelToken(): void {
-  const win = new BrowserWindow({
-    width: 500,
-    height: 260,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    parent: mainWindow ?? undefined,
-    modal: true,
-    title: "Set Tunnel Token",
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  });
-
-  win.setMenuBarVisibility(false);
-
-  // Inline HTML form for tunnel token input
-  win.loadURL(
-    "data:text/html;charset=utf-8," +
-      encodeURIComponent(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>
-<style>
-  body{font-family:system-ui;background:#1a1d24;color:#e0e0e0;padding:24px;margin:0}
-  h3{margin:0 0 8px;font-size:1rem;color:#fff}
-  p{font-size:.82rem;color:#888;margin:0 0 16px}
-  input{width:100%;padding:10px;background:#12141a;border:1px solid #2a2d35;border-radius:6px;color:#e0e0e0;font-size:.9rem;outline:0;box-sizing:border-box}
-  input:focus{border-color:#6366f1}
-  .actions{margin-top:16px;display:flex;gap:8px;justify-content:flex-end}
-  button{padding:8px 20px;border:none;border-radius:6px;font-size:.9rem;cursor:pointer}
-  .save{background:#6366f1;color:#fff}.save:hover{background:#4f46e5}
-  .cancel{background:#2a2d35;color:#ccc}.cancel:hover{background:#3a3d45}
-  .msg{font-size:.82rem;margin-top:8px;color:#4ade80;display:none}
-</style></head><body>
-<h3>Cloudflare Tunnel Token</h3>
-<p>Enter the token from Cloudflare Dashboard &gt; Zero Trust &gt; Networks &gt; Tunnels</p>
-<input id="t" placeholder="eyJhIjoiNjE3..." autocomplete="off" spellcheck="false"/>
-<div id="msg" class="msg"></div>
-<div class="actions">
-  <button class="cancel" onclick="window.close()">Cancel</button>
-  <button class="save" onclick="save()">Save &amp; Connect</button>
-</div>
-<script>
-function save(){
-  const v=document.getElementById('t').value.trim();
-  if(!v)return;
-  const msg=document.getElementById('msg');
-  msg.style.display='block';msg.textContent='Saving...';
-  fetch('ipc://set-tunnel-token',{method:'POST',body:v}).catch(()=>{});
-  // Use title hack: set document title so main process can read it
-  document.title='TOKEN:'+v;
-  setTimeout(()=>window.close(),500);
-}
-document.getElementById('t').addEventListener('keydown',e=>{if(e.key==='Enter')save()});
-<\/script></body></html>`),
-  );
-
-  win.on("closed", () => {
-    // Cleanup
-  });
-
-  // Listen for title change to get token
-  win.webContents.on("page-title-updated", (_event, title) => {
-    if (title.startsWith("TOKEN:")) {
-      const token = title.slice(6).trim();
-      if (token) {
-        try {
-          tunnel.saveToken(token);
-          tunnel.stop().then(() => {
-            if (gateway.currentStatus === "running") {
-              tunnel.start();
-            }
-          });
-        } catch {
-          // Token save failed
-        }
-      }
-    }
-  });
-}
-
 app.whenReady().then(async () => {
   mainWindow = createWindow();
 
@@ -255,16 +173,12 @@ app.whenReady().then(async () => {
       await tunnel.stop();
       tunnel.start();
     },
-    onSetTunnelToken: () => {
-      promptTunnelToken();
-    },
     onOpenLogs: () => {
       shell.openPath(gateway.getLogFilePath());
     },
   });
 
-  const onboardMgr = new OnboardManager(resolveResourcePath);
-  onboardMgr.registerIpcHandlers();
+  const onboardMgr = new OnboardManager();
 
   // Provide gateway port to renderer
   ipcMain.handle(IPC.GET_GATEWAY_PORT, () => GATEWAY_PORT);
@@ -272,6 +186,46 @@ app.whenReady().then(async () => {
   // Provide gateway logs to renderer
   ipcMain.handle(IPC.GET_GATEWAY_LOGS, () => gateway.getRecentLogs());
   ipcMain.handle(IPC.GET_GATEWAY_LOG_PATH, () => gateway.getLogFilePath());
+
+  // Auth-profiles sync: client-web pulls from operismb and sends via IPC
+  ipcMain.handle("sync-auth-profiles", (_event, profiles: Record<string, unknown>) => {
+    try {
+      const home = process.env.USERPROFILE || process.env.HOME || "";
+      const authPath = path.join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json");
+      const dir = path.dirname(authPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      // Read existing to preserve usageStats
+      let existing: Record<string, unknown> = {};
+      try { existing = JSON.parse(fs.readFileSync(authPath, "utf-8")); } catch { /* fresh */ }
+
+      const merged = { ...existing, ...profiles };
+      fs.writeFileSync(authPath, JSON.stringify(merged, null, 2), "utf-8");
+      return true;
+    } catch (err) {
+      console.error("[sync-auth-profiles] Failed:", err);
+      return false;
+    }
+  });
+
+  // Clear auth-profiles on logout
+  ipcMain.handle("clear-auth-profiles", () => {
+    try {
+      const home = process.env.USERPROFILE || process.env.HOME || "";
+      const authPath = path.join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json");
+      if (!fs.existsSync(authPath)) return true;
+
+      let existing: Record<string, unknown> = {};
+      try { existing = JSON.parse(fs.readFileSync(authPath, "utf-8")); } catch { /* fresh */ }
+
+      const cleared = { ...existing, version: 1, profiles: {}, lastGood: {} };
+      fs.writeFileSync(authPath, JSON.stringify(cleared, null, 2), "utf-8");
+      return true;
+    } catch (err) {
+      console.error("[clear-auth-profiles] Failed:", err);
+      return false;
+    }
+  });
 
   // Enable DevTools with F12 or Ctrl+Shift+I
   mainWindow.webContents.on("before-input-event", (_event, input) => {
@@ -283,34 +237,55 @@ app.whenReady().then(async () => {
     }
   });
 
-  if (!onboardMgr.isConfigured()) {
-    // First run: show setup page for token entry
-    mainWindow.loadFile(resolveSetupPath());
+  // Tunnel provision IPC: client-web calls this after auto-provisioning via operismb
+  // Returns true only when cloudflared is connected (or false on timeout/error)
+  ipcMain.handle("provision-tunnel", async (_event, tunnelToken: string) => {
+    try {
+      // Stop old cloudflared first (may be connected to a different user's tunnel)
+      await tunnel.stop();
+      tunnel.saveToken(tunnelToken);
+      // Start cloudflared with new token if gateway is already running
+      if (gateway.currentStatus === "running") {
+        await tunnel.start();
+        // Wait for cloudflared to actually connect (up to 15s)
+        return await tunnel.waitForConnection(15_000);
+      }
+      return true;
+    } catch (err) {
+      console.error("[provision-tunnel] Failed:", err);
+      return false;
+    }
+  });
 
-    // After successful onboard, save CF token if provided, then start services
-    ipcMain.once("onboard-complete", (_event, data?: { cfTunnelToken?: string }) => {
-      if (data?.cfTunnelToken) {
-        try {
-          tunnel.saveToken(data.cfTunnelToken);
-        } catch {
-          // Non-fatal: tunnel token save failed
-        }
-      }
-      if (mainWindow) {
-        const gatewayToken = onboardMgr.readGatewayToken();
-        gateway.gatewayToken = gatewayToken;
-        startServicesWithStatus(mainWindow);
-        loadClientWeb(mainWindow, gatewayToken);
-      }
-    });
-  } else {
-    // Normal startup: ensure Electron config, start services and load client-web UI
-    onboardMgr.ensureElectronConfig();
-    const gatewayToken = onboardMgr.readGatewayToken();
-    gateway.gatewayToken = gatewayToken;
-    startServicesWithStatus(mainWindow);
-    loadClientWeb(mainWindow, gatewayToken);
+  // Check if tunnel token exists locally
+  ipcMain.handle("has-tunnel-token", () => tunnel.hasToken());
+
+  // Get local gateway config for registering with operismb
+  ipcMain.handle("get-gateway-config", () => {
+    try {
+      const raw = fs.readFileSync(configFilePath, "utf-8");
+      const config = JSON.parse(raw);
+      const gatewayToken = config?.gateway?.auth?.token || "";
+      const hooksToken = config?.hooks?.token || "";
+      if (!gatewayToken) return null;
+      return { gatewayToken, hooksToken };
+    } catch {
+      return null;
+    }
+  });
+
+  // First run: auto-create config (no setup.html needed)
+  if (!onboardMgr.isConfigured()) {
+    onboardMgr.createMinimalConfig();
   }
+
+  // Always: ensure config + auth store, start gateway, load client-web
+  onboardMgr.ensureElectronConfig();
+  onboardMgr.ensureAgentAuthStore();
+  const gatewayToken = onboardMgr.readGatewayToken();
+  gateway.gatewayToken = gatewayToken;
+  startServicesWithStatus(mainWindow);
+  loadClientWeb(mainWindow, gatewayToken);
 });
 
 // Second instance: show existing window
