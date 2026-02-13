@@ -1,31 +1,20 @@
 /**
  * System tray manager for Agent Operis Desktop.
- * Shows color-coded status icon, context menu with actions,
+ * Shows the app icon tinted by gateway status, context menu with actions,
  * minimize-to-tray on window close, and auto-start toggle.
  */
 import { Tray, Menu, app, type BrowserWindow } from "electron";
-import path from "node:path";
-import type { GatewayStatus, TunnelStatus } from "./types";
+import type { GatewayStatus } from "./types";
+import { getTrayIcon } from "./tray-icon";
 
 type TrayActionHandler = {
   onRestartGateway: () => void;
-  onRestartTunnel: () => void;
-  onSetTunnelToken: () => void;
-  onOpenLogs: () => void;
-};
-
-const ICON_MAP: Record<GatewayStatus, string> = {
-  running: "tray-green.ico",
-  starting: "tray-yellow.ico",
-  error: "tray-red.ico",
-  stopped: "tray-gray.ico",
 };
 
 export class TrayManager {
   private tray: Tray | null = null;
   private win: BrowserWindow | null = null;
   private gatewayStatus: GatewayStatus = "stopped";
-  private tunnelStatus: TunnelStatus = "disconnected";
   private actions: TrayActionHandler | null = null;
   private _isQuitting = false;
 
@@ -33,19 +22,12 @@ export class TrayManager {
     return this._isQuitting;
   }
 
-  /** Resolve tray icon path (dev vs packaged) */
-  private resolveIcon(filename: string): string {
-    return app.isPackaged
-      ? path.join(process.resourcesPath, filename)
-      : path.join(__dirname, "..", "resources", filename);
-  }
-
   /** Initialize tray with window reference and action handlers */
   init(win: BrowserWindow, actions: TrayActionHandler): void {
     this.win = win;
     this.actions = actions;
 
-    this.tray = new Tray(this.resolveIcon("tray-gray.ico"));
+    this.tray = new Tray(getTrayIcon("stopped"));
     this.tray.setToolTip("Agent Operis - Stopped");
 
     this.tray.on("double-click", () => {
@@ -58,15 +40,8 @@ export class TrayManager {
   /** Update gateway status in tray */
   updateGateway(status: GatewayStatus): void {
     this.gatewayStatus = status;
-    const iconFile = ICON_MAP[status] || "tray-gray.ico";
-    this.tray?.setImage(this.resolveIcon(iconFile));
+    this.tray?.setImage(getTrayIcon(status));
     this.tray?.setToolTip(`Agent Operis - Gateway ${status}`);
-    this.buildMenu();
-  }
-
-  /** Update tunnel status in tray */
-  updateTunnel(status: TunnelStatus): void {
-    this.tunnelStatus = status;
     this.buildMenu();
   }
 
@@ -94,25 +69,12 @@ export class TrayManager {
       { label: "Show Window", click: () => this.showWindow() },
       { type: "separator" },
       { label: `Gateway: ${this.gatewayStatus}`, enabled: false },
-      { label: `Tunnel: ${this.tunnelStatus}`, enabled: false },
       { type: "separator" },
       {
         label: "Restart Gateway",
         click: () => this.actions?.onRestartGateway(),
       },
-      {
-        label: "Reconnect Tunnel",
-        click: () => this.actions?.onRestartTunnel(),
-      },
-      {
-        label: "Set Tunnel Token...",
-        click: () => this.actions?.onSetTunnelToken(),
-      },
       { type: "separator" },
-      {
-        label: "Open Gateway Logs",
-        click: () => this.actions?.onOpenLogs(),
-      },
       {
         label: "Start on Login",
         type: "checkbox",

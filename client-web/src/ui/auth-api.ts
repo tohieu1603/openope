@@ -32,11 +32,19 @@ export interface AuthUser {
   gateway_token?: string;
 }
 
+export interface TunnelInfo {
+  tunnelId: string;
+  tunnelToken: string;
+  domain: string;
+  tunnelName: string;
+}
+
 export interface AuthResult {
   user: AuthUser;
   accessToken: string;
   refreshToken: string;
   expiresIn: string;
+  tunnel?: TunnelInfo | null;
 }
 
 export interface AuthError {
@@ -151,6 +159,91 @@ export async function getMe(): Promise<AuthUser> {
   const response = await apiClient.get<AuthUser>("/auth/me");
   storeGatewayConfig(response.data);
   return response.data;
+}
+
+// Electron IPC bridge type (available when running in Electron)
+declare global {
+  interface Window {
+    electronAPI?: {
+      syncAuthProfiles?: (profiles: Record<string, unknown>) => Promise<boolean>;
+      clearAuthProfiles?: () => Promise<boolean>;
+      provisionTunnel?: (token: string) => Promise<boolean>;
+      hasTunnelToken?: () => Promise<boolean>;
+      getGatewayConfig?: () => Promise<{ gatewayToken: string; hooksToken: string } | null>;
+      [key: string]: unknown;
+    };
+  }
+}
+
+/**
+ * Pull auth-profiles from operismb token-vault and sync to local gateway.
+ * Called after login/session restore so gateway has valid Anthropic tokens.
+ * Only works in Electron (uses IPC to write auth-profiles.json).
+ */
+export async function pullAndSyncAuthProfiles(): Promise<void> {
+  try {
+    if (!window.electronAPI?.syncAuthProfiles) return; // Not in Electron
+
+    const response = await apiClient.get<Record<string, unknown>>("/token-vault/auth-profiles");
+    const profiles = response.data;
+    if (!profiles?.profiles || Object.keys(profiles.profiles as object).length === 0) return;
+
+    await window.electronAPI.syncAuthProfiles(profiles);
+  } catch {
+    // Non-blocking: log but don't fail login
+    console.warn("[auth-api] Failed to pull auth profiles from token vault");
+  }
+}
+
+/**
+ * Clear local auth-profiles.json via Electron IPC (on logout).
+ */
+export async function clearLocalAuthProfiles(): Promise<void> {
+  try {
+    if (!window.electronAPI?.clearAuthProfiles) return;
+    await window.electronAPI.clearAuthProfiles();
+  } catch {
+    // Non-blocking
+  }
+}
+
+/**
+ * Start cloudflared with tunnel token and register local gateway config.
+ * @param tunnelToken — from login/register response (server already provisioned the tunnel)
+ * Called after login/register in Electron. Non-blocking, fire-and-forget.
+ */
+export async function provisionAndStartTunnel(tunnelToken?: string): Promise<void> {
+  try {
+    if (!window.electronAPI?.provisionTunnel) return; // Not in Electron
+
+    // Step 1: Start cloudflared with tunnel token
+    if (tunnelToken) {
+      // Use token from login/register response directly
+      await window.electronAPI.provisionTunnel(tunnelToken);
+    } else if (window.electronAPI.hasTunnelToken) {
+      // Fallback: fetch from API if no token provided (e.g. session restore)
+      const hasToken = await window.electronAPI.hasTunnelToken();
+      if (!hasToken) {
+        const response = await apiClient.post<TunnelInfo>("/tunnels/provision");
+        if (response.data.tunnelToken) {
+          await window.electronAPI.provisionTunnel(response.data.tunnelToken);
+        }
+      }
+    }
+
+    // Step 2: Register local gateway_token + hooksToken with operismb
+    if (window.electronAPI.getGatewayConfig) {
+      const gwConfig = await window.electronAPI.getGatewayConfig();
+      if (gwConfig?.gatewayToken) {
+        await apiClient.patch("/auth/gateway", {
+          gateway_token: gwConfig.gatewayToken,
+          gateway_hooks_token: gwConfig.hooksToken || undefined,
+        });
+      }
+    }
+  } catch {
+    console.warn("[auth-api] Tunnel provision/gateway registration failed");
+  }
 }
 
 // Try to restore session from stored tokens

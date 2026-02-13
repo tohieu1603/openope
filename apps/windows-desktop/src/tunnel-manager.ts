@@ -141,6 +141,36 @@ export class TunnelManager {
     });
   }
 
+  /**
+   * Wait until tunnel reaches "connected" status or timeout.
+   * Resolves true if connected, false if timeout/error.
+   */
+  waitForConnection(timeoutMs = 15_000): Promise<boolean> {
+    if (this.status === "connected") return Promise.resolve(true);
+    if (this.status === "error" || this.status === "disconnected") {
+      return Promise.resolve(false);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        unsub();
+        resolve(false);
+      }, timeoutMs);
+
+      const unsub = this.onStatus((s) => {
+        if (s === "connected") {
+          clearTimeout(timer);
+          unsub();
+          resolve(true);
+        } else if (s === "error" || s === "disconnected") {
+          clearTimeout(timer);
+          unsub();
+          resolve(false);
+        }
+      });
+    });
+  }
+
   /** Gracefully stop the tunnel: SIGTERM -> 5s -> force kill */
   async stop(): Promise<void> {
     if (!this.child) {

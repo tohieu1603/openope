@@ -31,28 +31,23 @@ describe("setup.html", () => {
     expect(htmlContent).toContain('<form id="setup-form">');
   });
 
-  it("should have Anthropic token input field", () => {
-    expect(htmlContent).toContain('id="anthropic-token"');
-    expect(htmlContent).toContain('type="password"');
-    expect(htmlContent).toContain('placeholder="sk-ant-..."');
-    expect(htmlContent).toContain("required");
-  });
-
-  it("should have optional Cloudflare token input field", () => {
+  it("should have required Cloudflare Tunnel token input field", () => {
     expect(htmlContent).toContain('id="cf-token"');
     expect(htmlContent).toContain('type="text"');
     expect(htmlContent).toContain('placeholder="eyJ..."');
+    expect(htmlContent).toContain("required");
+  });
+
+  it("should NOT have Anthropic token input field", () => {
+    expect(htmlContent).not.toContain('id="anthropic-token"');
+    expect(htmlContent).not.toContain("sk-ant-");
+    expect(htmlContent).not.toContain("submitOnboard");
   });
 
   it("should have a submit button", () => {
     expect(htmlContent).toContain('id="submit-btn"');
     expect(htmlContent).toContain('type="submit"');
     expect(htmlContent).toContain("Complete Setup");
-  });
-
-  it("should reference window.electronAPI.submitOnboard", () => {
-    expect(htmlContent).toContain("window.electronAPI.submitOnboard");
-    expect(htmlContent).toContain("electronAPI.submitOnboard(data)");
   });
 
   it("should reference window.electronAPI.onboardComplete", () => {
@@ -82,24 +77,18 @@ describe("setup.html", () => {
     expect(htmlContent).toContain("@keyframes spin");
   });
 
-  it("should validate anthropic token is required before submit", () => {
-    expect(htmlContent).toContain("if (!anthropicToken)");
-    expect(htmlContent).toContain("Anthropic API token is required");
+  it("should validate CF tunnel token is required before submit", () => {
+    expect(htmlContent).toContain("if (!cfTunnelToken)");
+    expect(htmlContent).toContain("Cloudflare Tunnel token is required");
   });
 
   it("should disable submit button during submission", () => {
     expect(htmlContent).toContain("btn.disabled = true");
   });
 
-  it("should handle submission timeout before reload", () => {
-    expect(htmlContent).toContain("setTimeout");
-    expect(htmlContent).toContain("1000");
-  });
-
   it("should handle form submission with async/await", () => {
     expect(htmlContent).toContain("async (e) =>");
     expect(htmlContent).toContain("e.preventDefault()");
-    expect(htmlContent).toContain("await window.electronAPI");
   });
 
   it("should have proper charset and viewport meta tags", () => {

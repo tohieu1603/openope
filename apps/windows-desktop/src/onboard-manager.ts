@@ -1,20 +1,12 @@
 /**
- * First-run detection and non-interactive onboarding manager.
- * Checks if OpenClaw config exists; if not, runs onboard via child_process.
+ * First-run detection and config management for Agent Operis Desktop.
+ * Creates minimal gateway config on first run; ensures Electron-specific
+ * settings on every startup.
  */
-import { spawn } from "node:child_process";
-import { app, ipcMain } from "electron";
 import path from "node:path";
 import fs from "node:fs";
-import { IPC, type OnboardResult, type OnboardSubmitData } from "./types";
 
 export class OnboardManager {
-  private resolveResource: (...segments: string[]) => string;
-
-  constructor(resolveResource: (...segments: string[]) => string) {
-    this.resolveResource = resolveResource;
-  }
-
   /**
    * Path to OpenClaw config file.
    * Config lives at ~/.openclaw/openclaw.json on all platforms.
@@ -32,6 +24,42 @@ export class OnboardManager {
   }
 
   /**
+   * Create minimal gateway config without Anthropic token.
+   * Gateway starts and serves HTTP/hooks; Anthropic token is synced later
+   * by the backend via POST /hooks/sync-auth-profiles through the tunnel.
+   */
+  createMinimalConfig(): void {
+    const configDir = path.dirname(this.configFilePath);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+
+    // Generate random tokens for gateway auth and hooks
+    const randomHex = (bytes: number) =>
+      Array.from({ length: bytes }, () =>
+        Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
+      ).join("");
+    const gatewayToken = randomHex(24);
+    const hooksToken = randomHex(24);
+
+    const config = {
+      gateway: {
+        mode: "local",
+        auth: { mode: "token", token: gatewayToken },
+        port: 18789,
+        bind: "loopback",
+        http: { endpoints: { chatCompletions: { enabled: true } } },
+        controlUi: { enabled: false, allowedOrigins: ["file://"] },
+      },
+      hooks: { enabled: true, token: hooksToken },
+      auth: { profiles: {} },
+      browser: { defaultProfile: "openclaw" },
+    };
+
+    fs.writeFileSync(this.configFilePath, JSON.stringify(config, null, 2), "utf-8");
+  }
+
+  /**
    * Read the gateway auth token from config (for passing to UI via URL query).
    */
   readGatewayToken(): string | null {
@@ -41,6 +69,37 @@ export class OnboardManager {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Ensure the default agent directory and empty auth-profiles.json exist.
+   * Gateway creates these lazily, but having them ready avoids race conditions
+   * where the backend tries to sync before the agent has run once.
+   */
+  ensureAgentAuthStore(): void {
+    const home = process.env.USERPROFILE || process.env.HOME || "";
+    const agentDir = path.join(home, ".openclaw", "agents", "main", "agent");
+    const authPath = path.join(agentDir, "auth-profiles.json");
+
+    if (fs.existsSync(authPath)) return;
+
+    if (!fs.existsSync(agentDir)) {
+      fs.mkdirSync(agentDir, { recursive: true });
+    }
+
+    const defaultStore = {
+      version: 1,
+      profiles: {
+        "anthropic:manual": { type: "token", provider: "anthropic", token: "" },
+        "anthropic:default": { type: "token", provider: "anthropic", token: "" },
+      },
+      lastGood: { anthropic: "anthropic:default" },
+      usageStats: {
+        "anthropic:manual": { lastUsed: 0, errorCount: 0 },
+        "anthropic:default": { lastUsed: 0, errorCount: 0 },
+      },
+    };
+    fs.writeFileSync(authPath, JSON.stringify(defaultStore, null, 2), "utf-8");
   }
 
   /**
@@ -80,11 +139,39 @@ export class OnboardManager {
         modified = true;
       }
 
+      // Enable hooks system so backend can push auth profiles via tunnel
+      config.hooks ??= {};
+      if (config.hooks.enabled !== true) {
+        config.hooks.enabled = true;
+        modified = true;
+      }
+      if (!config.hooks.token) {
+        const randomHex = (bytes: number) =>
+          Array.from({ length: bytes }, () =>
+            Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
+          ).join("");
+        config.hooks.token = randomHex(24);
+        modified = true;
+      }
+
       // Use independent openclaw browser (agent launches its own Chrome via CDP)
       // instead of default "chrome" extension relay which requires a Chrome extension
       config.browser ??= {};
       if (config.browser.defaultProfile !== "openclaw") {
         config.browser.defaultProfile = "openclaw";
+        modified = true;
+      }
+
+      // Remove stale executablePath if file no longer exists (e.g. app moved to different machine)
+      // Gateway auto-detects Edge/Chrome/Brave dynamically — no need to persist a machine-specific path
+      if (config.browser.executablePath && !fs.existsSync(config.browser.executablePath)) {
+        delete config.browser.executablePath;
+        modified = true;
+      }
+
+      // Disable Chrome sandbox: required when gateway spawns Chrome as a child of Electron
+      if (config.browser.noSandbox !== true) {
+        config.browser.noSandbox = true;
         modified = true;
       }
 
@@ -94,100 +181,5 @@ export class OnboardManager {
     } catch {
       // Config may not exist yet
     }
-  }
-
-  /**
-   * Run non-interactive onboarding with provided tokens.
-   * Spawns: node gateway/entry.js onboard --non-interactive ...
-   * Uses process.execPath (Electron's bundled Node) as the runtime with ELECTRON_RUN_AS_NODE=1.
-   */
-  async runOnboard(data: OnboardSubmitData): Promise<OnboardResult> {
-    const entryPath = this.resolveResource("gateway", "entry.js");
-
-    if (!fs.existsSync(entryPath)) {
-      return { success: false, output: `Gateway not found at ${entryPath}` };
-    }
-
-    const args = [
-      entryPath,
-      "onboard",
-      "--non-interactive",
-      "--accept-risk",
-      "--auth-choice",
-      "token",
-      "--token-provider",
-      "anthropic",
-      "--token",
-      data.anthropicToken,
-      "--gateway-port",
-      "18789",
-      "--gateway-bind",
-      "loopback",
-      "--skip-channels",
-      "--skip-skills",
-      "--skip-health",
-      "--json",
-    ];
-
-    return new Promise<OnboardResult>((resolve) => {
-      let resolved = false;
-      const done = (result: OnboardResult) => {
-        if (!resolved) {
-          resolved = true;
-          resolve(result);
-        }
-      };
-
-      // Resolve bundled plugins directory so onboard can validate config
-      const pluginsDir = app.isPackaged
-        ? path.join(process.resourcesPath, "extensions")
-        : path.join(__dirname, "..", "dist-extensions");
-
-      const child = spawn(process.execPath, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: "1",
-          OPENCLAW_BUNDLED_PLUGINS_DIR: pluginsDir,
-        },
-        windowsHide: true,
-      });
-
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (err) => {
-        done({ success: false, output: err.message });
-      });
-      child.on("exit", (code) => {
-        const success = code === 0;
-        done({
-          success,
-          output: success ? stdout : stderr || `exit code ${code}`,
-        });
-
-        // After successful onboard, ensure Electron-specific config is set
-        if (success) {
-          this.ensureElectronConfig();
-        }
-      });
-    });
-  }
-
-  /** Register IPC handlers for first-run setup page */
-  registerIpcHandlers(): void {
-    ipcMain.handle(IPC.ONBOARD_SUBMIT, async (_event, data: OnboardSubmitData) => {
-      return this.runOnboard(data);
-    });
-  }
-
-  /** Remove IPC handlers (cleanup) */
-  removeIpcHandlers(): void {
-    ipcMain.removeHandler(IPC.ONBOARD_SUBMIT);
   }
 }
