@@ -459,6 +459,14 @@ export function getGatewayClient(): GatewayClient {
   return client;
 }
 
+export function stopGatewayClient() {
+  if (client) {
+    client.stop();
+    client = null;
+  }
+  connectionPromise = null;
+}
+
 export async function waitForConnection(timeoutMs = 5000): Promise<GatewayClient> {
   const c = getGatewayClient();
   if (c.connected) return c;

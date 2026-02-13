@@ -1,5 +1,5 @@
 // Agent types for Client Web
-// Based on moltbot gateway types
+// Ported from ui/src/ui/types.ts to match gateway API responses
 
 // === Agents ===
 export type AgentIdentity = {
@@ -53,6 +53,12 @@ export type SkillInstallOption = {
   bins: string[];
 };
 
+export type SkillsStatusConfigCheck = {
+  path: string;
+  value: unknown;
+  satisfied: boolean;
+};
+
 export type SkillStatusEntry = {
   name: string;
   description: string;
@@ -80,6 +86,7 @@ export type SkillStatusEntry = {
     config: string[];
     os: string[];
   };
+  configChecks?: SkillsStatusConfigCheck[];
   install: SkillInstallOption[];
 };
 
@@ -144,31 +151,149 @@ export type DevicePairingList = {
 };
 
 // === Channels ===
-export type ChannelEntry = {
+export type ChannelUiMetaEntry = {
   id: string;
-  label?: string;
-  connected: boolean;
-  enabled: boolean;
+  label: string;
+  detailLabel: string;
+  systemImage?: string;
+};
+
+export type ChannelAccountSnapshot = {
+  accountId: string;
+  name?: string | null;
+  enabled?: boolean | null;
+  configured?: boolean | null;
+  linked?: boolean | null;
+  running?: boolean | null;
+  connected?: boolean | null;
+  reconnectAttempts?: number | null;
+  lastConnectedAt?: number | null;
+  lastError?: string | null;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastInboundAt?: number | null;
+  lastOutboundAt?: number | null;
+  lastProbeAt?: number | null;
+  mode?: string | null;
+  dmPolicy?: string | null;
+  allowFrom?: string[] | null;
+  tokenSource?: string | null;
+  botTokenSource?: string | null;
+  appTokenSource?: string | null;
+  credentialSource?: string | null;
+  audienceType?: string | null;
+  audience?: string | null;
+  webhookPath?: string | null;
+  webhookUrl?: string | null;
+  baseUrl?: string | null;
+  allowUnmentionedGroups?: boolean | null;
+  cliPath?: string | null;
+  dbPath?: string | null;
+  port?: number | null;
+  probe?: unknown;
+  audit?: unknown;
+  application?: unknown;
 };
 
 export type ChannelsStatusSnapshot = {
-  channels: ChannelEntry[];
+  ts?: number;
+  channelOrder?: string[];
+  channelLabels?: Record<string, string>;
+  channelDetailLabels?: Record<string, string>;
+  channelSystemImages?: Record<string, string>;
+  channelMeta?: ChannelUiMetaEntry[];
+  channels?: Record<string, unknown>;
+  channelAccounts?: Record<string, ChannelAccountSnapshot[]>;
+  channelDefaultAccountId?: Record<string, string>;
 };
 
 // === Cron ===
+export type CronSchedule =
+  | { kind: "at"; at: string }
+  | { kind: "every"; everyMs: number; anchorMs?: number }
+  | { kind: "cron"; expr: string; tz?: string };
+
+export type CronSessionTarget = "main" | "isolated";
+export type CronWakeMode = "next-heartbeat" | "now";
+
+export type CronPayload =
+  | { kind: "systemEvent"; text: string }
+  | {
+      kind: "agentTurn";
+      message: string;
+      thinking?: string;
+      timeoutSeconds?: number;
+    };
+
+export type CronDelivery = {
+  mode: "none" | "announce";
+  channel?: string;
+  to?: string;
+  bestEffort?: boolean;
+};
+
+export type CronJobState = {
+  nextRunAtMs?: number;
+  runningAtMs?: number;
+  lastRunAtMs?: number;
+  lastStatus?: "ok" | "error" | "skipped";
+  lastError?: string;
+  lastDurationMs?: number;
+};
+
 export type CronJob = {
   id: string;
+  agentId?: string;
   name: string;
   description?: string;
-  agentId: string;
-  schedule: string;
-  sessionTarget: string;
   enabled: boolean;
-  state?: string;
+  deleteAfterRun?: boolean;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+  schedule: CronSchedule;
+  sessionTarget: CronSessionTarget;
+  wakeMode?: CronWakeMode;
+  payload: CronPayload;
+  delivery?: CronDelivery;
+  state?: CronJobState;
 };
 
 export type CronStatus = {
   enabled: boolean;
   jobs: number;
-  nextWakeAtMs?: number;
+  nextWakeAtMs?: number | null;
+};
+
+// === Exec Approvals ===
+export type ExecApprovalsDefaults = {
+  security?: string;
+  ask?: string;
+  askFallback?: string;
+  autoAllowSkills?: boolean;
+};
+
+export type ExecApprovalsAllowlistEntry = {
+  id?: string;
+  pattern: string;
+  lastUsedAt?: number;
+  lastUsedCommand?: string;
+  lastResolvedPath?: string;
+};
+
+export type ExecApprovalsAgent = ExecApprovalsDefaults & {
+  allowlist?: ExecApprovalsAllowlistEntry[];
+};
+
+export type ExecApprovalsFile = {
+  version?: number;
+  socket?: { path?: string };
+  defaults?: ExecApprovalsDefaults;
+  agents?: Record<string, ExecApprovalsAgent>;
+};
+
+export type ExecApprovalsSnapshot = {
+  path: string;
+  exists: boolean;
+  hash: string;
+  file: ExecApprovalsFile;
 };
