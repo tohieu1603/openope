@@ -3,8 +3,27 @@
  * Handles chat with Operis API
  */
 
-import apiClient, { getAccessToken, getRefreshToken, setTokens, clearTokens, getErrorMessage } from "./api-client";
+import apiClient, { getAccessToken, getRefreshToken, getErrorMessage, refreshAccessToken } from "./api-client";
 import { API_CONFIG } from "../config";
+
+// Detect if text looks like an HTML error page
+function isHtmlErrorPage(text: string): boolean {
+  const trimmed = text.trimStart().toLowerCase();
+  return trimmed.startsWith("<!doctype") || trimmed.startsWith("<html") || trimmed.includes("<head>") || trimmed.includes("cloudflare");
+}
+
+// Extract a clean error message from an HTML error page
+function extractGatewayError(html: string, status: number): string {
+  // Try to extract error code from Cloudflare pages (e.g. "Error 1033", "Error 502")
+  const cfError = html.match(/Error\s+(\d{3,4})/i);
+  if (cfError) {
+    return `Gateway không khả dụng (Error ${cfError[1]}). Vui lòng thử lại sau.`;
+  }
+  if (status >= 500) {
+    return `Gateway không khả dụng (${status}). Vui lòng thử lại sau.`;
+  }
+  return `Gateway không khả dụng. Vui lòng thử lại sau.`;
+}
 
 // Types matching Operis API response (Anthropic format)
 export interface ContentBlock {
@@ -82,21 +101,6 @@ export async function sendMessageSync(
   }
 }
 
-// Internal function to refresh tokens (for SSE streaming)
-async function refreshTokensForStream(): Promise<void> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    throw new Error("No refresh token");
-  }
-
-  const axios = (await import("axios")).default;
-  const response = await axios.post(`${API_CONFIG.baseUrl}/auth/refresh`, {
-    refreshToken,
-  });
-
-  setTokens(response.data.accessToken, response.data.refreshToken);
-}
-
 // Send chat message with SSE streaming
 // Note: SSE streaming requires fetch, axios doesn't support it well
 export async function sendMessage(
@@ -123,20 +127,22 @@ export async function sendMessage(
 
   let response = await doStreamRequest(getAccessToken());
 
-  // Handle 401 - try to refresh token and retry once
+  // Handle 401 - use shared refresh lock (no race condition)
   if (response.status === 401 && getRefreshToken()) {
     try {
-      await refreshTokensForStream();
+      await refreshAccessToken();
       response = await doStreamRequest(getAccessToken());
     } catch {
-      clearTokens();
-      window.dispatchEvent(new CustomEvent("auth:session-expired"));
       throw new Error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
     }
   }
 
   if (!response.ok) {
     const errorText = await response.text();
+    // Detect HTML error pages (Cloudflare, nginx, etc.)
+    if (isHtmlErrorPage(errorText)) {
+      throw new Error(extractGatewayError(errorText, response.status));
+    }
     let errorMessage = `Request failed: ${response.status}`;
     try {
       const errorJson = JSON.parse(errorText);
@@ -145,6 +151,13 @@ export async function sendMessage(
       // Keep default error message
     }
     throw new Error(errorMessage);
+  }
+
+  // Detect HTML responses masquerading as 200 (Cloudflare tunnel errors)
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("text/html")) {
+    const body = await response.text();
+    throw new Error(extractGatewayError(body, response.status));
   }
 
   // Parse SSE stream with named events (event: xxx\ndata: {...})

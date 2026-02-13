@@ -38,6 +38,8 @@ import type {
   SkillStatusReport,
   SkillMessageMap,
   DevicePairingList,
+  PendingDevice,
+  PairedDevice,
   NodeInfo,
   ChannelsStatusSnapshot,
   CronJob,
@@ -55,7 +57,7 @@ import {
   getWorkflowStatus,
   type WorkflowStatus,
 } from "./workflow-api";
-import { subscribeToCronEvents, subscribeToChatStream, type CronEvent, type ChatStreamEvent } from "./gateway-client";
+import { subscribeToCronEvents, subscribeToChatStream, stopGatewayClient, waitForConnection, type CronEvent, type ChatStreamEvent } from "./gateway-client";
 import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
 import {
   login as authLogin,
@@ -188,9 +190,6 @@ export class OperisApp extends LitElement {
   // Chat sidebar state
   @state() chatConversations: Conversation[] = [];
   @state() chatConversationsLoading = false;
-  // Token dropdown in header
-  @state() tokenDropdownOpen = false;
-
   // Login state
   @state() loginLoading = false;
   @state() loginError: string | null = null;
@@ -220,6 +219,9 @@ export class OperisApp extends LitElement {
   @state() logsError: string | null = null;
   @state() logsSearchQuery = "";
   @state() logsHasMore = false;
+
+  // Docs state
+  @state() docsSelectedSlug: string | null = null;
 
   // Billing state (token balance comes from currentUser.token_balance)
   @state() billingPaymentMode: "tier" | "amount" = "tier";
@@ -285,15 +287,24 @@ export class OperisApp extends LitElement {
   @state() agentFileSaving = false;
   // Agent identity state
   @state() agentIdentityById: Record<string, AgentIdentityResult> = {};
+  @state() agentIdentityLoading = false;
+  @state() agentIdentityError: string | null = null;
   // Agent channels state
   @state() agentChannelsLoading = false;
   @state() agentChannelsError: string | null = null;
   @state() agentChannelsSnapshot: ChannelsStatusSnapshot | null = null;
+  @state() agentChannelsLastSuccess: number | null = null;
   // Agent cron state
   @state() agentCronLoading = false;
   @state() agentCronError: string | null = null;
   @state() agentCronStatus: CronStatus | null = null;
   @state() agentCronJobs: CronJob[] = [];
+  // Agent skills state (per-agent, separate from global skills tab)
+  @state() agentSkillsLoading = false;
+  @state() agentSkillsReport: SkillStatusReport | null = null;
+  @state() agentSkillsError: string | null = null;
+  @state() agentSkillsAgentId: string | null = null;
+  @state() agentSkillsFilter = "";
 
   // Skills state
   @state() skillsLoading = false;
@@ -310,6 +321,24 @@ export class OperisApp extends LitElement {
   @state() devicesLoading = false;
   @state() devicesError: string | null = null;
   @state() devicesList: DevicePairingList | null = null;
+
+  // Config state (for bindings)
+  @state() configForm: Record<string, unknown> | null = null;
+  @state() configLoading = false;
+  @state() configSaving = false;
+  @state() configDirty = false;
+  @state() configFormMode: "form" | "raw" = "form";
+  @state() configSnapshot: { hash: string; config: Record<string, unknown> } | null = null;
+
+  // Exec approvals state
+  @state() execApprovalsLoading = false;
+  @state() execApprovalsSaving = false;
+  @state() execApprovalsDirty = false;
+  @state() execApprovalsSnapshot: import("./agent-types").ExecApprovalsSnapshot | null = null;
+  @state() execApprovalsForm: import("./agent-types").ExecApprovalsFile | null = null;
+  @state() execApprovalsSelectedAgent: string | null = null;
+  @state() execApprovalsTarget: "gateway" | "node" = "gateway";
+  @state() execApprovalsTargetNodeId: string | null = null;
 
   // Analytics state
   @state() analyticsLoading = false;
@@ -352,30 +381,14 @@ export class OperisApp extends LitElement {
       this.themeMedia.addEventListener("change", this.themeMediaHandler);
     }
 
-    // Initialize tab from URL
+    // Initialize tab from URL (don't load protected data yet — wait for auth)
     let initialTab = tabFromPath(window.location.pathname);
-    // Redirect to chat if already logged in and on login/register page
     if ((initialTab === "login" || initialTab === "register") && this.settings.isLoggedIn) {
       initialTab = "chat";
       window.history.replaceState({}, "", pathForTab("chat"));
     }
     if (initialTab) {
       this.tab = initialTab;
-      // Load data for initial tab
-      if (initialTab === "chat") {
-        this.loadChatHistory();
-      } else if (initialTab === "workflow") {
-        this.loadWorkflows();
-      } else if (initialTab === "channels") {
-        this.loadChannels();
-      } else if (initialTab === "settings") {
-        this.loadUserProfile();
-        this.loadChannels();
-      } else if (initialTab === "analytics") {
-        this.loadAnalytics();
-      } else if (initialTab === "billing") {
-        this.loadBillingData();
-      }
     }
 
     // Listen for browser navigation
@@ -498,8 +511,9 @@ export class OperisApp extends LitElement {
         if (this.tab === "login") {
           this.chatInitializing = true;
           this.setTab("chat");
-        } else if (this.tab === "chat") {
-          this.loadChatHistory();
+        } else {
+          // Load data for current tab now that we're authenticated
+          this.loadTabData(this.tab);
         }
       } else {
         // No session - reset login state
@@ -511,26 +525,20 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private resetToLoggedOut() {
-    this.currentUser = null;
-    // Reset chat state
-    this.chatMessages = [];
-    this.chatConversationId = null;
-    this.chatSessionTokens = 0;
-    this.chatTokenBalance = 0;
-    this.chatHistoryLoaded = false;
-    this.chatInitializing = false;
-    // Reset settings
-    this.applySettings({
-      ...this.settings,
-      isLoggedIn: false,
-      username: null,
-    });
-    // Redirect to login if on protected page
-    const protectedTabs = ["chat", "workflow", "channels", "settings", "agents", "skills", "nodes", "analytics", "billing"];
-    if (protectedTabs.includes(this.tab)) {
-      this.setTab("login");
+  private startGatewayServices() {
+    // Subscribe to cron events for real-time workflow updates
+    if (!this.cronEventUnsubscribe) {
+      this.cronEventUnsubscribe = subscribeToCronEvents((evt: CronEvent) => {
+        this.handleCronEvent(evt);
+      });
     }
+    // Subscribe to chat stream events for real-time message streaming
+    if (!this.chatStreamUnsubscribe) {
+      this.chatStreamUnsubscribe = subscribeToChatStream((evt: ChatStreamEvent) => {
+        this.handleChatStreamEvent(evt);
+      });
+    }
+    startUsageTracker();
   }
 
   disconnectedCallback() {
@@ -545,40 +553,15 @@ export class OperisApp extends LitElement {
     // Unsubscribe from cron events
     this.cronEventUnsubscribe?.();
     this.cronEventUnsubscribe = null;
-    // Unsubscribe from chat stream events
     this.chatStreamUnsubscribe?.();
     this.chatStreamUnsubscribe = null;
-    // Stop usage tracker
     stopUsageTracker();
-    super.disconnectedCallback();
+    stopGatewayClient();
   }
 
-  private handlePopState() {
-    let tab = tabFromPath(window.location.pathname);
-    // Redirect to chat if already logged in and on login/register page
-    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
-      tab = "chat";
-      window.history.replaceState({}, "", pathForTab("chat"));
-    }
-    if (tab) {
-      this.tab = tab;
-    }
-  }
-
-  private setTab(tab: Tab) {
-    // Redirect to chat if already logged in and trying to go to login/register
-    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
-      tab = "chat";
-    }
-    if (tab === this.tab) return;
-    this.tab = tab;
-    const path = pathForTab(tab);
-    window.history.pushState({}, "", path);
-
-    // Load data for specific tabs
+  private loadTabData(tab: string) {
     if (tab === "chat") {
       this.loadChatHistory();
-      // Always scroll to last user message when entering chat
       this.scrollChatToBottom();
     } else if (tab === "workflow") {
       this.loadWorkflows();
@@ -601,6 +584,74 @@ export class OperisApp extends LitElement {
     } else if (tab === "logs") {
       this.loadLogs();
     }
+  }
+
+  private resetToLoggedOut() {
+    // Stop gateway WS connection
+    this.stopGatewayServices();
+    this.currentUser = null;
+    // Reset chat state
+    this.chatMessages = [];
+    this.chatConversationId = null;
+    this.chatSessionTokens = 0;
+    this.chatTokenBalance = 0;
+    this.chatHistoryLoaded = false;
+    this.chatInitializing = false;
+    // Reset settings
+    this.applySettings({
+      ...this.settings,
+      isLoggedIn: false,
+      username: null,
+    });
+    // Redirect to login if on protected page
+    if (this.protectedTabs.includes(this.tab)) {
+      this.tab = "login";
+      window.history.replaceState({}, "", pathForTab("login"));
+    }
+  }
+
+  disconnectedCallback() {
+    if (this.themeMedia && this.themeMediaHandler) {
+      this.themeMedia.removeEventListener("change", this.themeMediaHandler);
+    }
+    window.removeEventListener("popstate", this.popStateHandler);
+    document.removeEventListener("click", this.clickOutsideHandler);
+    this.stopGatewayServices();
+    super.disconnectedCallback();
+  }
+
+  private readonly protectedTabs = ["chat", "workflow", "channels", "settings", "agents", "skills", "nodes", "analytics", "billing", "logs"];
+
+  private handlePopState() {
+    let tab = tabFromPath(window.location.pathname);
+    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
+      tab = "chat";
+      window.history.replaceState({}, "", pathForTab("chat"));
+    }
+    // Redirect to login if not logged in and on protected page
+    if (tab && this.protectedTabs.includes(tab) && !this.settings.isLoggedIn) {
+      tab = "login";
+      window.history.replaceState({}, "", pathForTab("login"));
+    }
+    if (tab) {
+      this.setTab(tab);
+    }
+  }
+
+  private setTab(tab: Tab) {
+    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
+      tab = "chat";
+    }
+    // Block protected tabs when not logged in
+    if (this.protectedTabs.includes(tab) && !this.settings.isLoggedIn) {
+      tab = "login";
+    }
+    if (tab === this.tab) return;
+    this.tab = tab;
+    const path = pathForTab(tab);
+    window.history.pushState({}, "", path);
+
+    this.loadTabData(tab);
   }
 
   private async loadChatHistory() {
@@ -901,12 +952,17 @@ export class OperisApp extends LitElement {
         return;
       }
 
-      const errorMsg =
+      let errorMsg =
         err instanceof Error ? err.message : "Không thể gửi tin nhắn";
+
+      // Strip any HTML that leaked through (Cloudflare, nginx error pages, etc.)
+      if (/<[a-z][\s\S]*>/i.test(errorMsg)) {
+        errorMsg = "Gateway không khả dụng. Vui lòng thử lại sau.";
+      }
 
       // User-friendly error messages
       let displayError: string;
-      if (errorMsg.includes("503") || errorMsg.includes("unavailable")) {
+      if (errorMsg.includes("503") || errorMsg.includes("unavailable") || errorMsg.includes("không khả dụng")) {
         displayError =
           "Dịch vụ chat tạm thời không khả dụng. Vui lòng thử lại sau.";
       } else if (
@@ -1514,9 +1570,20 @@ export class OperisApp extends LitElement {
     this.agentsLoading = true;
     this.agentsError = null;
     try {
-      // TODO: Call actual API when available
-      // For now, provide empty data
-      this.agentsList = { defaultId: "", mainKey: "", scope: "", agents: [] };
+      const client = await waitForConnection();
+      const res = await client.request<AgentsListResult>("agents.list", {});
+      if (res) {
+        this.agentsList = res;
+        const known = res.agents.some((a) => a.id === this.agentSelectedId);
+        if (!this.agentSelectedId || !known) {
+          this.agentSelectedId = res.defaultId ?? res.agents[0]?.id ?? null;
+        }
+        // Auto-load config + identity for overview panel
+        if (this.agentSelectedId) {
+          this.loadAgentConfig();
+          this.loadAgentIdentity(this.agentSelectedId);
+        }
+      }
     } catch (err) {
       this.agentsError = err instanceof Error ? err.message : "Không thể tải agents";
     } finally {
@@ -1525,16 +1592,63 @@ export class OperisApp extends LitElement {
   }
 
   private handleSelectAgent(agentId: string) {
+    if (this.agentSelectedId === agentId) return;
     this.agentSelectedId = agentId;
     this.agentActivePanel = "overview";
+    // Reset agent-specific state
+    this.agentFilesList = null;
+    this.agentFilesError = null;
+    this.agentFileActive = null;
+    this.agentFileContents = {};
+    this.agentFileDrafts = {};
+    this.agentChannelsSnapshot = null;
+    this.agentChannelsLastSuccess = null;
+    this.agentCronStatus = null;
+    this.agentCronJobs = [];
+    this.agentSkillsReport = null;
+    this.agentSkillsError = null;
+    this.agentSkillsAgentId = null;
+    this.agentSkillsFilter = "";
+    // Auto-load config + identity
+    this.loadAgentConfig();
+    this.loadAgentIdentity(agentId);
+  }
+
+  private handleSelectPanel(panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") {
+    this.agentActivePanel = panel;
+    const agentId = this.agentSelectedId;
+    if (!agentId) return;
+    if (panel === "files" && this.agentFilesList?.agentId !== agentId) {
+      this.loadAgentFiles(agentId);
+    }
+    if (panel === "channels" && !this.agentChannelsSnapshot) {
+      this.loadAgentChannels();
+    }
+    if (panel === "cron" && !this.agentCronStatus) {
+      this.loadAgentCron();
+    }
+    if (panel === "skills" && this.agentSkillsAgentId !== agentId) {
+      this.loadAgentSkills(agentId);
+    }
+    if (panel === "overview" || panel === "tools") {
+      if (!this.agentConfigForm) {
+        this.loadAgentConfig();
+      }
+    }
   }
 
   private async loadAgentFiles(agentId: string) {
     this.agentFilesLoading = true;
     this.agentFilesError = null;
     try {
-      // TODO: Call actual API when available
-      this.agentFilesList = { agentId, workspace: "", files: [] };
+      const client = await waitForConnection();
+      const res = await client.request<AgentsFilesListResult>("agents.files.list", { agentId });
+      if (res) {
+        this.agentFilesList = res;
+        if (this.agentFileActive && !res.files.some((f) => f.name === this.agentFileActive)) {
+          this.agentFileActive = null;
+        }
+      }
     } catch (err) {
       this.agentFilesError = err instanceof Error ? err.message : "Không thể tải files";
     } finally {
@@ -1542,8 +1656,23 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private handleSelectFile(name: string) {
+  private async handleSelectFile(name: string) {
     this.agentFileActive = name;
+    if (!this.agentSelectedId || this.agentFileContents[name] !== undefined) return;
+    // Load file content from gateway
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<{ file?: AgentFileEntry }>("agents.files.get", {
+        agentId: this.agentSelectedId, name,
+      });
+      if (res?.file) {
+        const content = res.file.content ?? "";
+        this.agentFileContents = { ...this.agentFileContents, [name]: content };
+        this.agentFileDrafts = { ...this.agentFileDrafts, [name]: content };
+      }
+    } catch (err) {
+      console.error("Failed to load file content:", err);
+    }
   }
 
   private handleFileDraftChange(name: string, content: string) {
@@ -1556,11 +1685,18 @@ export class OperisApp extends LitElement {
   }
 
   private async handleFileSave(name: string) {
+    if (!this.agentSelectedId) return;
     this.agentFileSaving = true;
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
       const content = this.agentFileDrafts[name] ?? "";
-      this.agentFileContents = { ...this.agentFileContents, [name]: content };
+      const res = await client.request<{ file?: AgentFileEntry }>("agents.files.set", {
+        agentId: this.agentSelectedId, name, content,
+      });
+      if (res?.file) {
+        this.agentFileContents = { ...this.agentFileContents, [name]: content };
+        this.agentFileDrafts = { ...this.agentFileDrafts, [name]: content };
+      }
       showToast("Đã lưu file", "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Không thể lưu file", "error");
@@ -1573,8 +1709,11 @@ export class OperisApp extends LitElement {
     if (!this.agentSelectedId) return;
     this.agentConfigLoading = true;
     try {
-      // TODO: Call actual API when available
-      this.agentConfigForm = {};
+      const client = await waitForConnection();
+      // config.get returns ConfigSnapshot { path, exists, raw, config, issues }
+      // The actual config data is inside .config
+      const res = await client.request<{ config?: Record<string, unknown> }>("config.get", {});
+      this.agentConfigForm = (res?.config as Record<string, unknown>) ?? {};
       this.agentConfigDirty = false;
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Không thể tải config", "error");
@@ -1587,7 +1726,9 @@ export class OperisApp extends LitElement {
     if (!this.agentSelectedId) return;
     this.agentConfigSaving = true;
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      const raw = JSON.stringify(this.agentConfigForm ?? {});
+      await client.request("config.set", { raw });
       showToast("Đã lưu config", "success");
       this.agentConfigDirty = false;
     } catch (err) {
@@ -1597,12 +1738,12 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private handleAgentModelChange(agentId: string, modelId: string | null) {
+  private handleAgentModelChange(_agentId: string, modelId: string | null) {
     this.agentConfigForm = { ...this.agentConfigForm, primaryModel: modelId };
     this.agentConfigDirty = true;
   }
 
-  private handleAgentModelFallbacksChange(agentId: string, fallbacks: string[]) {
+  private handleAgentModelFallbacksChange(_agentId: string, fallbacks: string[]) {
     this.agentConfigForm = { ...this.agentConfigForm, modelFallbacks: fallbacks };
     this.agentConfigDirty = true;
   }
@@ -1611,8 +1752,13 @@ export class OperisApp extends LitElement {
     this.agentChannelsLoading = true;
     this.agentChannelsError = null;
     try {
-      // TODO: Call actual API when available
-      this.agentChannelsSnapshot = { channels: [] };
+      const client = await waitForConnection();
+      const res = await client.request<ChannelsStatusSnapshot>("channels.status", {
+        probe: true,
+        timeoutMs: 8000,
+      });
+      this.agentChannelsSnapshot = res ?? {};
+      this.agentChannelsLastSuccess = Date.now();
     } catch (err) {
       this.agentChannelsError = err instanceof Error ? err.message : "Không thể tải channels";
     } finally {
@@ -1620,13 +1766,170 @@ export class OperisApp extends LitElement {
     }
   }
 
+  private async loadAgentIdentity(agentId: string) {
+    this.agentIdentityLoading = true;
+    this.agentIdentityError = null;
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<AgentIdentityResult>("agent.identity.get", { agentId });
+      if (res) {
+        this.agentIdentityById = { ...this.agentIdentityById, [agentId]: res };
+      }
+    } catch (err) {
+      this.agentIdentityError = err instanceof Error ? err.message : "Không thể tải identity";
+    } finally {
+      this.agentIdentityLoading = false;
+    }
+  }
+
+  private async loadAgentSkills(agentId: string) {
+    if (this.agentSkillsLoading) return;
+    this.agentSkillsLoading = true;
+    this.agentSkillsError = null;
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<SkillStatusReport>("skills.status", { agentId });
+      if (res) {
+        this.agentSkillsReport = res;
+        this.agentSkillsAgentId = agentId;
+      }
+    } catch (err) {
+      this.agentSkillsError = err instanceof Error ? err.message : "Không thể tải skills";
+    } finally {
+      this.agentSkillsLoading = false;
+    }
+  }
+
+  private handleToolsProfileChange(agentId: string, profile: string | null, clearAllow: boolean) {
+    if (!this.agentConfigForm) return;
+    const config = { ...this.agentConfigForm };
+    const agents = (config.agents ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(agents.list) ? [...agents.list] : [];
+    const index = list.findIndex(
+      (e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId,
+    );
+    if (index < 0) return;
+    const entry = { ...(list[index] as Record<string, unknown>) };
+    const tools = { ...((entry.tools as Record<string, unknown>) ?? {}) };
+    if (profile) {
+      tools.profile = profile;
+    } else {
+      delete tools.profile;
+    }
+    if (clearAllow) {
+      delete tools.allow;
+    }
+    entry.tools = tools;
+    list[index] = entry;
+    config.agents = { ...agents, list };
+    this.agentConfigForm = config;
+    this.agentConfigDirty = true;
+  }
+
+  private handleToolsOverridesChange(agentId: string, alsoAllow: string[], deny: string[]) {
+    if (!this.agentConfigForm) return;
+    const config = { ...this.agentConfigForm };
+    const agents = (config.agents ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(agents.list) ? [...agents.list] : [];
+    const index = list.findIndex(
+      (e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId,
+    );
+    if (index < 0) return;
+    const entry = { ...(list[index] as Record<string, unknown>) };
+    const tools = { ...((entry.tools as Record<string, unknown>) ?? {}) };
+    if (alsoAllow.length > 0) {
+      tools.alsoAllow = alsoAllow;
+    } else {
+      delete tools.alsoAllow;
+    }
+    if (deny.length > 0) {
+      tools.deny = deny;
+    } else {
+      delete tools.deny;
+    }
+    entry.tools = tools;
+    list[index] = entry;
+    config.agents = { ...agents, list };
+    this.agentConfigForm = config;
+    this.agentConfigDirty = true;
+  }
+
+  private handleAgentSkillToggle(agentId: string, skillName: string, enabled: boolean) {
+    if (!this.agentConfigForm) return;
+    const config = { ...this.agentConfigForm };
+    const agents = (config.agents ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(agents.list) ? [...agents.list] : [];
+    const index = list.findIndex(
+      (e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId,
+    );
+    if (index < 0) return;
+    const entry = { ...(list[index] as Record<string, unknown>) };
+    const normalizedSkill = skillName.trim();
+    if (!normalizedSkill) return;
+    const allSkills = this.agentSkillsReport?.skills?.map((s) => s.name).filter(Boolean) ?? [];
+    const existing = Array.isArray(entry.skills)
+      ? (entry.skills as string[]).map((n) => String(n).trim()).filter(Boolean)
+      : undefined;
+    const base = existing ?? allSkills;
+    const next = new Set(base);
+    if (enabled) {
+      next.add(normalizedSkill);
+    } else {
+      next.delete(normalizedSkill);
+    }
+    entry.skills = [...next];
+    list[index] = entry;
+    config.agents = { ...agents, list };
+    this.agentConfigForm = config;
+    this.agentConfigDirty = true;
+  }
+
+  private handleAgentSkillsClear(agentId: string) {
+    if (!this.agentConfigForm) return;
+    const config = { ...this.agentConfigForm };
+    const agents = (config.agents ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(agents.list) ? [...agents.list] : [];
+    const index = list.findIndex(
+      (e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId,
+    );
+    if (index < 0) return;
+    const entry = { ...(list[index] as Record<string, unknown>) };
+    delete entry.skills;
+    list[index] = entry;
+    config.agents = { ...agents, list };
+    this.agentConfigForm = config;
+    this.agentConfigDirty = true;
+  }
+
+  private handleAgentSkillsDisableAll(agentId: string) {
+    if (!this.agentConfigForm) return;
+    const config = { ...this.agentConfigForm };
+    const agents = (config.agents ?? {}) as Record<string, unknown>;
+    const list = Array.isArray(agents.list) ? [...agents.list] : [];
+    const index = list.findIndex(
+      (e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId,
+    );
+    if (index < 0) return;
+    const entry = { ...(list[index] as Record<string, unknown>) };
+    entry.skills = [];
+    list[index] = entry;
+    config.agents = { ...agents, list };
+    this.agentConfigForm = config;
+    this.agentConfigDirty = true;
+  }
+
   private async loadAgentCron() {
     this.agentCronLoading = true;
     this.agentCronError = null;
     try {
-      // TODO: Call actual API when available
-      this.agentCronStatus = { enabled: false, jobs: 0 };
-      this.agentCronJobs = [];
+      const client = await waitForConnection();
+      // Two separate calls matching original UI: cron.status + cron.list
+      const [statusRes, listRes] = await Promise.all([
+        client.request<CronStatus>("cron.status", {}),
+        client.request<{ jobs?: CronJob[] }>("cron.list", { includeDisabled: true }),
+      ]);
+      this.agentCronStatus = statusRes ?? { enabled: false, jobs: 0 };
+      this.agentCronJobs = Array.isArray(listRes?.jobs) ? listRes.jobs : [];
     } catch (err) {
       this.agentCronError = err instanceof Error ? err.message : "Không thể tải cron jobs";
     } finally {
@@ -1639,8 +1942,9 @@ export class OperisApp extends LitElement {
     this.skillsLoading = true;
     this.skillsError = null;
     try {
-      // TODO: Call actual API when available
-      this.skillsReport = { workspaceDir: "", managedSkillsDir: "", skills: [] };
+      const client = await waitForConnection();
+      const res = await client.request<SkillStatusReport>("skills.status", {});
+      if (res) this.skillsReport = res;
     } catch (err) {
       this.skillsError = err instanceof Error ? err.message : "Không thể tải skills";
     } finally {
@@ -1651,8 +1955,10 @@ export class OperisApp extends LitElement {
   private async handleSkillToggle(skillKey: string, currentDisabled: boolean) {
     this.skillsBusyKey = skillKey;
     try {
-      // TODO: Call actual API when available
-      showToast(currentDisabled ? "Đã bật skill" : "Đã tắt skill", "success");
+      const client = await waitForConnection();
+      const enabled = currentDisabled; // if currently disabled, enable it
+      await client.request("skills.update", { skillKey, enabled });
+      showToast(enabled ? "Đã bật skill" : "Đã tắt skill", "success");
       await this.loadSkills();
     } catch (err) {
       this.skillsMessages = {
@@ -1671,12 +1977,15 @@ export class OperisApp extends LitElement {
   private async handleSkillSaveKey(skillKey: string) {
     this.skillsBusyKey = skillKey;
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      const apiKey = this.skillsEdits[skillKey] ?? "";
+      await client.request("skills.update", { skillKey, apiKey });
       showToast("Đã lưu API key", "success");
       this.skillsMessages = {
         ...this.skillsMessages,
         [skillKey]: { kind: "success", message: "Đã lưu" },
       };
+      await this.loadSkills();
     } catch (err) {
       this.skillsMessages = {
         ...this.skillsMessages,
@@ -1690,9 +1999,16 @@ export class OperisApp extends LitElement {
   private async handleSkillInstall(skillKey: string, name: string, installId: string) {
     this.skillsBusyKey = skillKey;
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
       showToast(`Đang cài đặt ${name}...`, "info");
+      const res = await client.request<{ message?: string }>("skills.install", {
+        name, installId, timeoutMs: 120000,
+      });
       await this.loadSkills();
+      this.skillsMessages = {
+        ...this.skillsMessages,
+        [skillKey]: { kind: "success", message: res?.message ?? "Đã cài đặt" },
+      };
     } catch (err) {
       this.skillsMessages = {
         ...this.skillsMessages,
@@ -1707,8 +2023,9 @@ export class OperisApp extends LitElement {
   private async loadNodes() {
     this.nodesLoading = true;
     try {
-      // TODO: Call actual API when available
-      this.nodesList = [];
+      const client = await waitForConnection();
+      const res = await client.request<{ nodes?: NodeInfo[] }>("node.list", {});
+      this.nodesList = Array.isArray(res?.nodes) ? res.nodes : [];
     } catch (err) {
       console.error("Failed to load nodes:", err);
     } finally {
@@ -1720,8 +2037,12 @@ export class OperisApp extends LitElement {
     this.devicesLoading = true;
     this.devicesError = null;
     try {
-      // TODO: Call actual API when available
-      this.devicesList = { pending: [], paired: [] };
+      const client = await waitForConnection();
+      const res = await client.request<{ pending?: PendingDevice[]; paired?: PairedDevice[] }>("device.pair.list", {});
+      this.devicesList = {
+        pending: Array.isArray(res?.pending) ? res.pending : [],
+        paired: Array.isArray(res?.paired) ? res.paired : [],
+      };
     } catch (err) {
       this.devicesError = err instanceof Error ? err.message : "Không thể tải thiết bị";
     } finally {
@@ -1731,7 +2052,8 @@ export class OperisApp extends LitElement {
 
   private async handleDeviceApprove(requestId: string) {
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      await client.request("device.pair.approve", { requestId });
       showToast("Đã chấp nhận thiết bị", "success");
       await this.loadDevices();
     } catch (err) {
@@ -1741,7 +2063,8 @@ export class OperisApp extends LitElement {
 
   private async handleDeviceReject(requestId: string) {
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      await client.request("device.pair.reject", { requestId });
       showToast("Đã từ chối thiết bị", "success");
       await this.loadDevices();
     } catch (err) {
@@ -1751,7 +2074,8 @@ export class OperisApp extends LitElement {
 
   private async handleDeviceRotate(deviceId: string, role: string, scopes?: string[]) {
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      await client.request("device.token.rotate", { deviceId, role, scopes });
       showToast("Đã rotate token", "success");
       await this.loadDevices();
     } catch (err) {
@@ -1761,11 +2085,175 @@ export class OperisApp extends LitElement {
 
   private async handleDeviceRevoke(deviceId: string, role: string) {
     try {
-      // TODO: Call actual API when available
+      const client = await waitForConnection();
+      await client.request("device.token.revoke", { deviceId, role });
       showToast("Đã revoke token", "success");
       await this.loadDevices();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Lỗi", "error");
+    }
+  }
+
+  private async loadConfig() {
+    this.configLoading = true;
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<{ config: Record<string, unknown>; hash: string }>("config.get", {});
+      if (res?.config) {
+        this.configSnapshot = { config: res.config, hash: res.hash ?? "" };
+        this.configForm = JSON.parse(JSON.stringify(res.config));
+        this.configDirty = false;
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Lỗi load config", "error");
+    } finally {
+      this.configLoading = false;
+    }
+  }
+
+  private async handleBindDefault(nodeId: string | null) {
+    if (!this.configForm) return;
+    const form = JSON.parse(JSON.stringify(this.configForm));
+    if (!form.tools) form.tools = {};
+    if (!form.tools.exec) form.tools.exec = {};
+    if (nodeId) {
+      form.tools.exec.node = nodeId;
+    } else {
+      delete form.tools.exec.node;
+    }
+    this.configForm = form;
+    this.configDirty = true;
+  }
+
+  private async handleBindAgent(agentIndex: number, nodeId: string | null) {
+    if (!this.configForm) return;
+    const form = JSON.parse(JSON.stringify(this.configForm));
+    if (!form.agents?.list?.[agentIndex]) return;
+    const agent = form.agents.list[agentIndex];
+    if (!agent.tools) agent.tools = {};
+    if (!agent.tools.exec) agent.tools.exec = {};
+    if (nodeId) {
+      agent.tools.exec.node = nodeId;
+    } else {
+      delete agent.tools.exec.node;
+    }
+    this.configForm = form;
+    this.configDirty = true;
+  }
+
+  private async handleSaveBindings() {
+    if (!this.configForm || !this.configSnapshot) return;
+    this.configSaving = true;
+    try {
+      const client = await waitForConnection();
+      await client.request("config.set", {
+        config: this.configForm,
+        baseHash: this.configSnapshot.hash,
+      });
+      showToast("Đã lưu bindings", "success");
+      this.configDirty = false;
+      await this.loadConfig();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Lỗi lưu bindings", "error");
+    } finally {
+      this.configSaving = false;
+    }
+  }
+
+  private async loadExecApprovals() {
+    this.execApprovalsLoading = true;
+    try {
+      const client = await waitForConnection();
+      const target = this.execApprovalsTarget;
+      const nodeId = this.execApprovalsTargetNodeId;
+      const params: Record<string, unknown> = {};
+      if (target === "node" && nodeId) {
+        params.nodeId = nodeId;
+      }
+      const method = target === "node" ? "exec.approvals.node.get" : "exec.approvals.get";
+      const res = await client.request<import("./agent-types").ExecApprovalsSnapshot>(method, params);
+      this.execApprovalsSnapshot = res;
+      if (!this.execApprovalsDirty) {
+        this.execApprovalsForm = res?.file ? JSON.parse(JSON.stringify(res.file)) : null;
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Lỗi load exec approvals", "error");
+    } finally {
+      this.execApprovalsLoading = false;
+    }
+  }
+
+  private async handleExecApprovalsTargetChange(kind: "gateway" | "node", nodeId: string | null) {
+    this.execApprovalsTarget = kind;
+    this.execApprovalsTargetNodeId = nodeId;
+    this.execApprovalsSnapshot = null;
+    this.execApprovalsForm = null;
+    this.execApprovalsDirty = false;
+  }
+
+  private async handleExecApprovalsSelectAgent(agentId: string) {
+    this.execApprovalsSelectedAgent = agentId;
+  }
+
+  private async handleExecApprovalsPatch(path: Array<string | number>, value: unknown) {
+    const form = this.execApprovalsForm ?? this.execApprovalsSnapshot?.file ?? {};
+    const updated = JSON.parse(JSON.stringify(form));
+    let current: any = updated;
+    for (let i = 0; i < path.length - 1; i++) {
+      const key = path[i];
+      if (!(key in current)) {
+        current[key] = typeof path[i + 1] === "number" ? [] : {};
+      }
+      current = current[key];
+    }
+    const lastKey = path[path.length - 1];
+    current[lastKey] = value;
+    this.execApprovalsForm = updated;
+    this.execApprovalsDirty = true;
+  }
+
+  private async handleExecApprovalsRemove(path: Array<string | number>) {
+    const form = this.execApprovalsForm ?? this.execApprovalsSnapshot?.file ?? {};
+    const updated = JSON.parse(JSON.stringify(form));
+    let current: any = updated;
+    for (let i = 0; i < path.length - 1; i++) {
+      const key = path[i];
+      if (!(key in current)) return;
+      current = current[key];
+    }
+    const lastKey = path[path.length - 1];
+    if (Array.isArray(current)) {
+      current.splice(Number(lastKey), 1);
+    } else {
+      delete current[lastKey];
+    }
+    this.execApprovalsForm = updated;
+    this.execApprovalsDirty = true;
+  }
+
+  private async handleSaveExecApprovals() {
+    if (!this.execApprovalsForm || !this.execApprovalsSnapshot) return;
+    this.execApprovalsSaving = true;
+    try {
+      const client = await waitForConnection();
+      const target = this.execApprovalsTarget;
+      const nodeId = this.execApprovalsTargetNodeId;
+      const params: Record<string, unknown> = {
+        file: this.execApprovalsForm,
+        baseHash: this.execApprovalsSnapshot.hash,
+      };
+      if (target === "node" && nodeId) {
+        params.nodeId = nodeId;
+      }
+      const method = target === "node" ? "exec.approvals.node.set" : "exec.approvals.set";
+      await client.request(method, params);
+      showToast("Đã lưu exec approvals", "success");
+      this.execApprovalsDirty = false;
+      await this.loadExecApprovals();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Lỗi lưu exec approvals", "error");
+    } finally {
+      this.execApprovalsSaving = false;
     }
   }
 
@@ -1843,36 +2331,21 @@ export class OperisApp extends LitElement {
   }
 
   private renderTokenIndicator() {
-    const maxTokens = 200000;
-    const pct = Math.min(Math.round((this.chatSessionTokens / maxTokens) * 100), 100);
-    const r = 11;
-    const circ = 2 * Math.PI * r;
-    const offset = circ - (pct / 100) * circ;
-    const color = pct >= 90 ? "#dc2626" : pct >= 70 ? "#d97706" : "#16a34a";
-
+    if (this.chatSessionTokens <= 0) return nothing;
+    const formatted = this.chatSessionTokens >= 1000
+      ? `${(this.chatSessionTokens / 1000).toFixed(1)}k`
+      : String(this.chatSessionTokens);
     return html`
-      <div class="topbar-token">
-        <button class="topbar-token-btn" @click=${(e: Event) => { e.stopPropagation(); this.tokenDropdownOpen = !this.tokenDropdownOpen; }}>
-          <div class="topbar-token-circle">
-            <svg viewBox="0 0 28 28">
-              <circle class="topbar-token-circle-bg" cx="14" cy="14" r="${r}" stroke="${color}" opacity="0.2"/>
-              <circle class="topbar-token-circle-fg" cx="14" cy="14" r="${r}"
-                stroke="${color}"
-                stroke-dasharray="${circ}"
-                stroke-dashoffset="${offset}"/>
-            </svg>
+      <div class="topbar-token-chip">
+        <span class="topbar-token-icon">${icons.zap}</span>
+        <span class="topbar-token-count">${formatted}</span>
+        <span class="topbar-token-label">tokens</span>
+        <div class="topbar-token-tooltip">
+          <div class="topbar-token-tooltip-row">
+            <span>Phiên hiện tại</span>
+            <strong>${this.chatSessionTokens.toLocaleString()}</strong>
           </div>
-          <span class="topbar-token-pct" style="color:${color}">${pct}%</span>
-        </button>
-        <div class="topbar-token-dropdown ${this.tokenDropdownOpen ? 'open' : ''}" @click=${(e: Event) => e.stopPropagation()}>
-          <div class="topbar-token-row">
-            <span class="topbar-token-label">Đã dùng</span>
-            <span class="topbar-token-value">${this.chatSessionTokens.toLocaleString()}</span>
-          </div>
-          <div class="topbar-token-row">
-            <span class="topbar-token-label">Tối đa</span>
-            <span class="topbar-token-value">${maxTokens.toLocaleString()}</span>
-          </div>
+          <div class="topbar-token-tooltip-hint">Tổng tokens đã dùng trong cuộc trò chuyện này</div>
         </div>
       </div>
     `;
@@ -1904,6 +2377,10 @@ export class OperisApp extends LitElement {
     if (item.tab === "login" && this.settings.isLoggedIn) {
       return nothing;
     }
+    // Hide protected tabs when not logged in
+    if (this.protectedTabs.includes(item.tab) && !this.settings.isLoggedIn) {
+      return nothing;
+    }
 
     return html`
       <button
@@ -1930,7 +2407,7 @@ export class OperisApp extends LitElement {
           </div>
         </div>
 
-        ${agentItems.length > 0 ? html`
+        ${agentItems.length > 0 && this.settings.isLoggedIn ? html`
           <div class="nav-section">
             <div class="nav-section-title">Agent</div>
             <div class="nav-items">
@@ -2119,7 +2596,11 @@ export class OperisApp extends LitElement {
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
         });
       case "docs":
-        return renderDocs({});
+        return renderDocs({
+          selectedSlug: this.docsSelectedSlug,
+          onSelectDoc: (slug: string) => { this.docsSelectedSlug = slug; },
+          onBack: () => { this.docsSelectedSlug = null; },
+        });
       case "channels":
         return renderChannels({
           channels: this.channels,
@@ -2198,30 +2679,46 @@ export class OperisApp extends LitElement {
           agentFileSaving: this.agentFileSaving,
           // Identity state
           agentIdentityById: this.agentIdentityById,
+          agentIdentityLoading: this.agentIdentityLoading,
+          agentIdentityError: this.agentIdentityError,
           // Channels state
           channelsLoading: this.agentChannelsLoading,
           channelsError: this.agentChannelsError,
           channelsSnapshot: this.agentChannelsSnapshot,
+          channelsLastSuccess: this.agentChannelsLastSuccess,
           // Cron state
           cronLoading: this.agentCronLoading,
           cronStatus: this.agentCronStatus,
           cronJobs: this.agentCronJobs,
           cronError: this.agentCronError,
+          // Agent skills state
+          agentSkillsLoading: this.agentSkillsLoading,
+          agentSkillsReport: this.agentSkillsReport,
+          agentSkillsError: this.agentSkillsError,
+          agentSkillsAgentId: this.agentSkillsAgentId,
+          skillsFilter: this.agentSkillsFilter,
           // Callbacks
           onRefresh: () => this.loadAgents(),
           onSelectAgent: (id: string) => this.handleSelectAgent(id),
-          onSelectPanel: (panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") => (this.agentActivePanel = panel),
+          onSelectPanel: (panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") => this.handleSelectPanel(panel),
           onLoadFiles: (id: string) => this.loadAgentFiles(id),
           onSelectFile: (name: string) => this.handleSelectFile(name),
           onFileDraftChange: (name: string, content: string) => this.handleFileDraftChange(name, content),
           onFileReset: (name: string) => this.handleFileReset(name),
           onFileSave: (name: string) => this.handleFileSave(name),
+          onToolsProfileChange: (agentId: string, profile: string | null, clearAllow: boolean) => this.handleToolsProfileChange(agentId, profile, clearAllow),
+          onToolsOverridesChange: (agentId: string, alsoAllow: string[], deny: string[]) => this.handleToolsOverridesChange(agentId, alsoAllow, deny),
           onConfigReload: () => this.loadAgentConfig(),
           onConfigSave: () => this.saveAgentConfig(),
           onModelChange: (agentId: string, modelId: string | null) => this.handleAgentModelChange(agentId, modelId),
           onModelFallbacksChange: (agentId: string, fallbacks: string[]) => this.handleAgentModelFallbacksChange(agentId, fallbacks),
           onChannelsRefresh: () => this.loadAgentChannels(),
           onCronRefresh: () => this.loadAgentCron(),
+          onSkillsFilterChange: (next: string) => { this.agentSkillsFilter = next; },
+          onSkillsRefresh: () => { if (this.agentSelectedId) this.loadAgentSkills(this.agentSelectedId); },
+          onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) => this.handleAgentSkillToggle(agentId, skillName, enabled),
+          onAgentSkillsClear: (agentId: string) => this.handleAgentSkillsClear(agentId),
+          onAgentSkillsDisableAll: (agentId: string) => this.handleAgentSkillsDisableAll(agentId),
         });
       case "skills":
         return renderSkills({
@@ -2246,12 +2743,35 @@ export class OperisApp extends LitElement {
           devicesLoading: this.devicesLoading,
           devicesError: this.devicesError,
           devicesList: this.devicesList,
+          configForm: this.configForm,
+          configLoading: this.configLoading,
+          configSaving: this.configSaving,
+          configDirty: this.configDirty,
+          configFormMode: this.configFormMode,
+          execApprovalsLoading: this.execApprovalsLoading,
+          execApprovalsSaving: this.execApprovalsSaving,
+          execApprovalsDirty: this.execApprovalsDirty,
+          execApprovalsSnapshot: this.execApprovalsSnapshot,
+          execApprovalsForm: this.execApprovalsForm,
+          execApprovalsSelectedAgent: this.execApprovalsSelectedAgent,
+          execApprovalsTarget: this.execApprovalsTarget,
+          execApprovalsTargetNodeId: this.execApprovalsTargetNodeId,
           onRefresh: () => this.loadNodes(),
           onDevicesRefresh: () => this.loadDevices(),
           onDeviceApprove: (reqId: string) => this.handleDeviceApprove(reqId),
           onDeviceReject: (reqId: string) => this.handleDeviceReject(reqId),
           onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) => this.handleDeviceRotate(deviceId, role, scopes),
           onDeviceRevoke: (deviceId: string, role: string) => this.handleDeviceRevoke(deviceId, role),
+          onLoadConfig: () => this.loadConfig(),
+          onLoadExecApprovals: () => this.loadExecApprovals(),
+          onBindDefault: (nodeId: string | null) => this.handleBindDefault(nodeId),
+          onBindAgent: (agentIndex: number, nodeId: string | null) => this.handleBindAgent(agentIndex, nodeId),
+          onSaveBindings: () => this.handleSaveBindings(),
+          onExecApprovalsTargetChange: (kind: "gateway" | "node", nodeId: string | null) => this.handleExecApprovalsTargetChange(kind, nodeId),
+          onExecApprovalsSelectAgent: (agentId: string) => this.handleExecApprovalsSelectAgent(agentId),
+          onExecApprovalsPatch: (path: Array<string | number>, value: unknown) => this.handleExecApprovalsPatch(path, value),
+          onExecApprovalsRemove: (path: Array<string | number>) => this.handleExecApprovalsRemove(path),
+          onSaveExecApprovals: () => this.handleSaveExecApprovals(),
         });
       default:
         return nothing;
@@ -2305,16 +2825,32 @@ export class OperisApp extends LitElement {
             ${this.renderThemeToggle()}
             ${this.settings.isLoggedIn
               ? html`
-                  <div
-                    class="topbar-user"
-                    @click=${() => this.setTab("settings")}
-                  >
-                    <div class="topbar-avatar">
-                      ${this.settings.username?.[0]?.toUpperCase() ?? "U"}
+                  <div class="topbar-user-wrap">
+                    <div class="topbar-user">
+                      <div class="topbar-avatar">
+                        ${this.settings.username?.[0]?.toUpperCase() ?? "U"}
+                      </div>
+                      <span class="topbar-username"
+                        >${this.settings.username}</span
+                      >
                     </div>
-                    <span class="topbar-username"
-                      >${this.settings.username}</span
-                    >
+                    <div class="topbar-dropdown">
+                      <button
+                        class="topbar-dropdown-item"
+                        @click=${() => this.setTab("settings")}
+                      >
+                        <span class="topbar-dropdown-icon">${icons.settings}</span>
+                        ${t("navSettings")}
+                      </button>
+                      <div class="topbar-dropdown-divider"></div>
+                      <button
+                        class="topbar-dropdown-item topbar-dropdown-item--danger"
+                        @click=${() => this.handleLogout()}
+                      >
+                        <span class="topbar-dropdown-icon">${icons.logOut}</span>
+                        ${t("navLogout")}
+                      </button>
+                    </div>
                   </div>
                 `
               : nothing}
