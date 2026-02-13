@@ -27,6 +27,23 @@ describe("checkBrowserOrigin", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts file:// origin when allowlisted (Electron)", () => {
+    const result = checkBrowserOrigin({
+      requestHost: "127.0.0.1:18789",
+      origin: "file://",
+      allowedOrigins: ["file://"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects file:// origin when not allowlisted", () => {
+    const result = checkBrowserOrigin({
+      requestHost: "gateway.example.com:18789",
+      origin: "file://",
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects missing origin", () => {
     const result = checkBrowserOrigin({
       requestHost: "gateway.example.com:18789",

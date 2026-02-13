@@ -38,6 +38,8 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
+import { updateAuthProfileStoreWithLock } from "../agents/auth-profiles/store.js";
+import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import { sendUnauthorized } from "./http-common.js";
 import { getBearerToken, getHeader } from "./http-utils.js";
 import { resolveGatewayClientIp } from "./net.js";
@@ -209,6 +211,74 @@ export function createHooksRequestHandler(
       }
       const runId = dispatchAgentHook(normalized.value);
       sendJson(res, 202, { ok: true, runId });
+      return true;
+    }
+
+    // Operis auth-profiles sync: server pushes token profiles to gateway
+    if (subPath === "sync-auth-profiles") {
+      const data = payload as Record<string, unknown>;
+      const authProfiles = data.authProfiles as
+        | { version?: number; profiles?: Record<string, AuthProfileCredential>; lastGood?: Record<string, string> }
+        | undefined;
+
+      if (!authProfiles?.profiles || typeof authProfiles.profiles !== "object") {
+        sendJson(res, 400, { ok: false, error: "authProfiles.profiles is required" });
+        return true;
+      }
+
+      const isReplace = Object.keys(authProfiles.profiles).length === 0 || data.replace === true;
+
+      const result = await updateAuthProfileStoreWithLock({
+        updater: (store) => {
+          if (isReplace) {
+            // Clear/replace mode: empty profiles = logout, replace all anthropic profiles
+            store.profiles = {};
+            store.lastGood = authProfiles.lastGood ?? {};
+          } else {
+            // Merge mode: add/update individual profiles
+            for (const [id, cred] of Object.entries(authProfiles.profiles!)) {
+              store.profiles[id] = cred;
+            }
+            if (authProfiles.lastGood) {
+              store.lastGood = { ...store.lastGood, ...authProfiles.lastGood };
+            }
+          }
+          return true;
+        },
+      });
+
+      if (!result) {
+        sendJson(res, 500, { ok: false, error: "failed to update auth-profiles" });
+        return true;
+      }
+
+      const count = Object.keys(authProfiles.profiles).length;
+      logHooks.info(`sync-auth-profiles: ${isReplace ? "replaced" : "merged"} ${count} profile(s)`);
+      sendJson(res, 200, { ok: true, profiles: count, mode: isReplace ? "replace" : "merge" });
+
+      // Callback: register gateway token with operis-api (non-blocking)
+      const cb = data.callback as { url?: string; email?: string; secret?: string } | undefined;
+      if (cb?.url && cb.email) {
+        const hc = getHooksConfig();
+        const gatewayAuthToken = loadConfig().gateway?.auth?.token ?? "";
+        const body = {
+          email: cb.email,
+          gateway_url: `http://${bindHost}:${port}`,
+          gateway_token: gatewayAuthToken,
+          hooks_token: hc?.token ?? "",
+        };
+        fetch(cb.url, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${cb.secret ?? ""}`,
+          },
+          body: JSON.stringify(body),
+        })
+          .then((r) => logHooks.info(`sync-auth-profiles: callback ${r.status} for ${cb.email}`))
+          .catch((e) => logHooks.warn(`sync-auth-profiles: callback failed: ${e.message}`));
+      }
+
       return true;
     }
 
