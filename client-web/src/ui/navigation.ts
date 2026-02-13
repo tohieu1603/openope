@@ -1,6 +1,6 @@
 import type { IconName } from "./icons";
 
-export type Tab = "chat" | "billing" | "logs" | "workflow" | "docs" | "channels" | "settings" | "login" | "register" | "agents" | "skills" | "nodes" | "analytics";
+export type Tab = "chat" | "billing" | "logs" | "workflow" | "docs" | "channels" | "settings" | "login" | "agents" | "skills" | "nodes" | "analytics";
 
 export const NAV_ITEMS: Array<{
   tab: Tab;
@@ -100,7 +100,6 @@ const TAB_PATHS: Record<Tab, string> = {
   channels: "/channels",
   settings: "/settings",
   login: "/login",
-  register: "/register",
   agents: "/agents",
   skills: "/skills",
   nodes: "/nodes",

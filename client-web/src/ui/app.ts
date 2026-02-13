@@ -23,7 +23,6 @@ import { renderLogs, type LogEntry } from "./views/logs";
 import { renderWorkflow } from "./views/workflow";
 import { renderDocs } from "./views/docs";
 import { renderLogin } from "./views/login";
-import { renderRegister } from "./views/register";
 import { renderChannels } from "./views/channels";
 import { renderSettings } from "./views/settings";
 import { renderAgents } from "./views/agents";
@@ -62,7 +61,6 @@ import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tra
 import {
   login as authLogin,
   logout as authLogout,
-  register as authRegister,
   restoreSession,
   pullAndSyncAuthProfiles,
   clearLocalAuthProfiles,
@@ -132,7 +130,6 @@ function titleForTab(tab: Tab): string {
     channels: "Kênh Kết Nối",
     settings: "Cài Đặt",
     login: "Đăng Nhập",
-    register: "Đăng Ký",
     agents: "Agents",
     skills: "Skills",
     nodes: "Nodes",
@@ -152,7 +149,6 @@ function subtitleForTab(tab: Tab): string {
     channels: "Kết nối ứng dụng nhắn tin",
     settings: "Cài đặt tài khoản và tùy chọn",
     login: "Truy cập tài khoản của bạn",
-    register: "Tạo tài khoản mới",
     agents: "Quản lý agents và workspace",
     skills: "Quản lý skills và cài đặt",
     nodes: "Thiết bị và node kết nối",
@@ -194,10 +190,6 @@ export class OperisApp extends LitElement {
   @state() loginLoading = false;
   @state() loginError: string | null = null;
   @state() currentUser: AuthUser | null = null;
-
-  // Register state
-  @state() registerLoading = false;
-  @state() registerError: string | null = null;
 
   // Workflow state
   @state() workflows: Workflow[] = [];
@@ -383,7 +375,7 @@ export class OperisApp extends LitElement {
 
     // Initialize tab from URL (don't load protected data yet — wait for auth)
     let initialTab = tabFromPath(window.location.pathname);
-    if ((initialTab === "login" || initialTab === "register") && this.settings.isLoggedIn) {
+    if ((initialTab === "login") && this.settings.isLoggedIn) {
       initialTab = "chat";
       window.history.replaceState({}, "", pathForTab("chat"));
     }
@@ -618,7 +610,7 @@ export class OperisApp extends LitElement {
 
   private handlePopState() {
     let tab = tabFromPath(window.location.pathname);
-    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
+    if ((tab === "login") && this.settings.isLoggedIn) {
       tab = "chat";
       window.history.replaceState({}, "", pathForTab("chat"));
     }
@@ -633,7 +625,7 @@ export class OperisApp extends LitElement {
   }
 
   private setTab(tab: Tab) {
-    if ((tab === "login" || tab === "register") && this.settings.isLoggedIn) {
+    if ((tab === "login") && this.settings.isLoggedIn) {
       tab = "chat";
     }
     // Block protected tabs when not logged in
@@ -794,37 +786,6 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private async handleRegister(email: string, password: string, name: string) {
-    this.registerLoading = true;
-    this.registerError = null;
-
-    try {
-      const result = await authRegister(email, password, name);
-      this.currentUser = result.user;
-      this.applySettings({
-        ...this.settings,
-        isLoggedIn: true,
-        username: result.user.name,
-      });
-      // Sync auth profiles and wait for tunnel connection (same as login)
-      pullAndSyncAuthProfiles();
-      await provisionAndStartTunnel(result.tunnel?.tunnelToken);
-      // Redirect with gateway token so WS client can pick it up
-      if (result.user.gateway_token) {
-        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
-        return;
-      }
-      // Reset chat state for fresh load
-      this.chatInitializing = true;
-      this.chatHistoryLoaded = false;
-      this.setTab("chat");
-    } catch (err) {
-      this.registerError =
-        err instanceof Error ? err.message : "Đăng ký thất bại";
-    } finally {
-      this.registerLoading = false;
-    }
-  }
 
   private async handleLogout() {
     try {
@@ -2356,7 +2317,6 @@ export class OperisApp extends LitElement {
       channels: "Kênh",
       settings: "Cài đặt",
       login: "Đăng nhập",
-      register: "Đăng ký",
       agents: "Agents",
       skills: "Skills",
       nodes: "Nodes",
@@ -2641,15 +2601,6 @@ export class OperisApp extends LitElement {
           loading: this.loginLoading,
           error: this.loginError ?? undefined,
           onLogin: (email, password) => this.handleLogin(email, password),
-          onNavigateToRegister: () => this.setTab("register"),
-        });
-      case "register":
-        return renderRegister({
-          loading: this.registerLoading,
-          error: this.registerError ?? undefined,
-          onRegister: (email, password, name) =>
-            this.handleRegister(email, password, name),
-          onNavigateToLogin: () => this.setTab("login"),
         });
       case "agents":
         return renderAgents({
@@ -2775,13 +2726,12 @@ export class OperisApp extends LitElement {
   render() {
     return html`
       <div
-        class="shell ${this.settings.navCollapsed || this.tab === "login" || this.tab === "register"
-          ? "shell--nav-collapsed"
+        class="shell ${this.settings.navCollapsed || this.tab === "login"          ? "shell--nav-collapsed"
           : ""}"
       >
         <header class="topbar">
           <div class="topbar-left">
-            ${this.tab !== "login" && this.tab !== "register"
+            ${this.tab !== "login"
               ? html`
                   <button
                     class="nav-collapse-toggle"
@@ -2851,10 +2801,10 @@ export class OperisApp extends LitElement {
           </div>
         </header>
 
-        ${this.tab !== "login" && this.tab !== "register" ? this.renderNavigation() : nothing}
+        ${this.tab !== "login" ? this.renderNavigation() : nothing}
 
-        <main class="content ${this.tab === "login" || this.tab === "register" ? "content--no-scroll" : ""}">
-          ${this.tab !== "login" && this.tab !== "register"
+        <main class="content ${this.tab === "login" ? "content--no-scroll" : ""}">
+          ${this.tab !== "login"
             ? html`
                 <section class="content-header">
                   <div>
