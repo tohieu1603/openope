@@ -41,19 +41,42 @@ const apiClient = axios.create({
   },
 });
 
-// Track refresh state to avoid multiple concurrent refresh calls
-let isRefreshing = false;
-let refreshSubscribers: Array<(token: string) => void> = [];
+// Track refresh state — single lock shared by axios interceptor + SSE fetch
+let refreshPromise: Promise<string> | null = null;
 
-// Subscribe to token refresh
-function subscribeTokenRefresh(callback: (token: string) => void) {
-  refreshSubscribers.push(callback);
-}
+/**
+ * Shared token refresh — ensures only ONE refresh call runs at a time.
+ * All callers (axios interceptor, SSE fetch, etc.) share the same promise.
+ * Returns the new access token on success.
+ */
+export async function refreshAccessToken(): Promise<string> {
+  // If already refreshing, piggyback on the existing promise
+  if (refreshPromise) return refreshPromise;
 
-// Notify all subscribers with new token
-function onTokenRefreshed(token: string) {
-  refreshSubscribers.forEach((callback) => callback(token));
-  refreshSubscribers = [];
+  const currentRefreshToken = getRefreshToken();
+  if (!currentRefreshToken) {
+    clearTokens();
+    window.dispatchEvent(new CustomEvent("auth:session-expired"));
+    throw new Error("No refresh token");
+  }
+
+  refreshPromise = axios
+    .post(`${API_CONFIG.baseUrl}/auth/refresh`, { refreshToken: currentRefreshToken })
+    .then((response) => {
+      const { accessToken, refreshToken: newRefreshToken } = response.data;
+      setTokens(accessToken, newRefreshToken);
+      return accessToken as string;
+    })
+    .catch((error) => {
+      clearTokens();
+      window.dispatchEvent(new CustomEvent("auth:session-expired"));
+      throw error;
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
 }
 
 // Request interceptor - add auth token
@@ -68,63 +91,23 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// Response interceptor - handle 401 and refresh token
+// Response interceptor - handle 401 via shared refreshAccessToken()
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // If error is 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
-      const refreshToken = getRefreshToken();
-
-      // No refresh token available - clear and reject
-      if (!refreshToken) {
-        clearTokens();
-        window.dispatchEvent(new CustomEvent("auth:session-expired"));
-        return Promise.reject(error);
-      }
-
-      // If already refreshing, wait for it to complete
-      if (isRefreshing) {
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((token: string) => {
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-            }
-            resolve(apiClient(originalRequest));
-          });
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
 
       try {
-        // Call refresh endpoint directly (don't use apiClient to avoid infinite loop)
-        const response = await axios.post(`${API_CONFIG.baseUrl}/auth/refresh`, {
-          refreshToken,
-        });
-
-        const { accessToken, refreshToken: newRefreshToken } = response.data;
-        setTokens(accessToken, newRefreshToken);
-
-        // Notify all waiting requests
-        onTokenRefreshed(accessToken);
-        isRefreshing = false;
-
-        // Retry original request with new token
+        const newAccessToken = await refreshAccessToken();
         if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         }
         return apiClient(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed - clear tokens and notify
-        isRefreshing = false;
-        refreshSubscribers = [];
-        clearTokens();
-        window.dispatchEvent(new CustomEvent("auth:session-expired"));
-        return Promise.reject(refreshError);
+      } catch {
+        return Promise.reject(error);
       }
     }
 

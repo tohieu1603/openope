@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
+import katex from "katex";
 import { icons } from "../icons";
 import { t } from "../i18n";
 import type { Conversation } from "../chat-api";
@@ -11,8 +12,71 @@ marked.setOptions({
   gfm: true, // GitHub flavored markdown
 });
 
+// Detect HTML error pages (Cloudflare, nginx, etc.) in content
+function isHtmlErrorContent(text: string): boolean {
+  return /<!doctype|<html|<head>|cloudflare|cf-error|cf-wrapper/i.test(text)
+    && /<\/?(?:div|section|span|script|style|link|meta)\b/i.test(text);
+}
+
 function renderMarkdown(content: string): ReturnType<typeof unsafeHTML> {
-  const htmlContent = marked.parse(content, { async: false }) as string;
+  // Guard: detect HTML error pages leaked into chat content
+  if (isHtmlErrorContent(content)) {
+    // Extract error code if available (e.g. "Error 502", "Error 1033")
+    const codeMatch = content.match(/Error\s*(?:code\s*)?(\d{3,4})/i);
+    const code = codeMatch ? ` (${codeMatch[1]})` : "";
+    return unsafeHTML(
+      `<p style="color:var(--danger,#dc2626)">Gateway không khả dụng${code}. Vui lòng thử lại sau.</p>`
+    );
+  }
+
+  // 1. Extract math expressions before marked processing
+  const mathBlocks: string[] = [];
+  const mathInlines: string[] = [];
+
+  // Replace $$ ... $$ (block math)
+  let processed = content.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push(expr.trim());
+    return `\nMATHBLOCK${idx}ENDMATHBLOCK\n`;
+  });
+
+  // Replace $ ... $ (inline math) — skip $$ and escaped \$
+  processed = processed.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g, (_, expr) => {
+    const idx = mathInlines.length;
+    mathInlines.push(expr.trim());
+    return `MATHINLINE${idx}ENDMATHINLINE`;
+  });
+
+  // 2. Run marked
+  let htmlContent = marked.parse(processed, { async: false }) as string;
+
+  // 3. Replace placeholders with KaTeX rendered HTML
+  htmlContent = htmlContent.replace(/MATHBLOCK(\d+)ENDMATHBLOCK/g, (_, idx) => {
+    try {
+      return katex.renderToString(mathBlocks[parseInt(idx)], {
+        displayMode: true,
+        throwOnError: false,
+      });
+    } catch {
+      return `$$${mathBlocks[parseInt(idx)]}$$`;
+    }
+  });
+
+  htmlContent = htmlContent.replace(/MATHINLINE(\d+)ENDMATHINLINE/g, (_, idx) => {
+    try {
+      return katex.renderToString(mathInlines[parseInt(idx)], {
+        displayMode: false,
+        throwOnError: false,
+      });
+    } catch {
+      return `$${mathInlines[parseInt(idx)]}$`;
+    }
+  });
+
+  // 4. Wrap <table> in scrollable container
+  htmlContent = htmlContent.replace(/<table/g, '<div class="gc-table-wrap"><table');
+  htmlContent = htmlContent.replace(/<\/table>/g, "</table></div>");
+
   return unsafeHTML(htmlContent);
 }
 
@@ -781,6 +845,152 @@ export function renderChat(props: ChatProps) {
       }
       .gc-bubble a:hover {
         opacity: 0.8;
+      }
+
+      /* ── Table wrapper ── */
+      .gc-bubble .gc-table-wrap {
+        margin: 12px 0;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .gc-bubble .gc-table-wrap::-webkit-scrollbar { height: 6px; }
+      .gc-bubble .gc-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+      /* ── Tables inside chat bubbles ── */
+      .gc-bubble table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 14px;
+      }
+      .gc-bubble th,
+      .gc-bubble td {
+        padding: 11px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      .gc-bubble th {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-strong);
+        background: var(--bg-muted, var(--secondary));
+        white-space: nowrap;
+      }
+      .gc-bubble td {
+        color: var(--text);
+      }
+      .gc-bubble tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .gc-bubble tbody tr:nth-child(even) td {
+        background: var(--bg-muted, rgba(0,0,0,0.02));
+      }
+      .gc-bubble tbody tr:hover td {
+        background: var(--bg-hover);
+      }
+      /* User bubble table overrides */
+      .gc-message--user .gc-bubble .gc-table-wrap {
+        border-color: rgba(255,255,255,0.15);
+      }
+      .gc-message--user .gc-bubble th {
+        background: rgba(255,255,255,0.12);
+        color: var(--accent-foreground);
+      }
+      .gc-message--user .gc-bubble td {
+        color: var(--accent-foreground);
+        border-color: rgba(255,255,255,0.08);
+      }
+      .gc-message--user .gc-bubble tbody tr:nth-child(even) td {
+        background: rgba(255,255,255,0.04);
+      }
+      .gc-message--user .gc-bubble tbody tr:hover td {
+        background: rgba(255,255,255,0.08);
+      }
+
+      /* ── Code blocks inside chat bubbles ── */
+      .gc-bubble pre {
+        margin: 12px 0;
+        padding: 14px 16px;
+        background: var(--bg-muted, var(--secondary));
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow-x: auto;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .gc-bubble pre code {
+        background: none;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        font-size: inherit;
+        color: inherit;
+      }
+      .gc-bubble code {
+        background: var(--bg-muted, var(--secondary));
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        font-size: 0.9em;
+        font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      }
+      .gc-message--user .gc-bubble pre {
+        background: rgba(255,255,255,0.1);
+        border-color: rgba(255,255,255,0.15);
+      }
+      .gc-message--user .gc-bubble code {
+        background: rgba(255,255,255,0.12);
+      }
+
+      /* ── Scrollbar for code blocks ── */
+      .gc-bubble pre::-webkit-scrollbar { height: 6px; }
+      .gc-bubble pre::-webkit-scrollbar-track { background: transparent; }
+      .gc-bubble pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+      /* ── KaTeX math overrides ── */
+      .gc-bubble .katex-display {
+        margin: 16px 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 12px 0;
+      }
+      .gc-bubble .katex-display::-webkit-scrollbar { height: 4px; }
+      .gc-bubble .katex-display::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+      .gc-bubble .katex {
+        font-size: 1.05em;
+      }
+      .gc-message--user .gc-bubble .katex {
+        color: var(--accent-foreground);
+      }
+
+      /* ── Lists inside chat bubbles ── */
+      .gc-bubble ul,
+      .gc-bubble ol {
+        margin: 8px 0;
+        padding-left: 24px;
+      }
+      .gc-bubble li {
+        margin: 4px 0;
+      }
+
+      /* ── Blockquotes inside chat bubbles ── */
+      .gc-bubble blockquote {
+        margin: 12px 0;
+        padding: 8px 16px;
+        border-left: 3px solid var(--accent);
+        background: var(--bg-muted, var(--secondary));
+        border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        color: var(--muted);
+      }
+      .gc-bubble blockquote p {
+        margin: 4px 0;
+      }
+
+      /* ── Horizontal rule ── */
+      .gc-bubble hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 16px 0;
       }
 
       /* Loading spinner - Gemini style */
