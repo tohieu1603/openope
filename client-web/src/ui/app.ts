@@ -541,16 +541,7 @@ export class OperisApp extends LitElement {
     startUsageTracker();
   }
 
-  disconnectedCallback() {
-    if (this.themeMedia && this.themeMediaHandler) {
-      this.themeMedia.removeEventListener("change", this.themeMediaHandler);
-    }
-    window.removeEventListener("popstate", this.popStateHandler);
-    document.removeEventListener("click", this.clickOutsideHandler);
-    if (this.sessionExpiredHandler) {
-      window.removeEventListener("auth:session-expired", this.sessionExpiredHandler);
-    }
-    // Unsubscribe from cron events
+  private stopGatewayServices() {
     this.cronEventUnsubscribe?.();
     this.cronEventUnsubscribe = null;
     this.chatStreamUnsubscribe?.();
@@ -616,6 +607,9 @@ export class OperisApp extends LitElement {
     }
     window.removeEventListener("popstate", this.popStateHandler);
     document.removeEventListener("click", this.clickOutsideHandler);
+    if (this.sessionExpiredHandler) {
+      window.removeEventListener("auth:session-expired", this.sessionExpiredHandler);
+    }
     this.stopGatewayServices();
     super.disconnectedCallback();
   }

@@ -149,9 +149,8 @@ function startServicesWithStatus(win: BrowserWindow): void {
     }
   });
 
-  // Forward tunnel status to renderer + tray
+  // Forward tunnel status to renderer (tray no longer shows tunnel status)
   tunnel.onStatus((status, detail) => {
-    tray.updateTunnel(status);
     if (!win.isDestroyed()) {
       win.webContents.send(IPC.TUNNEL_STATUS, status, detail);
     }
@@ -168,10 +167,6 @@ app.whenReady().then(async () => {
     onRestartGateway: async () => {
       await gateway.stop();
       gateway.start();
-    },
-    onRestartTunnel: async () => {
-      await tunnel.stop();
-      tunnel.start();
     },
   });
 

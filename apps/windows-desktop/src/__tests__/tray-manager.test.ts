@@ -89,10 +89,6 @@ describe("TrayManager", () => {
       expect(typeof manager.updateGateway).toBe("function");
     });
 
-    it("should have updateTunnel method", () => {
-      expect(typeof manager.updateTunnel).toBe("function");
-    });
-
     it("should have setQuitting method", () => {
       expect(typeof manager.setQuitting).toBe("function");
     });
@@ -125,7 +121,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("running");
@@ -141,7 +136,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("starting");
@@ -157,7 +151,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("error");
@@ -173,7 +166,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("stopped");
@@ -189,7 +181,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const mockTrayFn = Tray as any;
@@ -237,7 +228,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       expect((mockTrayClass.instances?.length || 0) > initialCount).toBe(true);
@@ -247,7 +237,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const mockTrayClass = Tray as any;
@@ -261,7 +250,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const mockTrayClass = Tray as any;
@@ -275,7 +263,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       expect(mockMenuBuildFromTemplate).toHaveBeenCalled();
@@ -287,7 +274,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("running");
@@ -301,7 +287,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("running");
@@ -312,45 +297,12 @@ describe("TrayManager", () => {
     });
   });
 
-  describe("updateTunnel()", () => {
-    it("should rebuild menu on tunnel status change", () => {
-      const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
-      manager.init(mockWindow, {
-        onRestartGateway: vi.fn(),
-
-        onRestartTunnel: vi.fn(),
-      });
-
-      mockMenuBuildFromTemplate.mockClear();
-      manager.updateTunnel("connected");
-
-      expect(mockMenuBuildFromTemplate).toHaveBeenCalled();
-    });
-
-    it("should not update icon on tunnel status change", () => {
-      manager.init(mockWindow, {
-        onRestartGateway: vi.fn(),
-
-        onRestartTunnel: vi.fn(),
-      });
-
-      const mockTrayClass = Tray as any;
-      mockTrayClass.instances?.forEach((instance: any) => instance?.setImage?.mockClear?.());
-
-      manager.updateTunnel("connected");
-
-      const lastInstance = mockTrayClass.instances?.[mockTrayClass.instances.length - 1];
-      expect(lastInstance?.setImage).not.toHaveBeenCalled();
-    });
-  });
-
   describe("Context menu structure", () => {
     it("should have Show Window menu item", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const menuTemplate = mockMenuBuildFromTemplate.mock.calls[0][0];
@@ -364,7 +316,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       manager.updateGateway("running");
@@ -380,7 +331,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const menuTemplate = mockMenuBuildFromTemplate.mock.calls[0][0];
@@ -397,7 +347,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const menuTemplate = mockMenuBuildFromTemplate.mock.calls[0][0];
@@ -405,7 +354,6 @@ describe("TrayManager", () => {
 
       expect(labels).toContain("Show Window");
       expect(labels).toContain("Restart Gateway");
-      expect(labels).toContain("Reconnect Tunnel");
       expect(labels).toContain("Start on Login");
       expect(labels).toContain("Quit");
     });
@@ -415,7 +363,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const menuTemplate = mockMenuBuildFromTemplate.mock.calls[0][0];
@@ -429,7 +376,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const menuTemplate = mockMenuBuildFromTemplate.mock.calls[0][0];
@@ -446,7 +392,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const mockTrayClass = Tray as any;
@@ -464,7 +409,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       expect(() => {
@@ -479,7 +423,6 @@ describe("TrayManager", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
 
-        onRestartTunnel: vi.fn(),
       });
 
       const mockTrayClass = Tray as any;

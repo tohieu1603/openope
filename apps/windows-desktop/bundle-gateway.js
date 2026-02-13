@@ -160,6 +160,29 @@ for (const pkg of EXTERNAL_JS_PACKAGES) {
   }
 }
 
+// sharp runtime dependencies (required for initialization, not bundled by esbuild)
+// pnpm doesn't hoist these — resolve from pnpm store if not in root node_modules
+const SHARP_DEPENDENCIES = ['detect-libc', '@img/colour'];
+console.log('Copying sharp runtime dependencies...');
+for (const pkg of SHARP_DEPENDENCIES) {
+  let srcDir = path.join(nmRoot, pkg);
+  if (!fs.existsSync(srcDir)) {
+    // Search pnpm store: .pnpm/<pkg-name-with-+>@*/node_modules/<pkg>
+    const pnpmName = pkg.replace('/', '+');
+    const pnpmMatches = fs.readdirSync(pnpmDir).filter(d => d.startsWith(pnpmName + '@'));
+    if (pnpmMatches.length) {
+      srcDir = path.join(pnpmDir, pnpmMatches[0], 'node_modules', ...pkg.split('/'));
+    }
+  }
+  const destDir = path.join(nmOut, ...pkg.split('/'));
+  if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true });
+  if (copyDirSync(srcDir, destDir)) {
+    console.log(`  ✓ ${pkg}`);
+  } else {
+    console.warn(`  ✗ ${pkg} (not found — sharp may fail at runtime)`);
+  }
+}
+
 // sharp requires platform-specific @img/sharp-<platform>-<arch> binary
 const sharpPlatformPkg = `@img/sharp-${process.platform}-${process.arch}`;
 const sharpPlatformSrc = path.join(nmRoot, sharpPlatformPkg);

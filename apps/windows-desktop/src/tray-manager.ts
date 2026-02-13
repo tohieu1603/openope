@@ -4,19 +4,17 @@
  * minimize-to-tray on window close, and auto-start toggle.
  */
 import { Tray, Menu, app, type BrowserWindow } from "electron";
-import type { GatewayStatus, TunnelStatus } from "./types";
+import type { GatewayStatus } from "./types";
 import { getTrayIcon } from "./tray-icon";
 
 type TrayActionHandler = {
   onRestartGateway: () => void;
-  onRestartTunnel: () => void;
 };
 
 export class TrayManager {
   private tray: Tray | null = null;
   private win: BrowserWindow | null = null;
   private gatewayStatus: GatewayStatus = "stopped";
-  private tunnelStatus: TunnelStatus = "disconnected";
   private actions: TrayActionHandler | null = null;
   private _isQuitting = false;
 
@@ -47,12 +45,6 @@ export class TrayManager {
     this.buildMenu();
   }
 
-  /** Update tunnel status in tray */
-  updateTunnel(status: TunnelStatus): void {
-    this.tunnelStatus = status;
-    this.buildMenu();
-  }
-
   /** Mark app as quitting (allows window.close() to proceed) */
   setQuitting(): void {
     this._isQuitting = true;
@@ -77,15 +69,10 @@ export class TrayManager {
       { label: "Show Window", click: () => this.showWindow() },
       { type: "separator" },
       { label: `Gateway: ${this.gatewayStatus}`, enabled: false },
-      { label: `Tunnel: ${this.tunnelStatus}`, enabled: false },
       { type: "separator" },
       {
         label: "Restart Gateway",
         click: () => this.actions?.onRestartGateway(),
-      },
-      {
-        label: "Reconnect Tunnel",
-        click: () => this.actions?.onRestartTunnel(),
       },
       { type: "separator" },
       {
