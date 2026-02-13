@@ -6,7 +6,6 @@
 // Authentication
 export {
   login,
-  register,
   logout,
   refreshTokens,
   getMe,

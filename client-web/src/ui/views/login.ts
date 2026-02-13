@@ -4,7 +4,6 @@ export interface LoginProps {
   loading?: boolean;
   error?: string;
   onLogin: (email: string, password: string) => void;
-  onNavigateToRegister?: () => void;
 }
 
 export function renderLogin(props: LoginProps) {
@@ -102,8 +101,7 @@ export function renderLogin(props: LoginProps) {
         </form>
 
         <div class="login-footer">
-          Chưa có tài khoản?
-          <a href="#" @click=${(e: Event) => { e.preventDefault(); props.onNavigateToRegister?.(); }}>Đăng ký</a>
+          Liên hệ quản trị viên để được cấp tài khoản.
         </div>
       </div>
     </div>
