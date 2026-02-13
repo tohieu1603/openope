@@ -10,7 +10,6 @@ import { getTrayIcon } from "./tray-icon";
 type TrayActionHandler = {
   onRestartGateway: () => void;
   onRestartTunnel: () => void;
-  onOpenLogs: () => void;
 };
 
 export class TrayManager {
@@ -89,10 +88,6 @@ export class TrayManager {
         click: () => this.actions?.onRestartTunnel(),
       },
       { type: "separator" },
-      {
-        label: "Open Gateway Logs",
-        click: () => this.actions?.onOpenLogs(),
-      },
       {
         label: "Start on Login",
         type: "checkbox",

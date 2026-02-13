@@ -31,14 +31,19 @@ const STUB_PACKAGES = [
   '@napi-rs', 'better-sqlite3',
   'authenticate-pam',
   '@matrix-org/matrix-sdk-crypto-nodejs',
-  // NOTE: playwright-core is intentionally NOT stubbed — it's pure JS and required
-  // for browser CDP connections (connectOverCDP) used by browser tools at runtime.
 ];
 
 // Native modules: marked external in esbuild, copied to dist-gateway/node_modules/
 const NATIVE_EXTERNAL_PACKAGES = [
   'sharp',
   '@lydell/node-pty',
+];
+
+// Pure-JS modules that must be external because esbuild bundling breaks their
+// complex CJS↔ESM wrapper / lazy-init patterns at runtime.
+// Copied to dist-gateway/node_modules/ for resolution via NODE_PATH.
+const EXTERNAL_JS_PACKAGES = [
+  'playwright-core',    // Browser CDP connections — pure JS, ~6 MB, no native binaries
 ];
 
 const stubRegexSrc = '^(' + STUB_PACKAGES.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(\/|$)';
@@ -69,7 +74,7 @@ async function main() {
     target: 'node22',
     format: 'esm',
     outfile: ${JSON.stringify(path.join(OUT, 'entry.js'))},
-    external: ['node:*', ${NATIVE_EXTERNAL_PACKAGES.map(p => JSON.stringify(p)).join(', ')}],
+    external: ['node:*', ${[...NATIVE_EXTERNAL_PACKAGES, ...EXTERNAL_JS_PACKAGES].map(p => JSON.stringify(p)).join(', ')}],
     plugins: [stubPlugin],
     resolveExtensions: ['.js', '.mjs', '.cjs', '.json'],
     nodePaths: [${JSON.stringify(path.join(ROOT, 'node_modules'))}],
@@ -139,6 +144,19 @@ for (const pkg of NATIVE_EXTERNAL_PACKAGES) {
     console.log(`  ✓ ${pkg}`);
   } else {
     console.warn(`  ✗ ${pkg} (not found — will fail gracefully at runtime)`);
+  }
+}
+
+// Copy pure-JS external packages
+console.log('Copying external JS packages to dist-gateway/node_modules/...');
+for (const pkg of EXTERNAL_JS_PACKAGES) {
+  const srcDir = path.join(nmRoot, pkg);
+  const destDir = path.join(nmOut, pkg);
+  if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true });
+  if (copyDirSync(srcDir, destDir)) {
+    console.log(`  ✓ ${pkg}`);
+  } else {
+    console.warn(`  ✗ ${pkg} (not found — features depending on it will be unavailable)`);
   }
 }
 

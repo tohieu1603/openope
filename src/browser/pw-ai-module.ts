@@ -26,6 +26,7 @@ async function loadPwAiModule(mode: PwAiLoadMode): Promise<PwAiModule | null> {
   try {
     return await import("./pw-ai.js");
   } catch (err) {
+    console.warn("[pw-ai-module] failed to load pw-ai:", formatErrorMessage(err));
     if (mode === "soft") {
       return null;
     }

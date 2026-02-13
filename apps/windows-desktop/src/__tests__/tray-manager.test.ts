@@ -124,7 +124,7 @@ describe("TrayManager", () => {
     it("should map running status to tray-green.ico", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -140,7 +140,7 @@ describe("TrayManager", () => {
     it("should map starting status to tray-yellow.ico", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -156,7 +156,7 @@ describe("TrayManager", () => {
     it("should map error status to tray-red.ico", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -172,7 +172,7 @@ describe("TrayManager", () => {
     it("should map stopped status to tray-gray.ico", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -188,7 +188,7 @@ describe("TrayManager", () => {
     it("should use tray-gray.ico as default/initial icon", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -236,7 +236,7 @@ describe("TrayManager", () => {
 
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -246,7 +246,7 @@ describe("TrayManager", () => {
     it("should set tooltip on init", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -260,7 +260,7 @@ describe("TrayManager", () => {
     it("should register double-click handler", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -274,7 +274,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -286,7 +286,7 @@ describe("TrayManager", () => {
     it("should update icon on status change", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -300,7 +300,7 @@ describe("TrayManager", () => {
     it("should update tooltip with status", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -317,7 +317,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -330,7 +330,7 @@ describe("TrayManager", () => {
     it("should not update icon on tunnel status change", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -349,7 +349,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -363,7 +363,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -379,7 +379,7 @@ describe("TrayManager", () => {
       const mockAppObj = app as any;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -396,7 +396,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -414,7 +414,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -428,7 +428,7 @@ describe("TrayManager", () => {
       const mockMenuBuildFromTemplate = (Menu as any).buildFromTemplate;
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -445,7 +445,7 @@ describe("TrayManager", () => {
     it("should call tray.destroy() if initialized", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -463,7 +463,7 @@ describe("TrayManager", () => {
     it("should be safe to call destroy multiple times", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 
@@ -478,7 +478,7 @@ describe("TrayManager", () => {
     it("should show window on tray double-click", () => {
       manager.init(mockWindow, {
         onRestartGateway: vi.fn(),
-        onOpenLogs: vi.fn(),
+
         onRestartTunnel: vi.fn(),
       });
 

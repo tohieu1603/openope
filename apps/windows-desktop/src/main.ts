@@ -8,7 +8,7 @@
  * 4. System tray: status icon, context menu, minimize-to-tray
  * 5. On quit -> graceful shutdown (tunnel + gateway)
  */
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { OnboardManager } from "./onboard-manager";
@@ -172,9 +172,6 @@ app.whenReady().then(async () => {
     onRestartTunnel: async () => {
       await tunnel.stop();
       tunnel.start();
-    },
-    onOpenLogs: () => {
-      shell.openPath(gateway.getLogFilePath());
     },
   });
 
