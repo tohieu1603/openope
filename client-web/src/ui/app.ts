@@ -2380,7 +2380,6 @@ export class OperisApp extends LitElement {
 
   private renderNavigation() {
     const mainItems = NAV_ITEMS.filter((item) => item.section === "main");
-    const agentItems = NAV_ITEMS.filter((item) => item.section === "agent");
 
     return html`
       <aside class="nav ${this.settings.navCollapsed ? "nav--collapsed" : ""}">
@@ -2391,18 +2390,7 @@ export class OperisApp extends LitElement {
           </div>
         </div>
 
-        ${
-          agentItems.length > 0 && this.settings.isLoggedIn
-            ? html`
-          <div class="nav-section">
-            <div class="nav-section-title">Agent</div>
-            <div class="nav-items">
-              ${agentItems.map((item) => this.renderNavItem(item))}
-            </div>
-          </div>
-        `
-            : nothing
-        }
+        ${nothing /* agent section hidden */}
 
         <div class="nav-footer">
           <div class="nav-section">
