@@ -99,26 +99,35 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  // Intercept /?token=xxx redirects that break under file:// protocol.
-  // The client-web app does window.location.href = "/?token=..." after login,
-  // which resolves to file:///C:/?token=... instead of the correct index.html.
-  // Also syncs the backend's gateway token to the local config so the gateway
-  // hot-reloads and accepts the correct token (only writes on first mismatch).
+  // Intercept ALL file:// navigations that break under file:// protocol.
+  // The client-web SPA uses history.pushState (e.g. /chat, /settings) which
+  // creates URLs like file:///C:/settings — these don't exist on disk.
+  // Also handles /?token=xxx redirects after login.
   win.webContents.on("will-navigate", (event, url) => {
     try {
       const parsed = new URL(url);
-      if (parsed.protocol === "file:" && parsed.searchParams.has("token")) {
+      if (parsed.protocol === "file:") {
         event.preventDefault();
         const token = parsed.searchParams.get("token");
         if (token) {
           if (syncGatewayTokenToConfig(token)) {
             gateway.gatewayToken = token;
           }
+          loadClientWeb(win, token);
+        } else {
+          loadClientWeb(win, gateway.gatewayToken);
         }
-        loadClientWeb(win, token);
       }
     } catch {
       // Ignore malformed URLs
+    }
+  });
+
+  // Catch failed loads when user presses Ctrl+R / View → Reload on a pushState
+  // route (e.g. file:///C:/settings → ERR_FILE_NOT_FOUND, errorCode -6).
+  win.webContents.on("did-fail-load", (_event, errorCode, _errorDesc, validatedURL) => {
+    if (errorCode === -6 && validatedURL.startsWith("file://")) {
+      loadClientWeb(win, gateway.gatewayToken);
     }
   });
 
