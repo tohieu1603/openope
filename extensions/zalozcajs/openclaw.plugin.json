@@ -1,0 +1,9 @@
+{
+  "id": "zalozcajs",
+  "channels": ["zalozcajs"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

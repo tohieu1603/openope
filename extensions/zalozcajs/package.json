@@ -1,0 +1,37 @@
+{
+  "name": "@openclaw/zalozcajs",
+  "version": "2026.2.11",
+  "description": "OpenClaw Zalo Personal Account plugin via zca-js library",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "zca-js": "^2.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "zalozcajs",
+      "label": "Zalo Personal (zca-js)",
+      "selectionLabel": "Zalo (Personal Account via zca-js)",
+      "docsPath": "/channels/zalozcajs",
+      "docsLabel": "zalozcajs",
+      "blurb": "Zalo personal account via zca-js library (QR code login).",
+      "aliases": [
+        "zlj"
+      ],
+      "order": 86,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@openclaw/zalozcajs",
+      "localPath": "extensions/zalozcajs",
+      "defaultChoice": "npm"
+    }
+  }
+}

@@ -4,10 +4,10 @@
  */
 
 import { html, nothing } from "lit";
-import { icons } from "../icons";
-import type { UserProfile } from "../user-api";
 import type { ChannelStatus, ChannelId } from "../channels-api";
 import type { Tab } from "../navigation";
+import type { UserProfile } from "../user-api";
+import { icons } from "../icons";
 
 export interface SettingsProps {
   user: UserProfile | null;
@@ -42,25 +42,43 @@ const CHANNEL_BRANDS: Record<ChannelId, { color: string; bgColor: string; gradie
   whatsapp: {
     color: "#25D366",
     bgColor: "rgba(37, 211, 102, 0.1)",
-    gradient: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)"
+    gradient: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
   },
   telegram: {
     color: "#0088cc",
     bgColor: "rgba(0, 136, 204, 0.1)",
-    gradient: "linear-gradient(135deg, #0088cc 0%, #229ED9 100%)"
+    gradient: "linear-gradient(135deg, #0088cc 0%, #229ED9 100%)",
   },
   zalo: {
     color: "#0068FF",
     bgColor: "rgba(0, 104, 255, 0.1)",
-    gradient: "linear-gradient(135deg, #0068FF 0%, #0052CC 100%)"
+    gradient: "linear-gradient(135deg, #0068FF 0%, #0052CC 100%)",
   },
 };
 
 // Channel SVG icons
 const channelIcons = {
-  whatsapp: html`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`,
-  telegram: html`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>`,
-  zalo: html`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.568 8.16c-.169-.044-.377-.088-.612-.088-.873 0-1.647.498-2.031 1.262-.044-.873-.611-1.262-1.212-1.262-.564 0-1.032.323-1.262.813-.006-.01-.31-.813-1.458-.813-.976 0-1.703.672-1.857 1.545l-.025.002c-.168-.844-.82-1.545-1.83-1.545-.977 0-1.673.645-1.858 1.486-.23.108-.382.329-.382.581v4.145c0 .361.292.653.653.653h.327c.36 0 .653-.292.653-.653v-2.965c.005-.415.302-.784.75-.784.444 0 .75.315.75.75v3c0 .36.292.652.652.652h.327c.36 0 .653-.292.653-.652v-3c0-.435.306-.75.75-.75.448 0 .75.369.755.784v2.966c0 .36.293.652.653.652h.327c.36 0 .653-.292.653-.652v-3.25c.206.16.46.25.745.25.449 0 .751.369.756.784v2.216c0 .36.292.652.652.652h.327c.36 0 .653-.292.653-.652v-2.466c0-.872-.535-1.61-1.271-1.933.005-.05.009-.101.009-.152 0-.435-.306-.75-.75-.75-.29 0-.544.158-.683.392-.181-.573-.72-.992-1.36-.992-.285 0-.549.087-.774.231-.236-.44-.694-.731-1.22-.731z"/></svg>`,
+  whatsapp: html`
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"
+      />
+    </svg>
+  `,
+  telegram: html`
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path
+        d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
+      />
+    </svg>
+  `,
+  zalo: html`
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path
+        d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.568 8.16c-.169-.044-.377-.088-.612-.088-.873 0-1.647.498-2.031 1.262-.044-.873-.611-1.262-1.212-1.262-.564 0-1.032.323-1.262.813-.006-.01-.31-.813-1.458-.813-.976 0-1.703.672-1.857 1.545l-.025.002c-.168-.844-.82-1.545-1.83-1.545-.977 0-1.673.645-1.858 1.486-.23.108-.382.329-.382.581v4.145c0 .361.292.653.653.653h.327c.36 0 .653-.292.653-.653v-2.965c.005-.415.302-.784.75-.784.444 0 .75.315.75.75v3c0 .36.292.652.652.652h.327c.36 0 .653-.292.653-.652v-3c0-.435.306-.75.75-.75.448 0 .75.369.755.784v2.966c0 .36.293.652.653.652h.327c.36 0 .653-.292.653-.652v-3.25c.206.16.46.25.745.25.449 0 .751.369.756.784v2.216c0 .36.292.652.652.652h.327c.36 0 .653-.292.653-.652v-2.466c0-.872-.535-1.61-1.271-1.933.005-.05.009-.101.009-.152 0-.435-.306-.75-.75-.75-.29 0-.544.158-.683.392-.181-.573-.72-.992-1.36-.992-.285 0-.549.087-.774.231-.236-.44-.694-.731-1.22-.731z"
+      />
+    </svg>
+  `,
 };
 
 function formatDate(dateStr: string | undefined): string {
@@ -139,30 +157,37 @@ export function renderSettings(props: SettingsProps) {
   const renderChannelCard = (channel: ChannelStatus) => {
     const brand = CHANNEL_BRANDS[channel.id];
     const isConnecting = connectingChannel === channel.id;
-    const isZalo = channel.id === "zalo";
 
     return html`
-      <div class="st-channel-card ${channel.connected ? 'connected' : ''}" style="--ch-color: ${brand.color}; --ch-bg: ${brand.bgColor}; --ch-gradient: ${brand.gradient};">
+      <div class="st-channel-card ${channel.connected ? "connected" : ""}" style="--ch-color: ${brand.color}; --ch-bg: ${brand.bgColor}; --ch-gradient: ${brand.gradient};">
         <div class="st-channel-icon">${channelIcons[channel.id]}</div>
         <div class="st-channel-info">
           <span class="st-channel-name">${channel.name}</span>
           <span class="st-channel-status">
-            ${channel.connected ? html`<span class="st-status-dot"></span>` : nothing}
-            ${isZalo ? "Sắp có" : channel.connected ? "Đã kết nối" : "Chưa kết nối"}
+            ${
+              channel.connected
+                ? html`
+                    <span class="st-status-dot"></span>
+                  `
+                : nothing
+            }
+            ${channel.connected ? channel.accountName || "Đã kết nối" : "Chưa kết nối"}
           </span>
         </div>
         <div class="st-channel-action">
-          ${isZalo ? html`
-            <button class="st-btn-channel disabled" disabled>Sắp có</button>
-          ` : channel.connected ? html`
+          ${
+            channel.connected
+              ? html`
             <button class="st-btn-channel disconnect" @click=${() => onDisconnectChannel(channel.id)} ?disabled=${isConnecting}>
               Ngắt
             </button>
-          ` : html`
+          `
+              : html`
             <button class="st-btn-channel connect" @click=${() => onConnectChannel(channel.id)} ?disabled=${isConnecting}>
               ${isConnecting ? "..." : "Kết nối"}
             </button>
-          `}
+          `
+          }
         </div>
       </div>
     `;
@@ -666,12 +691,19 @@ export function renderSettings(props: SettingsProps) {
       ${error ? html`<div class="st-toast error">${icons.alertCircle} ${error}</div>` : nothing}
       ${successMessage ? html`<div class="st-toast success">${icons.check} ${successMessage}</div>` : nothing}
 
-      ${loading ? html`<div class="st-loading"></div>` : html`
+      ${
+        loading
+          ? html`
+              <div class="st-loading"></div>
+            `
+          : html`
         <!-- Profile Hero -->
         <div class="st-hero">
           <div class="st-avatar">${user?.name?.[0] || user?.email?.[0] || "U"}</div>
           <div class="st-profile-info">
-            ${editingName ? html`
+            ${
+              editingName
+                ? html`
               <div class="st-edit-form">
                 <input
                   type="text"
@@ -686,7 +718,8 @@ export function renderSettings(props: SettingsProps) {
                 </button>
                 <button class="st-cancel-btn" @click=${onCancelEditName} ?disabled=${saving}>Hủy</button>
               </div>
-            ` : html`
+            `
+                : html`
               <div class="st-name-row">
                 <span class="st-name">${user?.name || "Chưa đặt tên"}</span>
                 <span class="st-role-badge">${formatRole(user?.role)}</span>
@@ -694,7 +727,8 @@ export function renderSettings(props: SettingsProps) {
                   ${icons.pencil}
                 </button>
               </div>
-            `}
+            `
+            }
             <div class="st-email">${user?.email || "-"}</div>
 
             <div class="st-stats">
@@ -734,13 +768,17 @@ export function renderSettings(props: SettingsProps) {
               </button>
             </div>
             <div class="st-card-body">
-              ${channelsLoading ? html`
-                <div class="st-channels-loading"></div>
-              ` : html`
+              ${
+                channelsLoading
+                  ? html`
+                      <div class="st-channels-loading"></div>
+                    `
+                  : html`
                 <div class="st-channels-grid">
                   ${channels.map(renderChannelCard)}
                 </div>
-              `}
+              `
+              }
             </div>
           </div>
 
@@ -763,7 +801,9 @@ export function renderSettings(props: SettingsProps) {
                   </div>
                 </div>
 
-                ${showPasswordForm ? html`
+                ${
+                  showPasswordForm
+                    ? html`
                   <form class="st-password-form" @submit=${handlePasswordSubmit}>
                     <div class="st-form-row">
                       <label class="st-form-label">Mật khẩu hiện tại</label>
@@ -783,7 +823,9 @@ export function renderSettings(props: SettingsProps) {
                       </button>
                     </div>
                   </form>
-                ` : nothing}
+                `
+                    : nothing
+                }
 
                 <div class="st-item">
                   <div class="st-item-info">
@@ -918,7 +960,8 @@ export function renderSettings(props: SettingsProps) {
             </div>
           </div>
         </div>
-      `}
+      `
+      }
     </div>
   `;
 }

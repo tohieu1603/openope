@@ -1,34 +1,5 @@
 import { LitElement, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
-
-import { icons } from "./icons";
-import { showToast } from "./components/operis-toast";
-import { NAV_ITEMS, pathForTab, tabFromPath, type Tab } from "./navigation";
-import { loadSettings, saveSettings, type ClientSettings } from "./storage";
-import {
-  resolveTheme,
-  applyTheme,
-  getSystemTheme,
-  type ThemeMode,
-  type ResolvedTheme,
-} from "./theme";
-import {
-  startThemeTransition,
-  type ThemeTransitionContext,
-} from "./theme-transition";
-import { t } from "./i18n";
-import { renderChat } from "./views/chat";
-import { renderBilling } from "./views/billing";
-import { renderLogs, type LogEntry } from "./views/logs";
-import { renderWorkflow } from "./views/workflow";
-import { renderDocs } from "./views/docs";
-import { renderLogin } from "./views/login";
-import { renderChannels } from "./views/channels";
-import { renderSettings } from "./views/settings";
-import { renderAgents } from "./views/agents";
-import { renderSkills } from "./views/skills";
-import { renderNodes } from "./views/nodes";
-import { renderAnalytics } from "./views/analytics";
 import type {
   AgentsListResult,
   AgentFileEntry,
@@ -45,50 +16,6 @@ import type {
   CronStatus,
 } from "./agent-types";
 import type { Workflow, WorkflowFormState } from "./workflow-types";
-import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
-import {
-  listWorkflows,
-  createWorkflow,
-  toggleWorkflow,
-  runWorkflow,
-  deleteWorkflow,
-  getWorkflowRuns,
-  getWorkflowStatus,
-  type WorkflowStatus,
-} from "./workflow-api";
-import { subscribeToCronEvents, subscribeToChatStream, stopGatewayClient, waitForConnection, type CronEvent, type ChatStreamEvent } from "./gateway-client";
-import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
-import {
-  login as authLogin,
-  logout as authLogout,
-  restoreSession,
-  pullAndSyncAuthProfiles,
-  clearLocalAuthProfiles,
-  provisionAndStartTunnel,
-  type AuthUser,
-} from "./auth-api";
-import {
-  sendMessage as sendChatMessage,
-  extractTextContent,
-  getConversations,
-  getConversationHistory,
-  deleteConversation,
-  type Conversation,
-} from "./chat-api";
-import {
-  getChannelsStatus,
-  connectChannel,
-  disconnectChannel,
-  CHANNEL_DEFINITIONS,
-  type ChannelStatus,
-  type ChannelId,
-} from "./channels-api";
-import {
-  getUserProfile,
-  updateUserProfile,
-  changePassword,
-  type UserProfile,
-} from "./user-api";
 import {
   getDailyUsage,
   getRangeUsage,
@@ -100,6 +27,33 @@ import {
   type UsageStats,
 } from "./analytics-api";
 import {
+  login as authLogin,
+  logout as authLogout,
+  restoreSession,
+  pullAndSyncAuthProfiles,
+  clearLocalAuthProfiles,
+  provisionAndStartTunnel,
+  type AuthUser,
+} from "./auth-api";
+import {
+  getChannelsStatus,
+  connectChannel,
+  disconnectChannel,
+  CHANNEL_DEFINITIONS,
+  type ChannelStatus,
+  type ChannelId,
+} from "./channels-api";
+import {
+  sendMessage as sendChatMessage,
+  extractTextContent,
+  getConversations,
+  getConversationHistory,
+  deleteConversation,
+  type Conversation,
+} from "./chat-api";
+import { showConfirm } from "./components/operis-confirm";
+import { showToast } from "./components/operis-toast";
+import {
   getPricing,
   createDeposit,
   getPendingDeposit,
@@ -109,14 +63,57 @@ import {
   type PricingTier,
   type DepositOrder,
 } from "./deposits-api";
-
+import {
+  subscribeToCronEvents,
+  subscribeToChatStream,
+  stopGatewayClient,
+  waitForConnection,
+  type CronEvent,
+  type ChatStreamEvent,
+} from "./gateway-client";
+import { t } from "./i18n";
+import { icons } from "./icons";
+import { NAV_ITEMS, pathForTab, tabFromPath, type Tab } from "./navigation";
+import { loadSettings, saveSettings, type ClientSettings } from "./storage";
+import {
+  resolveTheme,
+  applyTheme,
+  getSystemTheme,
+  type ThemeMode,
+  type ResolvedTheme,
+} from "./theme";
+import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
+import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
+import { getUserProfile, updateUserProfile, changePassword, type UserProfile } from "./user-api";
+import { renderAgents } from "./views/agents";
+import { renderAnalytics } from "./views/analytics";
+import { renderBilling } from "./views/billing";
+import { renderChannels } from "./views/channels";
+import { renderChat } from "./views/chat";
+import { renderDocs } from "./views/docs";
+import { renderLogin } from "./views/login";
+import { renderLogs, type LogEntry } from "./views/logs";
+import { renderNodes } from "./views/nodes";
+import { renderSettings } from "./views/settings";
+import { renderSkills } from "./views/skills";
+import { renderWorkflow } from "./views/workflow";
+import {
+  listWorkflows,
+  createWorkflow,
+  toggleWorkflow,
+  runWorkflow,
+  deleteWorkflow,
+  getWorkflowRuns,
+  getWorkflowStatus,
+  type WorkflowStatus,
+} from "./workflow-api";
 // Register custom components
 import "./components/operis-input";
 import "./components/operis-select";
 import "./components/operis-modal";
 import "./components/operis-datetime-picker";
 import "./components/operis-confirm";
-import { showConfirm } from "./components/operis-confirm";
+import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 
 // Get page title
 function titleForTab(tab: Tab): string {
@@ -202,7 +199,13 @@ export class OperisApp extends LitElement {
   @state() workflowStatus: WorkflowStatus | null = null;
   // Run history state
   @state() workflowRunsId: string | null = null;
-  @state() workflowRuns: Array<{ ts: number; status: string; summary?: string; durationMs?: number; error?: string }> = [];
+  @state() workflowRuns: Array<{
+    ts: number;
+    status: string;
+    summary?: string;
+    durationMs?: number;
+    error?: string;
+  }> = [];
   @state() workflowRunsLoading = false;
 
   // Logs state
@@ -263,7 +266,8 @@ export class OperisApp extends LitElement {
   @state() agentsError: string | null = null;
   @state() agentsList: AgentsListResult | null = null;
   @state() agentSelectedId: string | null = null;
-  @state() agentActivePanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" = "overview";
+  @state() agentActivePanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
+    "overview";
   // Agent config state
   @state() agentConfigForm: Record<string, unknown> | null = null;
   @state() agentConfigLoading = false;
@@ -343,10 +347,11 @@ export class OperisApp extends LitElement {
   @state() analyticsRangeEnd = "";
 
   private themeMedia: MediaQueryList | null = null;
-  private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null =
-    null;
+  private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private popStateHandler = () => this.handlePopState();
-  private clickOutsideHandler = () => { this.tokenDropdownOpen = false; };
+  private clickOutsideHandler = () => {
+    /* no-op: token dropdown removed */
+  };
   private sessionExpiredHandler: (() => void) | null = null;
   private cronEventUnsubscribe: (() => void) | null = null;
   private chatStreamUnsubscribe: (() => void) | null = null;
@@ -375,7 +380,7 @@ export class OperisApp extends LitElement {
 
     // Initialize tab from URL (don't load protected data yet — wait for auth)
     let initialTab = tabFromPath(window.location.pathname);
-    if ((initialTab === "login") && this.settings.isLoggedIn) {
+    if (initialTab === "login" && this.settings.isLoggedIn) {
       initialTab = "chat";
       window.history.replaceState({}, "", pathForTab("chat"));
     }
@@ -448,10 +453,11 @@ export class OperisApp extends LitElement {
       // Don't scroll during streaming - user message stays at top
     } else if (evt.state === "final") {
       // Final message received - add to messages and clear streaming state
-      const finalText = evt.message?.content
-        ?.filter((block) => block.type === "text" && block.text)
-        .map((block) => block.text)
-        .join("") || this.chatStreamingText;
+      const finalText =
+        evt.message?.content
+          ?.filter((block) => block.type === "text" && block.text)
+          .map((block) => block.text)
+          .join("") || this.chatStreamingText;
 
       if (finalText) {
         this.chatMessages = [
@@ -463,7 +469,8 @@ export class OperisApp extends LitElement {
       // Accumulate WS token usage
       const wsUsage = evt.usage ?? evt.message?.usage;
       if (wsUsage) {
-        this.chatSessionTokens += wsUsage.totalTokens || ((wsUsage.input || 0) + (wsUsage.output || 0)) || 0;
+        this.chatSessionTokens +=
+          wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
       }
 
       this.chatStreamingText = "";
@@ -606,11 +613,22 @@ export class OperisApp extends LitElement {
     super.disconnectedCallback();
   }
 
-  private readonly protectedTabs = ["chat", "workflow", "channels", "settings", "agents", "skills", "nodes", "analytics", "billing", "logs"];
+  private readonly protectedTabs = [
+    "chat",
+    "workflow",
+    "channels",
+    "settings",
+    "agents",
+    "skills",
+    "nodes",
+    "analytics",
+    "billing",
+    "logs",
+  ];
 
   private handlePopState() {
     let tab = tabFromPath(window.location.pathname);
-    if ((tab === "login") && this.settings.isLoggedIn) {
+    if (tab === "login" && this.settings.isLoggedIn) {
       tab = "chat";
       window.history.replaceState({}, "", pathForTab("chat"));
     }
@@ -625,7 +643,7 @@ export class OperisApp extends LitElement {
   }
 
   private setTab(tab: Tab) {
-    if ((tab === "login") && this.settings.isLoggedIn) {
+    if (tab === "login" && this.settings.isLoggedIn) {
       tab = "chat";
     }
     // Block protected tabs when not logged in
@@ -650,7 +668,9 @@ export class OperisApp extends LitElement {
     try {
       // Load sidebar conversation list only — show welcome state (like ChatGPT/Gemini)
       const { conversations } = await getConversations();
-      conversations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      conversations.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
       this.chatConversations = conversations;
       this.chatHistoryLoaded = true;
     } catch (err) {
@@ -779,13 +799,11 @@ export class OperisApp extends LitElement {
       this.chatHistoryLoaded = false;
       this.setTab("chat");
     } catch (err) {
-      this.loginError =
-        err instanceof Error ? err.message : "Đăng nhập thất bại";
+      this.loginError = err instanceof Error ? err.message : "Đăng nhập thất bại";
     } finally {
       this.loginLoading = false;
     }
   }
-
 
   private async handleLogout() {
     try {
@@ -859,7 +877,8 @@ export class OperisApp extends LitElement {
       console.log("[app] SSE result.usage:", result.usage, "balance:", result.tokenBalance);
       if (result.usage) {
         reportSSEUsage(result.usage);
-        const usedTokens = result.usage.totalTokens || ((result.usage.input || 0) + (result.usage.output || 0));
+        const usedTokens =
+          result.usage.totalTokens || (result.usage.input || 0) + (result.usage.output || 0);
         this.chatSessionTokens += usedTokens || 0;
       }
       if (result.tokenBalance !== undefined) {
@@ -907,8 +926,7 @@ export class OperisApp extends LitElement {
         return;
       }
 
-      let errorMsg =
-        err instanceof Error ? err.message : "Không thể gửi tin nhắn";
+      let errorMsg = err instanceof Error ? err.message : "Không thể gửi tin nhắn";
 
       // Strip any HTML that leaked through (Cloudflare, nginx error pages, etc.)
       if (/<[a-z][\s\S]*>/i.test(errorMsg)) {
@@ -917,18 +935,15 @@ export class OperisApp extends LitElement {
 
       // User-friendly error messages
       let displayError: string;
-      if (errorMsg.includes("503") || errorMsg.includes("unavailable") || errorMsg.includes("không khả dụng")) {
-        displayError =
-          "Dịch vụ chat tạm thời không khả dụng. Vui lòng thử lại sau.";
-      } else if (
-        errorMsg.includes("401") ||
-        errorMsg.includes("Unauthorized")
+      if (
+        errorMsg.includes("503") ||
+        errorMsg.includes("unavailable") ||
+        errorMsg.includes("không khả dụng")
       ) {
+        displayError = "Dịch vụ chat tạm thời không khả dụng. Vui lòng thử lại sau.";
+      } else if (errorMsg.includes("401") || errorMsg.includes("Unauthorized")) {
         displayError = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
-      } else if (
-        errorMsg.includes("insufficient") ||
-        errorMsg.includes("balance")
-      ) {
+      } else if (errorMsg.includes("insufficient") || errorMsg.includes("balance")) {
         displayError = "Số dư token không đủ. Vui lòng nạp thêm.";
       } else {
         displayError = errorMsg;
@@ -967,7 +982,9 @@ export class OperisApp extends LitElement {
     this.chatConversationsLoading = true;
     try {
       const { conversations } = await getConversations();
-      conversations.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      conversations.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
       this.chatConversations = conversations;
     } catch (err) {
       console.error("[chat] Failed to load conversations:", err);
@@ -1055,16 +1072,12 @@ export class OperisApp extends LitElement {
     const startTime = Date.now();
     try {
       // Load both workflows and status in parallel
-      const [workflows, status] = await Promise.all([
-        listWorkflows(),
-        getWorkflowStatus(),
-      ]);
+      const [workflows, status] = await Promise.all([listWorkflows(), getWorkflowStatus()]);
       this.workflows = workflows;
       this.workflowStatus = status;
     } catch (err) {
       if (!silent) {
-        this.workflowError =
-          err instanceof Error ? err.message : "Không thể tải workflows";
+        this.workflowError = err instanceof Error ? err.message : "Không thể tải workflows";
       }
     } finally {
       if (!silent) {
@@ -1072,7 +1085,7 @@ export class OperisApp extends LitElement {
         const elapsed = Date.now() - startTime;
         const minDelay = 400;
         if (elapsed < minDelay) {
-          await new Promise(r => setTimeout(r, minDelay - elapsed));
+          await new Promise((r) => setTimeout(r, minDelay - elapsed));
         }
       }
       this.workflowLoading = false;
@@ -1105,18 +1118,18 @@ export class OperisApp extends LitElement {
     const newState = !workflow.enabled;
     // Optimistic update - update UI immediately
     this.workflows = this.workflows.map((w) =>
-      w.id === workflow.id ? { ...w, enabled: newState } : w
+      w.id === workflow.id ? { ...w, enabled: newState } : w,
     );
     try {
       await toggleWorkflow(workflow.id, newState);
       showToast(
         newState ? `Đã kích hoạt "${workflow.name}"` : `Đã tạm dừng "${workflow.name}"`,
-        "success"
+        "success",
       );
     } catch (err) {
       // Revert on error
       this.workflows = this.workflows.map((w) =>
-        w.id === workflow.id ? { ...w, enabled: !newState } : w
+        w.id === workflow.id ? { ...w, enabled: !newState } : w,
       );
       const msg = err instanceof Error ? err.message : "Không thể thay đổi trạng thái";
       showToast(msg, "error");
@@ -1133,12 +1146,12 @@ export class OperisApp extends LitElement {
       // Update lastRunStatus after a delay (workflow takes time to complete)
       setTimeout(() => {
         this.runningWorkflowIds = new Set(
-          [...this.runningWorkflowIds].filter((id) => id !== workflow.id)
+          [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
         );
       }, 3000);
     } catch (err) {
       this.runningWorkflowIds = new Set(
-        [...this.runningWorkflowIds].filter((id) => id !== workflow.id)
+        [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
       );
       const msg = err instanceof Error ? err.message : "Không thể chạy workflow";
       showToast(msg, "error");
@@ -1232,7 +1245,9 @@ export class OperisApp extends LitElement {
         id: c.conversation_id,
         date: c.created_at,
         type: "chat" as const,
-        preview: c.last_message ? c.last_message.slice(0, 80).replace(/\n/g, " ") : "(Cuộc hội thoại)",
+        preview: c.last_message
+          ? c.last_message.slice(0, 80).replace(/\n/g, " ")
+          : "(Cuộc hội thoại)",
       }));
 
       this.logsEntries = entries;
@@ -1413,8 +1428,7 @@ export class OperisApp extends LitElement {
     try {
       this.channels = await getChannelsStatus();
     } catch (err) {
-      this.channelsError =
-        err instanceof Error ? err.message : "Không thể tải kênh";
+      this.channelsError = err instanceof Error ? err.message : "Không thể tải kênh";
       // Fallback to default channels
       this.channels = Object.entries(CHANNEL_DEFINITIONS).map(([id, def]) => ({
         id: id as ChannelId,
@@ -1434,8 +1448,7 @@ export class OperisApp extends LitElement {
       await connectChannel(channelId);
       await this.loadChannels();
     } catch (err) {
-      this.channelsError =
-        err instanceof Error ? err.message : "Không thể kết nối kênh";
+      this.channelsError = err instanceof Error ? err.message : "Không thể kết nối kênh";
     } finally {
       this.channelsConnecting = null;
     }
@@ -1448,8 +1461,7 @@ export class OperisApp extends LitElement {
       await disconnectChannel(channelId);
       await this.loadChannels();
     } catch (err) {
-      this.channelsError =
-        err instanceof Error ? err.message : "Không thể ngắt kết nối kênh";
+      this.channelsError = err instanceof Error ? err.message : "Không thể ngắt kết nối kênh";
     } finally {
       this.channelsConnecting = null;
     }
@@ -1463,8 +1475,7 @@ export class OperisApp extends LitElement {
       this.userProfile = await getUserProfile();
       this.settingsNameValue = this.userProfile.name;
     } catch (err) {
-      this.settingsError =
-        err instanceof Error ? err.message : "Không thể tải hồ sơ";
+      this.settingsError = err instanceof Error ? err.message : "Không thể tải hồ sơ";
     } finally {
       this.settingsLoading = false;
     }
@@ -1493,17 +1504,13 @@ export class OperisApp extends LitElement {
       this.settingsSuccess = "Đã cập nhật thành công";
       setTimeout(() => (this.settingsSuccess = null), 3000);
     } catch (err) {
-      this.settingsError =
-        err instanceof Error ? err.message : "Không thể cập nhật hồ sơ";
+      this.settingsError = err instanceof Error ? err.message : "Không thể cập nhật hồ sơ";
     } finally {
       this.settingsSaving = false;
     }
   }
 
-  private async handleChangePassword(
-    currentPassword: string,
-    newPassword: string,
-  ) {
+  private async handleChangePassword(currentPassword: string, newPassword: string) {
     this.settingsSaving = true;
     this.settingsError = null;
     this.settingsSuccess = null;
@@ -1513,8 +1520,7 @@ export class OperisApp extends LitElement {
       this.settingsSuccess = "Đổi mật khẩu thành công";
       setTimeout(() => (this.settingsSuccess = null), 3000);
     } catch (err) {
-      this.settingsError =
-        err instanceof Error ? err.message : "Không thể đổi mật khẩu";
+      this.settingsError = err instanceof Error ? err.message : "Không thể đổi mật khẩu";
     } finally {
       this.settingsSaving = false;
     }
@@ -1569,7 +1575,9 @@ export class OperisApp extends LitElement {
     this.loadAgentIdentity(agentId);
   }
 
-  private handleSelectPanel(panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") {
+  private handleSelectPanel(
+    panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron",
+  ) {
     this.agentActivePanel = panel;
     const agentId = this.agentSelectedId;
     if (!agentId) return;
@@ -1618,7 +1626,8 @@ export class OperisApp extends LitElement {
     try {
       const client = await waitForConnection();
       const res = await client.request<{ file?: AgentFileEntry }>("agents.files.get", {
-        agentId: this.agentSelectedId, name,
+        agentId: this.agentSelectedId,
+        name,
       });
       if (res?.file) {
         const content = res.file.content ?? "";
@@ -1646,7 +1655,9 @@ export class OperisApp extends LitElement {
       const client = await waitForConnection();
       const content = this.agentFileDrafts[name] ?? "";
       const res = await client.request<{ file?: AgentFileEntry }>("agents.files.set", {
-        agentId: this.agentSelectedId, name, content,
+        agentId: this.agentSelectedId,
+        name,
+        content,
       });
       if (res?.file) {
         this.agentFileContents = { ...this.agentFileContents, [name]: content };
@@ -1957,7 +1968,9 @@ export class OperisApp extends LitElement {
       const client = await waitForConnection();
       showToast(`Đang cài đặt ${name}...`, "info");
       const res = await client.request<{ message?: string }>("skills.install", {
-        name, installId, timeoutMs: 120000,
+        name,
+        installId,
+        timeoutMs: 120000,
       });
       await this.loadSkills();
       this.skillsMessages = {
@@ -1993,7 +2006,10 @@ export class OperisApp extends LitElement {
     this.devicesError = null;
     try {
       const client = await waitForConnection();
-      const res = await client.request<{ pending?: PendingDevice[]; paired?: PairedDevice[] }>("device.pair.list", {});
+      const res = await client.request<{ pending?: PendingDevice[]; paired?: PairedDevice[] }>(
+        "device.pair.list",
+        {},
+      );
       this.devicesList = {
         pending: Array.isArray(res?.pending) ? res.pending : [],
         paired: Array.isArray(res?.paired) ? res.paired : [],
@@ -2053,7 +2069,10 @@ export class OperisApp extends LitElement {
     this.configLoading = true;
     try {
       const client = await waitForConnection();
-      const res = await client.request<{ config: Record<string, unknown>; hash: string }>("config.get", {});
+      const res = await client.request<{ config: Record<string, unknown>; hash: string }>(
+        "config.get",
+        {},
+      );
       if (res?.config) {
         this.configSnapshot = { config: res.config, hash: res.hash ?? "" };
         this.configForm = JSON.parse(JSON.stringify(res.config));
@@ -2126,7 +2145,10 @@ export class OperisApp extends LitElement {
         params.nodeId = nodeId;
       }
       const method = target === "node" ? "exec.approvals.node.get" : "exec.approvals.get";
-      const res = await client.request<import("./agent-types").ExecApprovalsSnapshot>(method, params);
+      const res = await client.request<import("./agent-types").ExecApprovalsSnapshot>(
+        method,
+        params,
+      );
       this.execApprovalsSnapshot = res;
       if (!this.execApprovalsDirty) {
         this.execApprovalsForm = res?.file ? JSON.parse(JSON.stringify(res.file)) : null;
@@ -2222,7 +2244,14 @@ export class OperisApp extends LitElement {
         if (!this.analyticsRangeStart || !this.analyticsRangeEnd) return;
         result = await getRangeUsage(this.analyticsRangeStart, this.analyticsRangeEnd);
       } else {
-        const days = this.analyticsPeriod === "1d" ? 1 : this.analyticsPeriod === "7d" ? 7 : this.analyticsPeriod === "30d" ? 30 : 90;
+        const days =
+          this.analyticsPeriod === "1d"
+            ? 1
+            : this.analyticsPeriod === "7d"
+              ? 7
+              : this.analyticsPeriod === "30d"
+                ? 30
+                : 90;
         result = await getDailyUsage(days);
       }
 
@@ -2287,9 +2316,10 @@ export class OperisApp extends LitElement {
 
   private renderTokenIndicator() {
     if (this.chatSessionTokens <= 0) return nothing;
-    const formatted = this.chatSessionTokens >= 1000
-      ? `${(this.chatSessionTokens / 1000).toFixed(1)}k`
-      : String(this.chatSessionTokens);
+    const formatted =
+      this.chatSessionTokens >= 1000
+        ? `${(this.chatSessionTokens / 1000).toFixed(1)}k`
+        : String(this.chatSessionTokens);
     return html`
       <div class="topbar-token-chip">
         <span class="topbar-token-icon">${icons.zap}</span>
@@ -2361,24 +2391,27 @@ export class OperisApp extends LitElement {
           </div>
         </div>
 
-        ${agentItems.length > 0 && this.settings.isLoggedIn ? html`
+        ${
+          agentItems.length > 0 && this.settings.isLoggedIn
+            ? html`
           <div class="nav-section">
             <div class="nav-section-title">Agent</div>
             <div class="nav-items">
               ${agentItems.map((item) => this.renderNavItem(item))}
             </div>
           </div>
-        ` : nothing}
+        `
+            : nothing
+        }
 
         <div class="nav-footer">
           <div class="nav-section">
             <div class="nav-items">
-              ${this.settings.isLoggedIn
-                ? html`
+              ${
+                this.settings.isLoggedIn
+                  ? html`
                     <button
-                      class="nav-item ${this.tab === "settings"
-                        ? "active"
-                        : ""}"
+                      class="nav-item ${this.tab === "settings" ? "active" : ""}"
                       @click=${() => this.setTab("settings")}
                       title="${subtitleForTab("settings")}"
                     >
@@ -2396,7 +2429,7 @@ export class OperisApp extends LitElement {
                       <span class="nav-item__text">${t("navLogout")}</span>
                     </button>
                   `
-                : html`
+                  : html`
                     <button
                       class="nav-item ${this.tab === "login" ? "active" : ""}"
                       @click=${() => this.setTab("login")}
@@ -2405,7 +2438,8 @@ export class OperisApp extends LitElement {
                       <span class="nav-item__icon">${icons.logIn}</span>
                       <span class="nav-item__text">${t("navLogin")}</span>
                     </button>
-                  `}
+                  `
+              }
             </div>
           </div>
         </div>
@@ -2451,7 +2485,8 @@ export class OperisApp extends LitElement {
           onPeriodChange: (period) => this.handleAnalyticsPeriodChange(period),
           rangeStart: this.analyticsRangeStart,
           rangeEnd: this.analyticsRangeEnd,
-          onRangeChange: (start: string, end: string) => this.handleAnalyticsRangeChange(start, end),
+          onRangeChange: (start: string, end: string) =>
+            this.handleAnalyticsRangeChange(start, end),
           onRefresh: () => this.loadAnalytics(),
         });
       case "billing":
@@ -2459,15 +2494,24 @@ export class OperisApp extends LitElement {
           creditBalance: this.currentUser?.token_balance ?? 0,
           // Payment mode
           paymentMode: this.billingPaymentMode,
-          onPaymentModeChange: (mode) => { this.billingPaymentMode = mode; this.requestUpdate(); },
+          onPaymentModeChange: (mode) => {
+            this.billingPaymentMode = mode;
+            this.requestUpdate();
+          },
           // Pricing tiers from API
           pricingTiers: this.billingPricingTiers,
           pricingLoading: this.billingPricingLoading,
           selectedPackage: this.billingSelectedPackage,
-          onSelectPackage: (i: number) => { this.billingSelectedPackage = i; this.requestUpdate(); },
+          onSelectPackage: (i: number) => {
+            this.billingSelectedPackage = i;
+            this.requestUpdate();
+          },
           // Custom amount
           customAmount: this.billingCustomAmount,
-          onCustomAmountChange: (v) => { this.billingCustomAmount = v; this.requestUpdate(); },
+          onCustomAmountChange: (v) => {
+            this.billingCustomAmount = v;
+            this.requestUpdate();
+          },
           // Buy tokens
           onBuyTokens: () => this.handleBillingBuyTokens(),
           buyLoading: this.billingBuyLoading,
@@ -2481,8 +2525,7 @@ export class OperisApp extends LitElement {
           checkingTransaction: this.billingCheckingTransaction,
           // Auto top-up
           autoTopUp: this.billingAutoTopUp,
-          onToggleAutoTopUp: () =>
-            (this.billingAutoTopUp = !this.billingAutoTopUp),
+          onToggleAutoTopUp: () => (this.billingAutoTopUp = !this.billingAutoTopUp),
           // History
           depositHistory: this.billingDepositHistory.slice(
             (this.billingHistoryPage - 1) * this.billingHistoryPageSize,
@@ -2490,7 +2533,9 @@ export class OperisApp extends LitElement {
           ),
           historyLoading: this.billingHistoryLoading,
           historyPage: this.billingHistoryPage,
-          historyTotalPages: Math.ceil(this.billingDepositHistory.length / this.billingHistoryPageSize),
+          historyTotalPages: Math.ceil(
+            this.billingDepositHistory.length / this.billingHistoryPageSize,
+          ),
           onRefreshHistory: () => this.handleBillingRefreshHistory(),
           onViewDepositDetail: (deposit) => this.handleViewDepositDetail(deposit),
           onHistoryPageChange: (page) => this.handleBillingHistoryPageChange(page),
@@ -2552,8 +2597,12 @@ export class OperisApp extends LitElement {
       case "docs":
         return renderDocs({
           selectedSlug: this.docsSelectedSlug,
-          onSelectDoc: (slug: string) => { this.docsSelectedSlug = slug; },
-          onBack: () => { this.docsSelectedSlug = null; },
+          onSelectDoc: (slug: string) => {
+            this.docsSelectedSlug = slug;
+          },
+          onBack: () => {
+            this.docsSelectedSlug = null;
+          },
         });
       case "channels":
         return renderChannels({
@@ -2584,15 +2633,13 @@ export class OperisApp extends LitElement {
           channelsLoading: this.channelsLoading,
           connectingChannel: this.channelsConnecting ?? undefined,
           onConnectChannel: (channel) => this.handleChannelConnect(channel),
-          onDisconnectChannel: (channel) =>
-            this.handleChannelDisconnect(channel),
+          onDisconnectChannel: (channel) => this.handleChannelDisconnect(channel),
           onRefreshChannels: () => this.loadChannels(),
           // Security
           showPasswordForm: this.settingsShowPasswordForm,
           onTogglePasswordForm: () =>
             (this.settingsShowPasswordForm = !this.settingsShowPasswordForm),
-          onChangePassword: (current, newPwd) =>
-            this.handleChangePassword(current, newPwd),
+          onChangePassword: (current, newPwd) => this.handleChangePassword(current, newPwd),
           // Navigation
           onNavigate: (tab) => this.setTab(tab as Tab),
         });
@@ -2645,23 +2692,34 @@ export class OperisApp extends LitElement {
           // Callbacks
           onRefresh: () => this.loadAgents(),
           onSelectAgent: (id: string) => this.handleSelectAgent(id),
-          onSelectPanel: (panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") => this.handleSelectPanel(panel),
+          onSelectPanel: (panel: "overview" | "files" | "tools" | "skills" | "channels" | "cron") =>
+            this.handleSelectPanel(panel),
           onLoadFiles: (id: string) => this.loadAgentFiles(id),
           onSelectFile: (name: string) => this.handleSelectFile(name),
-          onFileDraftChange: (name: string, content: string) => this.handleFileDraftChange(name, content),
+          onFileDraftChange: (name: string, content: string) =>
+            this.handleFileDraftChange(name, content),
           onFileReset: (name: string) => this.handleFileReset(name),
           onFileSave: (name: string) => this.handleFileSave(name),
-          onToolsProfileChange: (agentId: string, profile: string | null, clearAllow: boolean) => this.handleToolsProfileChange(agentId, profile, clearAllow),
-          onToolsOverridesChange: (agentId: string, alsoAllow: string[], deny: string[]) => this.handleToolsOverridesChange(agentId, alsoAllow, deny),
+          onToolsProfileChange: (agentId: string, profile: string | null, clearAllow: boolean) =>
+            this.handleToolsProfileChange(agentId, profile, clearAllow),
+          onToolsOverridesChange: (agentId: string, alsoAllow: string[], deny: string[]) =>
+            this.handleToolsOverridesChange(agentId, alsoAllow, deny),
           onConfigReload: () => this.loadAgentConfig(),
           onConfigSave: () => this.saveAgentConfig(),
-          onModelChange: (agentId: string, modelId: string | null) => this.handleAgentModelChange(agentId, modelId),
-          onModelFallbacksChange: (agentId: string, fallbacks: string[]) => this.handleAgentModelFallbacksChange(agentId, fallbacks),
+          onModelChange: (agentId: string, modelId: string | null) =>
+            this.handleAgentModelChange(agentId, modelId),
+          onModelFallbacksChange: (agentId: string, fallbacks: string[]) =>
+            this.handleAgentModelFallbacksChange(agentId, fallbacks),
           onChannelsRefresh: () => this.loadAgentChannels(),
           onCronRefresh: () => this.loadAgentCron(),
-          onSkillsFilterChange: (next: string) => { this.agentSkillsFilter = next; },
-          onSkillsRefresh: () => { if (this.agentSelectedId) this.loadAgentSkills(this.agentSelectedId); },
-          onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) => this.handleAgentSkillToggle(agentId, skillName, enabled),
+          onSkillsFilterChange: (next: string) => {
+            this.agentSkillsFilter = next;
+          },
+          onSkillsRefresh: () => {
+            if (this.agentSelectedId) this.loadAgentSkills(this.agentSelectedId);
+          },
+          onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) =>
+            this.handleAgentSkillToggle(agentId, skillName, enabled),
           onAgentSkillsClear: (agentId: string) => this.handleAgentSkillsClear(agentId),
           onAgentSkillsDisableAll: (agentId: string) => this.handleAgentSkillsDisableAll(agentId),
         });
@@ -2679,7 +2737,8 @@ export class OperisApp extends LitElement {
           onToggle: (key: string, enabled: boolean) => this.handleSkillToggle(key, enabled),
           onEdit: (key: string, val: string) => this.handleSkillEdit(key, val),
           onSaveKey: (key: string) => this.handleSkillSaveKey(key),
-          onInstall: (key: string, name: string, installId: string) => this.handleSkillInstall(key, name, installId),
+          onInstall: (key: string, name: string, installId: string) =>
+            this.handleSkillInstall(key, name, installId),
         });
       case "nodes":
         return renderNodes({
@@ -2705,17 +2764,24 @@ export class OperisApp extends LitElement {
           onDevicesRefresh: () => this.loadDevices(),
           onDeviceApprove: (reqId: string) => this.handleDeviceApprove(reqId),
           onDeviceReject: (reqId: string) => this.handleDeviceReject(reqId),
-          onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) => this.handleDeviceRotate(deviceId, role, scopes),
-          onDeviceRevoke: (deviceId: string, role: string) => this.handleDeviceRevoke(deviceId, role),
+          onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) =>
+            this.handleDeviceRotate(deviceId, role, scopes),
+          onDeviceRevoke: (deviceId: string, role: string) =>
+            this.handleDeviceRevoke(deviceId, role),
           onLoadConfig: () => this.loadConfig(),
           onLoadExecApprovals: () => this.loadExecApprovals(),
           onBindDefault: (nodeId: string | null) => this.handleBindDefault(nodeId),
-          onBindAgent: (agentIndex: number, nodeId: string | null) => this.handleBindAgent(agentIndex, nodeId),
+          onBindAgent: (agentIndex: number, nodeId: string | null) =>
+            this.handleBindAgent(agentIndex, nodeId),
           onSaveBindings: () => this.handleSaveBindings(),
-          onExecApprovalsTargetChange: (kind: "gateway" | "node", nodeId: string | null) => this.handleExecApprovalsTargetChange(kind, nodeId),
-          onExecApprovalsSelectAgent: (agentId: string) => this.handleExecApprovalsSelectAgent(agentId),
-          onExecApprovalsPatch: (path: Array<string | number>, value: unknown) => this.handleExecApprovalsPatch(path, value),
-          onExecApprovalsRemove: (path: Array<string | number>) => this.handleExecApprovalsRemove(path),
+          onExecApprovalsTargetChange: (kind: "gateway" | "node", nodeId: string | null) =>
+            this.handleExecApprovalsTargetChange(kind, nodeId),
+          onExecApprovalsSelectAgent: (agentId: string) =>
+            this.handleExecApprovalsSelectAgent(agentId),
+          onExecApprovalsPatch: (path: Array<string | number>, value: unknown) =>
+            this.handleExecApprovalsPatch(path, value),
+          onExecApprovalsRemove: (path: Array<string | number>) =>
+            this.handleExecApprovalsRemove(path),
           onSaveExecApprovals: () => this.handleSaveExecApprovals(),
         });
       default:
@@ -2726,13 +2792,15 @@ export class OperisApp extends LitElement {
   render() {
     return html`
       <div
-        class="shell ${this.settings.navCollapsed || this.tab === "login"          ? "shell--nav-collapsed"
-          : ""}"
+        class="shell ${
+          this.settings.navCollapsed || this.tab === "login" ? "shell--nav-collapsed" : ""
+        }"
       >
         <header class="topbar">
           <div class="topbar-left">
-            ${this.tab !== "login"
-              ? html`
+            ${
+              this.tab !== "login"
+                ? html`
                   <button
                     class="nav-collapse-toggle"
                     @click=${() => this.toggleNav()}
@@ -2741,7 +2809,8 @@ export class OperisApp extends LitElement {
                     <span class="nav-collapse-toggle__icon">${icons.menu}</span>
                   </button>
                 `
-              : nothing}
+                : nothing
+            }
             <div
               class="brand"
               @click=${() => this.setTab("chat")}
@@ -2767,8 +2836,9 @@ export class OperisApp extends LitElement {
           <div class="topbar-right">
             ${this.settings.isLoggedIn && this.tab === "chat" && this.chatConversationId ? this.renderTokenIndicator() : nothing}
             ${this.renderThemeToggle()}
-            ${this.settings.isLoggedIn
-              ? html`
+            ${
+              this.settings.isLoggedIn
+                ? html`
                   <div class="topbar-user-wrap">
                     <div class="topbar-user">
                       <div class="topbar-avatar">
@@ -2797,15 +2867,17 @@ export class OperisApp extends LitElement {
                     </div>
                   </div>
                 `
-              : nothing}
+                : nothing
+            }
           </div>
         </header>
 
         ${this.tab !== "login" ? this.renderNavigation() : nothing}
 
         <main class="content ${this.tab === "login" ? "content--no-scroll" : ""}">
-          ${this.tab !== "login"
-            ? html`
+          ${
+            this.tab !== "login"
+              ? html`
                 <section class="content-header">
                   <div>
                     <div class="page-title">${titleForTab(this.tab)}</div>
@@ -2813,7 +2885,8 @@ export class OperisApp extends LitElement {
                   </div>
                 </section>
               `
-            : nothing}
+              : nothing
+          }
 
           ${this.renderContent()}
         </main>

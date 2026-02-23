@@ -15,6 +15,8 @@ export interface ChannelStatus {
   connected: boolean;
   lastConnectedAt?: number;
   error?: string;
+  /** Connected account display name (e.g. Zalo user name) */
+  accountName?: string;
 }
 
 export interface ChannelsResponse {
@@ -38,24 +40,59 @@ function getDefaultChannels(): ChannelStatus[] {
   }));
 }
 
-// Get all channels status
+// Get all channels status — merges gateway status + Zalo DB status
 export async function getChannelsStatus(): Promise<ChannelStatus[]> {
+  // Start with defaults
+  let channels = getDefaultChannels();
+
+  // Try fetching from gateway (WhatsApp, Telegram)
   try {
     const result = await apiRequest<ChannelsResponse>("/channels/status");
-    // Safety check: ensure we always return an array
     if (Array.isArray(result?.channels)) {
-      return result.channels;
+      channels = result.channels;
     }
-    // API returned unexpected format, use defaults
-    return getDefaultChannels();
   } catch {
-    // Return default disconnected status if API not available
-    return getDefaultChannels();
+    // Gateway not available, keep defaults
   }
+
+  // Fetch Zalo connection status from DB
+  try {
+    const zalo = await apiRequest<{
+      connected: boolean;
+      zaloUid?: string;
+      zaloName?: string;
+      connectedAt?: string;
+    }>("/zalo/channel");
+    const idx = channels.findIndex((c) => c.id === "zalo");
+    if (idx >= 0) {
+      channels[idx].connected = zalo.connected;
+      if (zalo.connectedAt) {
+        channels[idx].lastConnectedAt = new Date(zalo.connectedAt).getTime();
+      }
+      if (zalo.zaloName) {
+        channels[idx].accountName = zalo.zaloName;
+      }
+    } else {
+      channels.push({
+        id: "zalo",
+        name: "Zalo",
+        icon: "zalo",
+        connected: zalo.connected,
+        lastConnectedAt: zalo.connectedAt ? new Date(zalo.connectedAt).getTime() : undefined,
+        accountName: zalo.zaloName,
+      });
+    }
+  } catch {
+    // Zalo API not available, keep default
+  }
+
+  return channels;
 }
 
 // Connect a channel
-export async function connectChannel(channelId: ChannelId): Promise<{ success: boolean; message?: string }> {
+export async function connectChannel(
+  channelId: ChannelId,
+): Promise<{ success: boolean; message?: string }> {
   return apiRequest(`/channels/${channelId}/connect`, {
     method: "POST",
   });
