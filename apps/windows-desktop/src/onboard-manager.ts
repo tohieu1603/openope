@@ -8,16 +8,16 @@ import fs from "node:fs";
 
 export class OnboardManager {
   /**
-   * Path to OpenClaw config file.
-   * Config lives at ~/.openclaw/openclaw.json on all platforms.
+   * Path to Operis config file.
+   * Config lives at ~/.operis/operis.json on all platforms.
    */
   private get configFilePath(): string {
     const home = process.env.USERPROFILE || process.env.HOME || "";
-    return path.join(home, ".openclaw", "openclaw.json");
+    return path.join(home, ".operis", "operis.json");
   }
 
   /**
-   * Check if OpenClaw config already exists.
+   * Check if Operis config already exists.
    */
   isConfigured(): boolean {
     return fs.existsSync(this.configFilePath);
@@ -78,7 +78,7 @@ export class OnboardManager {
    */
   ensureAgentAuthStore(): void {
     const home = process.env.USERPROFILE || process.env.HOME || "";
-    const agentDir = path.join(home, ".openclaw", "agents", "main", "agent");
+    const agentDir = path.join(home, ".operis", "agents", "main", "agent");
     const authPath = path.join(agentDir, "auth-profiles.json");
 
     if (fs.existsSync(authPath)) return;

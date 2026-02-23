@@ -31,11 +31,11 @@ function resolveResourcePath(...segments: string[]): string {
   return path.join(base, ...segments);
 }
 
-/** Config file path: ~/.openclaw/openclaw.json */
+/** Config file path: ~/.operis/operis.json */
 const configFilePath = path.join(
   process.env.USERPROFILE || process.env.HOME || "",
-  ".openclaw",
-  "openclaw.json",
+  ".operis",
+  "operis.json",
 );
 
 /**
@@ -183,7 +183,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("sync-auth-profiles", (_event, profiles: Record<string, unknown>) => {
     try {
       const home = process.env.USERPROFILE || process.env.HOME || "";
-      const authPath = path.join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(home, ".operis", "agents", "main", "agent", "auth-profiles.json");
       const dir = path.dirname(authPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -204,7 +204,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("clear-auth-profiles", () => {
     try {
       const home = process.env.USERPROFILE || process.env.HOME || "";
-      const authPath = path.join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(home, ".operis", "agents", "main", "agent", "auth-profiles.json");
       if (!fs.existsSync(authPath)) return true;
 
       let existing: Record<string, unknown> = {};
