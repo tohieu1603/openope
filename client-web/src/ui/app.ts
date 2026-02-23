@@ -66,10 +66,13 @@ import {
 import {
   subscribeToCronEvents,
   subscribeToChatStream,
+  subscribeToToolEvents,
   stopGatewayClient,
   waitForConnection,
+  getGatewayClient,
   type CronEvent,
   type ChatStreamEvent,
+  type ToolEvent,
 } from "./gateway-client";
 import { t } from "./i18n";
 import { icons } from "./icons";
@@ -107,13 +110,14 @@ import {
   getWorkflowStatus,
   type WorkflowStatus,
 } from "./workflow-api";
+import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 // Register custom components
 import "./components/operis-input";
 import "./components/operis-select";
 import "./components/operis-modal";
 import "./components/operis-datetime-picker";
 import "./components/operis-confirm";
-import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
+import { getZaloStatus } from "./zalo-api";
 
 // Get page title
 function titleForTab(tab: Tab): string {
@@ -175,6 +179,13 @@ export class OperisApp extends LitElement {
   // Streaming state
   @state() chatStreamingText = "";
   @state() chatStreamingRunId: string | null = null;
+  // Tool call tracking for current run
+  @state() chatToolCalls: Array<{
+    id: string;
+    name: string;
+    phase: "start" | "update" | "result";
+    isError?: boolean;
+  }> = [];
   // Session token tracking
   @state() chatSessionTokens = 0;
   @state() chatTokenBalance = 0;
@@ -250,6 +261,9 @@ export class OperisApp extends LitElement {
   @state() channelsLoading = false;
   @state() channelsError: string | null = null;
   @state() channelsConnecting: ChannelId | null = null;
+  @state() zaloQrBase64: string | null = null;
+  @state() zaloQrStatus: string | null = null;
+  private zaloPollingTimer: ReturnType<typeof setInterval> | null = null;
 
   // Settings state
   @state() userProfile: UserProfile | null = null;
@@ -355,6 +369,7 @@ export class OperisApp extends LitElement {
   private sessionExpiredHandler: (() => void) | null = null;
   private cronEventUnsubscribe: (() => void) | null = null;
   private chatStreamUnsubscribe: (() => void) | null = null;
+  private toolEventUnsubscribe: (() => void) | null = null;
 
   createRenderRoot() {
     return this;
@@ -403,6 +418,11 @@ export class OperisApp extends LitElement {
       this.handleChatStreamEvent(evt);
     });
 
+    // Subscribe to tool events for showing tool calls in chat
+    this.toolEventUnsubscribe = subscribeToToolEvents((evt: ToolEvent) => {
+      this.handleToolEvent(evt);
+    });
+
     // Start usage tracker - reports token usage from WS to Operis BE
     startUsageTracker();
 
@@ -433,6 +453,25 @@ export class OperisApp extends LitElement {
       if (!this.workflowLoading) {
         this.loadWorkflows(true);
       }
+    }
+  }
+
+  private handleToolEvent(evt: ToolEvent) {
+    console.log("[app] toolEvent", evt.data?.phase, evt.data?.name, "sending=" + this.chatSending);
+    if (!this.chatSending) return;
+    const { phase, toolCallId, name, isError } = evt.data;
+    if (!toolCallId) return;
+
+    const existing = this.chatToolCalls.findIndex((t) => t.id === toolCallId);
+    if (phase === "start" && existing < 0) {
+      this.chatToolCalls = [
+        ...this.chatToolCalls,
+        { id: toolCallId, name: name ?? "tool", phase: "start" },
+      ];
+    } else if (existing >= 0) {
+      const updated = [...this.chatToolCalls];
+      updated[existing] = { ...updated[existing], phase, isError };
+      this.chatToolCalls = updated;
     }
   }
 
@@ -475,6 +514,7 @@ export class OperisApp extends LitElement {
 
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       // Don't scroll here - user message is already at top
     } else if (evt.state === "error") {
@@ -486,6 +526,7 @@ export class OperisApp extends LitElement {
       ];
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       // Don't scroll here - user message is already at top
     }
@@ -537,6 +578,12 @@ export class OperisApp extends LitElement {
         this.handleChatStreamEvent(evt);
       });
     }
+    // Subscribe to tool events
+    if (!this.toolEventUnsubscribe) {
+      this.toolEventUnsubscribe = subscribeToToolEvents((evt: ToolEvent) => {
+        this.handleToolEvent(evt);
+      });
+    }
     startUsageTracker();
   }
 
@@ -545,6 +592,8 @@ export class OperisApp extends LitElement {
     this.cronEventUnsubscribe = null;
     this.chatStreamUnsubscribe?.();
     this.chatStreamUnsubscribe = null;
+    this.toolEventUnsubscribe?.();
+    this.toolEventUnsubscribe = null;
     stopUsageTracker();
     stopGatewayClient();
   }
@@ -825,6 +874,7 @@ export class OperisApp extends LitElement {
     this.chatError = null;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
     this.chatAbortController = new AbortController();
 
     // Add user message
@@ -836,7 +886,24 @@ export class OperisApp extends LitElement {
     await this.scrollChatToBottom();
 
     try {
-      // Call real Operis Chat API with SSE streaming
+      // Try gateway WebSocket chat.send first (supports tools + tool events).
+      // Fall back to Operis API SSE if gateway isn't connected.
+      const gw = getGatewayClient();
+      if (gw.connected) {
+        // Send via gateway WS — streaming + tool events handled by WS event listeners
+        const runId = crypto.randomUUID();
+        console.log("[app] sending via gateway WS, runId=" + runId);
+        await gw.request("chat.send", {
+          sessionKey: "agent:main:main",
+          message: userMessage,
+          idempotencyKey: runId,
+        });
+        // chat.send returns immediately with ack. Content + tool events arrive via
+        // handleChatStreamEvent and handleToolEvent WS listeners. Wait for completion.
+        return;
+      }
+
+      // Fallback: Operis API SSE streaming (no tool support)
       const result = await sendChatMessage(
         userMessage,
         this.chatConversationId ?? undefined,
@@ -844,8 +911,6 @@ export class OperisApp extends LitElement {
         (text: string) => {
           this.chatStreamingText = text;
           this.chatStreamingRunId = "sse-stream";
-          // Spacer stays at viewport height (set by scrollChatToBottom before streaming).
-          // overflow-anchor:none keeps scroll position stable as content grows.
         },
         // onDone - mark streaming complete
         () => {
@@ -895,6 +960,7 @@ export class OperisApp extends LitElement {
       // Clear streaming state FIRST to stop showing streaming bubble
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
 
       // Then add final message
@@ -913,6 +979,7 @@ export class OperisApp extends LitElement {
         const partialText = this.chatStreamingText;
         this.chatStreamingText = "";
         this.chatStreamingRunId = null;
+        this.chatToolCalls = [];
         this.chatSending = false;
         this.chatAbortController = null;
         if (partialText) {
@@ -956,6 +1023,7 @@ export class OperisApp extends LitElement {
       ];
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       this.chatAbortController = null;
       // Don't scroll - user message stays at top
@@ -999,6 +1067,7 @@ export class OperisApp extends LitElement {
     this.chatSessionTokens = 0;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
     this.chatSending = false;
     this.chatError = null;
   }
@@ -1445,13 +1514,68 @@ export class OperisApp extends LitElement {
     this.channelsConnecting = channelId;
     this.channelsError = null;
     try {
-      await connectChannel(channelId);
+      const result = await connectChannel(channelId);
+      console.log("[channels] connect result:", channelId, result);
+
+      // Zalo: start QR polling flow
+      if (channelId === "zalo" && result.sessionToken) {
+        this.zaloQrStatus = "pending";
+        this.zaloQrBase64 = null;
+        this.startZaloPolling(result.sessionToken);
+        return; // Don't clear channelsConnecting yet — QR modal stays open
+      }
+
       await this.loadChannels();
     } catch (err) {
+      console.error("[channels] connect error:", err);
       this.channelsError = err instanceof Error ? err.message : "Không thể kết nối kênh";
     } finally {
-      this.channelsConnecting = null;
+      if (this.zaloQrStatus === null) {
+        this.channelsConnecting = null;
+      }
     }
+  }
+
+  private startZaloPolling(sessionToken: string) {
+    // Only clear previous timer, don't reset QR state
+    if (this.zaloPollingTimer) {
+      clearInterval(this.zaloPollingTimer);
+      this.zaloPollingTimer = null;
+    }
+    this.zaloPollingTimer = setInterval(async () => {
+      try {
+        const status = await getZaloStatus(sessionToken);
+        this.zaloQrStatus = status.status;
+
+        if (status.qrBase64) {
+          this.zaloQrBase64 = status.qrBase64;
+        }
+
+        // Terminal states
+        if (status.status === "success") {
+          this.stopZaloPolling();
+          this.channelsConnecting = null;
+          await this.loadChannels();
+        } else if (status.status === "error") {
+          this.stopZaloPolling();
+          this.channelsConnecting = null;
+          this.channelsError = status.error || "Kết nối Zalo thất bại";
+        }
+      } catch {
+        this.stopZaloPolling();
+        this.channelsConnecting = null;
+        this.channelsError = "Mất kết nối khi chờ quét mã QR";
+      }
+    }, 2000);
+  }
+
+  private stopZaloPolling() {
+    if (this.zaloPollingTimer) {
+      clearInterval(this.zaloPollingTimer);
+      this.zaloPollingTimer = null;
+    }
+    this.zaloQrBase64 = null;
+    this.zaloQrStatus = null;
   }
 
   private async handleChannelDisconnect(channelId: ChannelId) {
@@ -2447,6 +2571,7 @@ export class OperisApp extends LitElement {
           username: this.settings.username ?? undefined,
           botName: "Operis",
           streamingText: this.chatStreamingText,
+          toolCalls: this.chatToolCalls,
           onDraftChange: (value) => (this.chatDraft = value),
           onSend: () => this.handleSendMessage(),
           onStop: () => this.handleStopChat(),
@@ -2598,9 +2723,15 @@ export class OperisApp extends LitElement {
           loading: this.channelsLoading,
           error: this.channelsError ?? undefined,
           connectingChannel: this.channelsConnecting ?? undefined,
+          zaloQrBase64: this.zaloQrBase64,
+          zaloQrStatus: this.zaloQrStatus,
           onConnect: (channel) => this.handleChannelConnect(channel),
           onDisconnect: (channel) => this.handleChannelDisconnect(channel),
           onRefresh: () => this.loadChannels(),
+          onCancelZaloQr: () => {
+            this.stopZaloPolling();
+            this.channelsConnecting = null;
+          },
         });
       case "settings":
         return renderSettings({
@@ -2620,9 +2751,15 @@ export class OperisApp extends LitElement {
           channels: this.channels,
           channelsLoading: this.channelsLoading,
           connectingChannel: this.channelsConnecting ?? undefined,
+          zaloQrBase64: this.zaloQrBase64,
+          zaloQrStatus: this.zaloQrStatus,
           onConnectChannel: (channel) => this.handleChannelConnect(channel),
           onDisconnectChannel: (channel) => this.handleChannelDisconnect(channel),
           onRefreshChannels: () => this.loadChannels(),
+          onCancelZaloQr: () => {
+            this.stopZaloPolling();
+            this.channelsConnecting = null;
+          },
           // Security
           showPasswordForm: this.settingsShowPasswordForm,
           onTogglePasswordForm: () =>

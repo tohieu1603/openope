@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import { normalizeVerboseLevel } from "../auto-reply/thinking.js";
 import { loadConfig } from "../config/config.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
-import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
@@ -11,15 +11,23 @@ import { formatForLog } from "./ws-log.js";
  * Read the last assistant message's usage from the session transcript.
  * Returns normalized usage or undefined if unavailable.
  */
-function readLastAssistantUsage(
-  sessionKey: string,
-): {
-  input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number;
-  prompt_tokens: number; completion_tokens: number; total_tokens: number;
-} | undefined {
+function readLastAssistantUsage(sessionKey: string):
+  | {
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+      totalTokens: number;
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    }
+  | undefined {
   try {
     const { entry } = loadSessionEntry(sessionKey);
-    console.log(`[usage] session=${sessionKey} hasEntry=${!!entry} sessionId=${entry?.sessionId ?? "none"} sessionFile=${entry?.sessionFile ?? "none"}`);
+    console.log(
+      `[usage] session=${sessionKey} hasEntry=${!!entry} sessionId=${entry?.sessionId ?? "none"} sessionFile=${entry?.sessionFile ?? "none"}`,
+    );
     if (!entry?.sessionId) return undefined;
 
     // Use resolveSessionFilePath to handle missing sessionFile (falls back to sessionId-based path)
@@ -31,7 +39,10 @@ function readLastAssistantUsage(
     }
 
     const content = fs.readFileSync(transcriptFile, "utf-8").trim();
-    if (!content) { console.log("[usage] transcript empty"); return undefined; }
+    if (!content) {
+      console.log("[usage] transcript empty");
+      return undefined;
+    }
 
     const lines = content.split("\n");
     console.log(`[usage] transcript lines=${lines.length}`);
@@ -43,21 +54,42 @@ function readLastAssistantUsage(
         const msg = raw.message ?? raw;
         if (msg.role === "assistant" && msg.usage && typeof msg.usage === "object") {
           const u = msg.usage;
-          const input = u.input ?? u.inputTokens ?? u.input_tokens ?? u.promptTokens ?? u.prompt_tokens ?? 0;
-          const output = u.output ?? u.outputTokens ?? u.output_tokens ?? u.completionTokens ?? u.completion_tokens ?? 0;
+          const input =
+            u.input ?? u.inputTokens ?? u.input_tokens ?? u.promptTokens ?? u.prompt_tokens ?? 0;
+          const output =
+            u.output ??
+            u.outputTokens ??
+            u.output_tokens ??
+            u.completionTokens ??
+            u.completion_tokens ??
+            0;
           const cacheRead = u.cacheRead ?? u.cache_read ?? u.cache_read_input_tokens ?? 0;
           const cacheWrite = u.cacheWrite ?? u.cache_write ?? u.cache_creation_input_tokens ?? 0;
-          const totalTokens = u.total ?? u.totalTokens ?? u.total_tokens ?? (input + output + cacheRead + cacheWrite);
+          const totalTokens =
+            u.total ?? u.totalTokens ?? u.total_tokens ?? input + output + cacheRead + cacheWrite;
           // Skip entries with all-zero usage (hardcoded defaults from injected messages)
           if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) continue;
           const prompt_tokens = input + cacheRead + cacheWrite;
           const completion_tokens = output;
           const total_tokens = prompt_tokens + completion_tokens;
-          console.log(`[usage] found: input=${input} output=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total_tokens}`);
-          return { input, output, cacheRead, cacheWrite, totalTokens, prompt_tokens, completion_tokens, total_tokens };
+          console.log(
+            `[usage] found: input=${input} output=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total_tokens}`,
+          );
+          return {
+            input,
+            output,
+            cacheRead,
+            cacheWrite,
+            totalTokens,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+          };
         }
         if (msg.role === "assistant") {
-          console.log(`[usage] assistant msg at line ${i} hasUsage=${!!msg.usage} usageType=${typeof msg.usage}`);
+          console.log(
+            `[usage] assistant msg at line ${i} hasUsage=${!!msg.usage} usageType=${typeof msg.usage}`,
+          );
         }
       } catch {
         /* skip invalid lines */
@@ -284,7 +316,7 @@ export type AgentEventHandlerOptions = {
 
 export function createAgentEventHandler({
   broadcast,
-  broadcastToConnIds,
+  broadcastToConnIds: _broadcastToConnIds,
   nodeSendToSession,
   agentRunSeq,
   chatRunState,
@@ -425,10 +457,9 @@ export function createAgentEventHandler({
     }
     agentRunSeq.set(evt.runId, evt.seq);
     if (isToolEvent) {
-      const recipients = toolEventRecipients.get(evt.runId);
-      if (recipients && recipients.size > 0) {
-        broadcastToConnIds("agent", toolPayload, recipients);
-      }
+      // Always broadcast tool events to all connected clients so any UI
+      // (including external ones like Operis Client) can display tool calls.
+      broadcast("agent", toolPayload);
     } else {
       broadcast("agent", agentPayload);
     }

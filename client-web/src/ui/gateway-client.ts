@@ -1,9 +1,9 @@
+import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
 /**
  * Gateway WebSocket Client for Client-Web
  * Full version with device authentication (like admin UI)
  */
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity";
-import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
 
 function generateUUID(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -217,7 +217,7 @@ export class GatewayClient {
       role: ROLE,
       scopes: SCOPES,
       device,
-      caps: [],
+      caps: ["tool-events"],
       auth,
       userAgent: navigator.userAgent,
       locale: navigator.language,
@@ -321,6 +321,24 @@ export class GatewayClient {
   }
 }
 
+// Agent tool event from gateway (stream: "tool")
+export type ToolEvent = {
+  runId: string;
+  seq: number;
+  stream: "tool";
+  ts: number;
+  sessionKey?: string;
+  data: {
+    phase: "start" | "update" | "result";
+    toolCallId: string;
+    name?: string;
+    args?: unknown;
+    result?: unknown;
+    partialResult?: unknown;
+    isError?: boolean;
+  };
+};
+
 // Cron event type from gateway
 export type CronEvent = {
   jobId: string;
@@ -379,6 +397,26 @@ function notifyCronListeners(event: CronEvent) {
       listener(event);
     } catch (err) {
       console.error("[gateway] cron event listener error:", err);
+    }
+  }
+}
+
+// Event listeners for tool events
+type ToolEventListener = (event: ToolEvent) => void;
+const toolEventListeners = new Set<ToolEventListener>();
+
+export function subscribeToToolEvents(listener: ToolEventListener): () => void {
+  toolEventListeners.add(listener);
+  getGatewayClient();
+  return () => toolEventListeners.delete(listener);
+}
+
+function notifyToolListeners(event: ToolEvent) {
+  for (const listener of toolEventListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error("[gateway] tool event listener error:", err);
     }
   }
 }
@@ -451,6 +489,14 @@ export function getGatewayClient(): GatewayClient {
         // Handle chat streaming events
         if (evt.event === "chat" && evt.payload) {
           notifyChatStreamListeners(evt.payload as ChatStreamEvent);
+        }
+        // Handle agent tool events
+        if (evt.event === "agent" && evt.payload) {
+          const p = evt.payload as { stream?: string };
+          console.log("[gateway] agent event stream=" + p.stream, evt.payload);
+          if (p.stream === "tool") {
+            notifyToolListeners(evt.payload as ToolEvent);
+          }
         }
       },
     });

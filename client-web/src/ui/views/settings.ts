@@ -26,9 +26,12 @@ export interface SettingsProps {
   channels: ChannelStatus[];
   channelsLoading: boolean;
   connectingChannel?: ChannelId;
+  zaloQrBase64?: string | null;
+  zaloQrStatus?: string | null;
   onConnectChannel: (channel: ChannelId) => void;
   onDisconnectChannel: (channel: ChannelId) => void;
   onRefreshChannels: () => void;
+  onCancelZaloQr?: () => void;
   // Security
   showPasswordForm: boolean;
   onTogglePasswordForm: () => void;
@@ -127,9 +130,12 @@ export function renderSettings(props: SettingsProps) {
     channels,
     channelsLoading,
     connectingChannel,
+    zaloQrBase64,
+    zaloQrStatus,
     onConnectChannel,
     onDisconnectChannel,
     onRefreshChannels,
+    onCancelZaloQr,
     showPasswordForm,
     onTogglePasswordForm,
     onChangePassword,
@@ -527,6 +533,20 @@ export function renderSettings(props: SettingsProps) {
         border-radius: 50%;
         animation: stSpin 0.7s linear infinite;
       }
+
+      /* Zalo QR Modal */
+      .st-qr-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+      .st-qr-modal { background: var(--card); border-radius: 16px; padding: 24px; width: 360px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+      .st-qr-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+      .st-qr-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-strong); }
+      .st-qr-close { background: none; border: none; font-size: 24px; color: var(--muted); cursor: pointer; padding: 0 4px; line-height: 1; }
+      .st-qr-close:hover { color: var(--text-strong); }
+      .st-qr-body { text-align: center; }
+      .st-qr-hint { font-size: 14px; color: var(--muted); margin: 0 0 16px; }
+      .st-qr-img { width: 240px; height: 240px; border-radius: 8px; border: 1px solid var(--border); }
+      .st-qr-loading { padding: 40px 0; }
+      .st-qr-loading p { font-size: 14px; color: var(--muted); margin: 16px 0 0; }
+      .st-qr-spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: #0068FF; border-radius: 50%; animation: stSpin 0.8s linear infinite; margin: 0 auto; }
 
       /* Settings List */
       .st-list { display: flex; flex-direction: column; }
@@ -961,6 +981,36 @@ export function renderSettings(props: SettingsProps) {
           </div>
         </div>
       `
+      }
+
+      ${
+        connectingChannel === "zalo" && zaloQrStatus
+          ? html`
+        <div class="st-qr-overlay" @click=${onCancelZaloQr}>
+          <div class="st-qr-modal" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="st-qr-header">
+              <h3>Kết nối Zalo</h3>
+              <button class="st-qr-close" @click=${onCancelZaloQr}>&times;</button>
+            </div>
+            <div class="st-qr-body">
+              ${
+                zaloQrBase64
+                  ? html`
+                  <p class="st-qr-hint">Mở ứng dụng Zalo &rarr; Quét mã QR bên dưới</p>
+                  <img class="st-qr-img" src="${zaloQrBase64}" alt="Zalo QR" />
+                `
+                  : html`
+                  <div class="st-qr-loading">
+                    <div class="st-qr-spinner"></div>
+                    <p>${zaloQrStatus === "scanned" ? "Đã quét — đang xác nhận..." : "Đang tạo mã QR..."}</p>
+                  </div>
+                `
+              }
+            </div>
+          </div>
+        </div>
+      `
+          : nothing
       }
     </div>
   `;

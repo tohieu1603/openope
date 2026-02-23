@@ -12,9 +12,12 @@ export interface ChannelsProps {
   loading: boolean;
   error?: string;
   connectingChannel?: ChannelId;
+  zaloQrBase64?: string | null;
+  zaloQrStatus?: string | null;
   onConnect: (channel: ChannelId) => void;
   onDisconnect: (channel: ChannelId) => void;
   onRefresh: () => void;
+  onCancelZaloQr?: () => void;
 }
 
 // Channel brand colors and icons
@@ -64,9 +67,20 @@ function formatLastConnected(timestamp: number | undefined): string {
   return `${diffDays} ngày trước`;
 }
 
-/** Render Zalo QR modal overlay */
 export function renderChannels(props: ChannelsProps) {
-  const { channels, loading, error, connectingChannel, onConnect, onDisconnect, onRefresh } = props;
+  const {
+    channels,
+    loading,
+    error,
+    connectingChannel,
+    zaloQrBase64,
+    zaloQrStatus,
+    onConnect,
+    onDisconnect,
+    onRefresh,
+    onCancelZaloQr,
+  } = props;
+  const showZaloQrModal = connectingChannel === "zalo" && zaloQrStatus;
 
   const renderChannelCard = (channel: ChannelStatus) => {
     const brand = CHANNEL_BRANDS[channel.id];
@@ -164,6 +178,20 @@ export function renderChannels(props: ChannelsProps) {
       .channels-loading::after { content: ""; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: chSpin 0.8s linear infinite; }
       @keyframes chSpin { to { transform: rotate(360deg); } }
       @media (max-width: 640px) { .channels-grid { grid-template-columns: 1fr; } }
+
+      /* Zalo QR Modal */
+      .qr-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+      .qr-modal { background: var(--card); border-radius: var(--radius-lg); padding: 24px; width: 360px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+      .qr-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+      .qr-modal-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-strong); }
+      .qr-close-btn { background: none; border: none; font-size: 24px; color: var(--muted); cursor: pointer; padding: 0 4px; line-height: 1; }
+      .qr-close-btn:hover { color: var(--text-strong); }
+      .qr-modal-body { text-align: center; }
+      .qr-instruction { font-size: 14px; color: var(--muted); margin: 0 0 16px; }
+      .qr-image { width: 240px; height: 240px; border-radius: 8px; border: 1px solid var(--border); }
+      .qr-loading { padding: 40px 0; }
+      .qr-loading p { font-size: 14px; color: var(--muted); margin: 16px 0 0; }
+      .qr-spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: #0068FF; border-radius: 50%; animation: chSpin 0.8s linear infinite; margin: 0 auto; }
     </style>
 
     <div class="channels-container">
@@ -193,6 +221,35 @@ export function renderChannels(props: ChannelsProps) {
       `
       }
 
+      ${
+        showZaloQrModal
+          ? html`
+        <div class="qr-overlay" @click=${onCancelZaloQr}>
+          <div class="qr-modal" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="qr-modal-header">
+              <h3>Kết nối Zalo</h3>
+              <button class="qr-close-btn" @click=${onCancelZaloQr}>&times;</button>
+            </div>
+            <div class="qr-modal-body">
+              ${
+                zaloQrBase64
+                  ? html`
+                  <p class="qr-instruction">Mở ứng dụng Zalo &rarr; Quét mã QR bên dưới</p>
+                  <img class="qr-image" src="${zaloQrBase64}" alt="Zalo QR Code" />
+                `
+                  : html`
+                  <div class="qr-loading">
+                    <div class="qr-spinner"></div>
+                    <p>${zaloQrStatus === "scanned" ? "Đã quét — đang xác nhận..." : "Đang tạo mã QR..."}</p>
+                  </div>
+                `
+              }
+            </div>
+          </div>
+        </div>
+      `
+          : nothing
+      }
     </div>
   `;
 }
