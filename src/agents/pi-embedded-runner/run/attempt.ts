@@ -537,6 +537,18 @@ export async function runEmbeddedAttempt(
         );
       }
 
+      // Debug: log full payload sent to model provider
+      {
+        const origStreamFn = activeSession.agent.streamFn;
+        activeSession.agent.streamFn = (model, context, options) => {
+          const onPayload = (payload: unknown) => {
+            console.log("[model-payload] >>>", JSON.stringify(payload, null, 2));
+            options?.onPayload?.(payload);
+          };
+          return origStreamFn(model, context, { ...options, onPayload });
+        };
+      }
+
       try {
         const prior = await sanitizeSessionHistory({
           messages: activeSession.messages,
