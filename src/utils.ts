@@ -253,7 +253,7 @@ export function resolveConfigDir(
   if (override) {
     return resolveUserPath(override);
   }
-  const newDir = path.join(homedir(), ".openclaw");
+  const newDir = path.join(homedir(), ".operis");
   try {
     const hasNew = fs.existsSync(newDir);
     if (hasNew) {

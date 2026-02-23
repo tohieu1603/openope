@@ -153,8 +153,8 @@ async function maybeMigrateLegacyConfig(): Promise<string[]> {
     return changes;
   }
 
-  const targetDir = path.join(home, ".openclaw");
-  const targetPath = path.join(targetDir, "openclaw.json");
+  const targetDir = path.join(home, ".operis");
+  const targetPath = path.join(targetDir, "operis.json");
   try {
     await fs.access(targetPath);
     return changes;
