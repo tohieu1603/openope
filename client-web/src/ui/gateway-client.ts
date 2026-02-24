@@ -349,6 +349,13 @@ export type CronEvent = {
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  usage?: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    totalTokens?: number;
+  };
 };
 
 // Token usage from gateway agent runs

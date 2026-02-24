@@ -97,6 +97,14 @@ export type RunCronAgentTurnResult = {
   /** Last non-empty agent text output (not truncated). */
   outputText?: string;
   error?: string;
+  /** Token usage from the agent run (for analytics/billing). */
+  usage?: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    totalTokens?: number;
+  };
 };
 
 export async function runCronIsolatedAgentTurn(params: {
@@ -399,9 +407,21 @@ export async function runCronIsolatedAgentTurn(params: {
 
   const payloads = runResult.payloads ?? [];
 
+  // Capture usage for return value (analytics/billing).
+  const rawUsage = runResult.meta.agentMeta?.usage;
+  const cronUsage = hasNonzeroUsage(rawUsage)
+    ? {
+        input: rawUsage.input ?? 0,
+        output: rawUsage.output ?? 0,
+        cacheRead: rawUsage.cacheRead,
+        cacheWrite: rawUsage.cacheWrite,
+        totalTokens: rawUsage.total,
+      }
+    : undefined;
+
   // Update token+model fields in the session store.
   {
-    const usage = runResult.meta.agentMeta?.usage;
+    const usage = rawUsage;
     const modelUsed = runResult.meta.agentMeta?.model ?? fallbackModel ?? model;
     const providerUsed = runResult.meta.agentMeta?.provider ?? fallbackProvider ?? provider;
     const contextTokens =
@@ -457,10 +477,11 @@ export async function runCronIsolatedAgentTurn(params: {
           error: resolvedDelivery.error.message,
           summary,
           outputText,
+          usage: cronUsage,
         };
       }
       logWarn(`[cron:${params.job.id}] ${resolvedDelivery.error.message}`);
-      return { status: "ok", summary, outputText };
+      return { status: "ok", summary, outputText, usage: cronUsage };
     }
     if (!resolvedDelivery.to) {
       const message = "cron delivery target is missing";
@@ -470,10 +491,11 @@ export async function runCronIsolatedAgentTurn(params: {
           error: message,
           summary,
           outputText,
+          usage: cronUsage,
         };
       }
       logWarn(`[cron:${params.job.id}] ${message}`);
-      return { status: "ok", summary, outputText };
+      return { status: "ok", summary, outputText, usage: cronUsage };
     }
     try {
       await deliverOutboundPayloads({
@@ -488,10 +510,10 @@ export async function runCronIsolatedAgentTurn(params: {
       });
     } catch (err) {
       if (!deliveryBestEffort) {
-        return { status: "error", summary, outputText, error: String(err) };
+        return { status: "error", summary, outputText, error: String(err), usage: cronUsage };
       }
     }
   }
 
-  return { status: "ok", summary, outputText };
+  return { status: "ok", summary, outputText, usage: cronUsage };
 }

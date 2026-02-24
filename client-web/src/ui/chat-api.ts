@@ -128,7 +128,12 @@ export async function sendMessage(
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ message, conversationId, ...(images?.length ? { images } : {}) }),
+      body: JSON.stringify({
+        message,
+        conversationId,
+        source: "chat",
+        ...(images?.length ? { images } : {}),
+      }),
       signal,
     });
   }
@@ -183,9 +188,30 @@ export async function sendMessage(
   const onAbort = () => reader.cancel();
   signal?.addEventListener("abort", onAbort, { once: true });
 
+  // Inactivity timeout: detect stalled connections (Cloudflare/proxy silently drop idle SSE).
+  const INACTIVITY_TIMEOUT_MS = 120_000;
+  let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearInactivityTimer = () => {
+    if (inactivityTimer !== null) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = null;
+    }
+  };
+
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      // Single timer per read — cleared on every successful chunk
+      const { done, value } = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          clearInactivityTimer();
+          inactivityTimer = setTimeout(
+            () => reject(new Error("Chunk timeout – kết nối bị gián đoạn. Vui lòng thử lại.")),
+            INACTIVITY_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      clearInactivityTimer();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -276,6 +302,7 @@ export async function sendMessage(
       }
     }
   } finally {
+    clearInactivityTimer();
     signal?.removeEventListener("abort", onAbort);
     reader.cancel().catch(() => {});
   }

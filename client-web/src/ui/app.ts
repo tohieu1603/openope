@@ -86,7 +86,12 @@ import {
   type ResolvedTheme,
 } from "./theme";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
-import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
+import {
+  startUsageTracker,
+  stopUsageTracker,
+  reportSSEUsage,
+  reportCronUsage,
+} from "./usage-tracker";
 import { getUserProfile, updateUserProfile, changePassword, type UserProfile } from "./user-api";
 import { renderAgents } from "./views/agents";
 import { renderAnalytics } from "./views/analytics";
@@ -448,6 +453,11 @@ export class OperisApp extends LitElement {
       const newSet = new Set(this.runningWorkflowIds);
       newSet.delete(evt.jobId);
       this.runningWorkflowIds = newSet;
+
+      // Report cron usage to Operis BE (request_type: "cron") when gateway includes it
+      if (evt.usage && (evt.usage.input || evt.usage.output)) {
+        reportCronUsage(evt.usage, evt.jobId);
+      }
     }
 
     // Auto-refresh workflows when on workflow tab (silent - no loading indicator)
@@ -572,11 +582,18 @@ export class OperisApp extends LitElement {
         ];
       }
 
-      // Accumulate WS token usage
+      // Accumulate WS token usage and report as "chat" source
       const wsUsage = evt.usage ?? evt.message?.usage;
       if (wsUsage) {
         this.chatSessionTokens +=
           wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
+        reportSSEUsage({
+          input: wsUsage.input || 0,
+          output: wsUsage.output || 0,
+          cacheRead: wsUsage.cacheRead || 0,
+          cacheWrite: wsUsage.cacheWrite || 0,
+          totalTokens: wsUsage.totalTokens || 0,
+        });
       }
 
       this.chatStreamingText = "";
@@ -1027,10 +1044,10 @@ export class OperisApp extends LitElement {
         }
       }
 
-      // Report token usage from SSE response to Operis BE
-      console.log("[app] SSE result.usage:", result.usage, "balance:", result.tokenBalance);
+      // SSE chat: operis-api already deducts tokens server-side in chat-stream.service,
+      // so do NOT call reportSSEUsage here (would double-deduct).
+      // Only update local session counter from the response.
       if (result.usage) {
-        reportSSEUsage(result.usage);
         const usedTokens =
           result.usage.totalTokens || (result.usage.input || 0) + (result.usage.output || 0);
         this.chatSessionTokens += usedTokens || 0;
@@ -1080,6 +1097,31 @@ export class OperisApp extends LitElement {
         errorMsg = "Gateway không khả dụng. Vui lòng thử lại sau.";
       }
 
+      // Stream interrupted (chunk timeout, network terminated, etc.)
+      // Preserve partial text if we already received some content.
+      const isStreamInterrupt =
+        errorMsg.includes("Chunk timeout") ||
+        errorMsg.includes("terminated") ||
+        errorMsg.includes("network error") ||
+        errorMsg.includes("Failed to fetch");
+      const partialText = this.chatStreamingText?.trim();
+      if (isStreamInterrupt && partialText) {
+        this.chatMessages = [
+          ...this.chatMessages,
+          {
+            role: "assistant",
+            content: `${partialText}\n\n⚠️ Kết nối bị gián đoạn.`,
+            timestamp: new Date(),
+          },
+        ];
+        this.chatStreamingText = "";
+        this.chatStreamingRunId = null;
+        this.chatToolCalls = [];
+        this.chatSending = false;
+        this.chatAbortController = null;
+        return;
+      }
+
       // User-friendly error messages
       let displayError: string;
       if (
@@ -1092,6 +1134,8 @@ export class OperisApp extends LitElement {
         displayError = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
       } else if (errorMsg.includes("insufficient") || errorMsg.includes("balance")) {
         displayError = "Số dư token không đủ. Vui lòng nạp thêm.";
+      } else if (isStreamInterrupt) {
+        displayError = "Kết nối bị gián đoạn. Vui lòng thử lại.";
       } else {
         displayError = errorMsg;
       }
@@ -1323,12 +1367,17 @@ export class OperisApp extends LitElement {
         }
       }, 300_000);
     } catch (err) {
-      this.runningWorkflowIds = new Set(
-        [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
-      );
       const msg = err instanceof Error ? err.message : "Không thể chạy workflow";
-      showToast(msg, "error");
-      this.workflowError = msg;
+      const isTimeout = msg.includes("timeout") || msg.includes("Timeout");
+      if (!isTimeout) {
+        // Only clear running state for non-timeout errors (e.g. gateway disconnected).
+        // Timeout means the job is likely still running — let WS "finished" event handle it.
+        this.runningWorkflowIds = new Set(
+          [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
+        );
+        showToast(msg, "error");
+        this.workflowError = msg;
+      }
     }
   }
 

@@ -89,7 +89,12 @@ export async function executeJob(
 
   let deleted = false;
 
-  const finish = async (status: "ok" | "error" | "skipped", err?: string, summary?: string) => {
+  const finish = async (
+    status: "ok" | "error" | "skipped",
+    err?: string,
+    summary?: string,
+    usage?: CronEvent["usage"],
+  ) => {
     const endedAt = state.deps.nowMs();
     job.state.runningAtMs = undefined;
     job.state.lastRunAtMs = startedAt;
@@ -121,6 +126,7 @@ export async function executeJob(
       runAtMs: startedAt,
       durationMs: job.state.lastDurationMs,
       nextRunAtMs: job.state.nextRunAtMs,
+      usage,
     });
 
     if (shouldDelete && state.store) {
@@ -209,11 +215,11 @@ export async function executeJob(
     }
 
     if (res.status === "ok") {
-      await finish("ok", undefined, res.summary);
+      await finish("ok", undefined, res.summary, res.usage);
     } else if (res.status === "skipped") {
-      await finish("skipped", undefined, res.summary);
+      await finish("skipped", undefined, res.summary, res.usage);
     } else {
-      await finish("error", res.error ?? "cron job failed", res.summary);
+      await finish("error", res.error ?? "cron job failed", res.summary, res.usage);
     }
   } catch (err) {
     await finish("error", String(err));

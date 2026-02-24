@@ -644,6 +644,7 @@ function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isRunning:
         <button
           class="wf-action ${isExpanded ? "wf-action-active" : ""}"
           @click=${() => onToggleDetails?.(workflow.id)}
+          ?disabled=${isRunning}
         >
           ${icons.chevronDown}
           <span>${isExpanded ? "Thu gọn" : "Chi tiết"}</span>
@@ -667,7 +668,7 @@ function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isRunning:
         <button
           class="wf-action ${isSelected ? "wf-action-active" : ""}"
           @click=${() => onLoadRuns?.(isSelected ? null : workflow.id)}
-          ?disabled=${saving}
+          ?disabled=${saving || isRunning}
         >
           ${icons.clock}
           <span>Lịch sử</span>
@@ -1189,6 +1190,11 @@ export function renderWorkflow(props: WorkflowProps) {
         stroke: currentColor;
         fill: none;
         stroke-width: 2;
+      }
+      .wf-action:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
       }
       .wf-action-run:hover {
         border-color: var(--accent);

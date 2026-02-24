@@ -10,6 +10,14 @@ export type CronEvent = {
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Token usage from isolated agent run (for analytics/billing). */
+  usage?: {
+    input: number;
+    output: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    totalTokens?: number;
+  };
 };
 
 export type Logger = {
@@ -33,6 +41,14 @@ export type CronServiceDeps = {
     /** Last non-empty agent text output (not truncated). */
     outputText?: string;
     error?: string;
+    /** Token usage from the agent run (for analytics/billing). */
+    usage?: {
+      input: number;
+      output: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      totalTokens?: number;
+    };
   }>;
   onEvent?: (evt: CronEvent) => void;
 };

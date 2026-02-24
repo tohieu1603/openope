@@ -1,6 +1,6 @@
+import type { Workflow, WorkflowFormState } from "./workflow-types";
 // Workflow API service - communicates with Gateway via WebSocket RPC
 import { waitForConnection } from "./gateway-client";
-import type { Workflow, WorkflowFormState } from "./workflow-types";
 import { formToCronPayload, parseCronSchedule } from "./workflow-types";
 
 type CronJob = {
@@ -80,7 +80,7 @@ export async function toggleWorkflow(id: string, enabled: boolean): Promise<bool
 export async function runWorkflow(id: string): Promise<boolean> {
   try {
     const client = await waitForConnection();
-    await client.request("cron.run", { id, mode: "force" });
+    await client.request("cron.run", { id, mode: "force" }, 600_000);
     return true;
   } catch (error) {
     console.error("Failed to run workflow:", error);
@@ -122,7 +122,10 @@ export async function getWorkflowStatus(): Promise<WorkflowStatus | null> {
 export async function getWorkflowRuns(id: string): Promise<WorkflowRun[]> {
   try {
     const client = await waitForConnection();
-    const result = await client.request<{ entries?: WorkflowRun[] }>("cron.runs", { id, limit: 20 });
+    const result = await client.request<{ entries?: WorkflowRun[] }>("cron.runs", {
+      id,
+      limit: 20,
+    });
     return Array.isArray(result.entries) ? result.entries : [];
   } catch (error) {
     console.error("Failed to get workflow runs:", error);
