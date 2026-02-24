@@ -3,7 +3,8 @@
  * Shows the app icon tinted by gateway status, context menu with actions,
  * minimize-to-tray on window close, and auto-start toggle.
  */
-import { Tray, Menu, app, type BrowserWindow } from "electron";
+import { Tray, Menu, app, shell, type BrowserWindow } from "electron";
+import path from "node:path";
 import type { GatewayStatus } from "./types";
 import { getTrayIcon } from "./tray-icon";
 
@@ -69,6 +70,13 @@ export class TrayManager {
       { label: "Show Window", click: () => this.showWindow() },
       { type: "separator" },
       { label: `Gateway: ${this.gatewayStatus}`, enabled: false },
+      {
+        label: "Gateway Log",
+        click: () => {
+          const logPath = path.join(app.getPath("userData"), "gateway.log");
+          shell.openPath(logPath);
+        },
+      },
       { type: "separator" },
       {
         label: "Restart Gateway",
