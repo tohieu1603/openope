@@ -8,6 +8,9 @@ import { apiRequest } from "./auth-api";
 // Channel types
 export type ChannelId = "whatsapp" | "telegram" | "zalo";
 
+// Channels not yet available for connection (button disabled)
+export const DISABLED_CHANNELS: ChannelId[] = ["whatsapp"];
+
 export interface ChannelStatus {
   id: ChannelId;
   name: string;
@@ -40,22 +43,11 @@ function getDefaultChannels(): ChannelStatus[] {
   }));
 }
 
-// Get all channels status — merges gateway status + Zalo DB status
+// Get all channels status from backend
 export async function getChannelsStatus(): Promise<ChannelStatus[]> {
-  // Start with defaults
-  let channels = getDefaultChannels();
+  const channels = getDefaultChannels();
 
-  // Try fetching from gateway (WhatsApp, Telegram)
-  try {
-    const result = await apiRequest<ChannelsResponse>("/channels/status");
-    if (Array.isArray(result?.channels)) {
-      channels = result.channels;
-    }
-  } catch {
-    // Gateway not available, keep defaults
-  }
-
-  // Fetch Zalo connection status from DB
+  // Fetch Zalo connection status from /zalo/channel
   try {
     const zalo = await apiRequest<{
       connected: boolean;
@@ -72,15 +64,6 @@ export async function getChannelsStatus(): Promise<ChannelStatus[]> {
       if (zalo.zaloName) {
         channels[idx].accountName = zalo.zaloName;
       }
-    } else {
-      channels.push({
-        id: "zalo",
-        name: "Zalo",
-        icon: "zalo",
-        connected: zalo.connected,
-        lastConnectedAt: zalo.connectedAt ? new Date(zalo.connectedAt).getTime() : undefined,
-        accountName: zalo.zaloName,
-      });
     }
   } catch {
     // Zalo API not available, keep default
@@ -89,18 +72,24 @@ export async function getChannelsStatus(): Promise<ChannelStatus[]> {
   return channels;
 }
 
-// Connect a channel
+// Connect a channel — Zalo uses its own dedicated API endpoint
 export async function connectChannel(
   channelId: ChannelId,
-): Promise<{ success: boolean; message?: string }> {
-  return apiRequest(`/channels/${channelId}/connect`, {
-    method: "POST",
-  });
+): Promise<{ success: boolean; message?: string; sessionToken?: string }> {
+  if (channelId === "zalo") {
+    const result = await apiRequest<{ sessionToken: string }>("/zalo/connect", { method: "POST" });
+    return { success: true, sessionToken: result.sessionToken };
+  }
+  return apiRequest(`/channels/${channelId}/connect`, { method: "POST" });
 }
 
-// Disconnect a channel
+// Disconnect a channel — Zalo uses its own dedicated API endpoint
 export async function disconnectChannel(channelId: ChannelId): Promise<{ success: boolean }> {
-  return apiRequest(`/channels/${channelId}/disconnect`, {
-    method: "POST",
-  });
+  if (channelId === "zalo") {
+    const result = await apiRequest<{ disconnected: boolean }>("/zalo/disconnect", {
+      method: "POST",
+    });
+    return { success: result.disconnected };
+  }
+  return apiRequest(`/channels/${channelId}/disconnect`, { method: "POST" });
 }

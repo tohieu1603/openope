@@ -1,10 +1,10 @@
+import katex from "katex";
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
-import katex from "katex";
-import { icons } from "../icons";
-import { t } from "../i18n";
 import type { Conversation } from "../chat-api";
+import { t } from "../i18n";
+import { icons } from "../icons";
 
 // Configure marked for safe inline rendering
 marked.setOptions({
@@ -14,8 +14,10 @@ marked.setOptions({
 
 // Detect HTML error pages (Cloudflare, nginx, etc.) in content
 function isHtmlErrorContent(text: string): boolean {
-  return /<!doctype|<html|<head>|cloudflare|cf-error|cf-wrapper/i.test(text)
-    && /<\/?(?:div|section|span|script|style|link|meta)\b/i.test(text);
+  return (
+    /<!doctype|<html|<head>|cloudflare|cf-error|cf-wrapper/i.test(text) &&
+    /<\/?(?:div|section|span|script|style|link|meta)\b/i.test(text)
+  );
 }
 
 function renderMarkdown(content: string): ReturnType<typeof unsafeHTML> {
@@ -25,7 +27,7 @@ function renderMarkdown(content: string): ReturnType<typeof unsafeHTML> {
     const codeMatch = content.match(/Error\s*(?:code\s*)?(\d{3,4})/i);
     const code = codeMatch ? ` (${codeMatch[1]})` : "";
     return unsafeHTML(
-      `<p style="color:var(--danger,#dc2626)">Gateway không khả dụng${code}. Vui lòng thử lại sau.</p>`
+      `<p style="color:var(--danger,#dc2626)">Gateway không khả dụng${code}. Vui lòng thử lại sau.</p>`,
     );
   }
 
@@ -84,6 +86,23 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp?: string | Date;
+  /** Base64 image previews attached to this message */
+  images?: Array<{ preview: string }>;
+}
+
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  phase: "start" | "update" | "result";
+  isError?: boolean;
+  /** Short action detail e.g. "navigate · google.com" */
+  detail?: string;
+}
+
+export interface PendingImage {
+  data: string; // base64
+  mimeType: string;
+  preview: string; // data URL for display
 }
 
 export interface ChatProps {
@@ -95,10 +114,14 @@ export interface ChatProps {
   username?: string;
   botName?: string;
   streamingText?: string;
+  toolCalls?: ToolCallInfo[];
+  pendingImages?: PendingImage[];
   onDraftChange: (value: string) => void;
   onSend: () => void;
   onStop: () => void;
   onLoginClick: () => void;
+  onImageSelect: (files: FileList) => void;
+  onImageRemove: (index: number) => void;
   onScroll?: (e: Event) => void;
   // Sidebar props
   conversations?: Conversation[];
@@ -173,10 +196,14 @@ export function renderChat(props: ChatProps) {
     username,
     botName = "Operis",
     streamingText = "",
+    toolCalls = [],
+    pendingImages = [],
     onDraftChange,
     onSend,
     onStop,
     onLoginClick,
+    onImageSelect,
+    onImageRemove,
     onScroll,
     conversations = [],
     conversationsLoading = false,
@@ -211,6 +238,24 @@ export function renderChat(props: ChatProps) {
       onLoginClick();
     } else {
       onSend();
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      for (const f of imageFiles) dt.items.add(f);
+      onImageSelect(dt.files);
     }
   };
 
@@ -557,6 +602,72 @@ export function renderChat(props: ChatProps) {
         stroke: currentColor;
         fill: none;
         stroke-width: 1.5;
+      }
+
+      /* Image preview strip */
+      .gc-image-previews {
+        display: flex;
+        gap: 8px;
+        padding: 0 4px;
+        overflow-x: auto;
+      }
+      .gc-image-previews::-webkit-scrollbar { height: 4px; }
+      .gc-image-previews::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+      .gc-image-preview {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid var(--border);
+      }
+      .gc-image-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .gc-image-preview-remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.6);
+        border: none;
+        border-radius: 50%;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1;
+      }
+      .gc-image-preview-remove:hover {
+        background: rgba(0,0,0,0.8);
+      }
+      .gc-image-file-input {
+        display: none;
+      }
+
+      /* Images in sent message bubbles */
+      .gc-bubble-images {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .gc-bubble-images img {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: 10px;
+        object-fit: cover;
+        cursor: pointer;
+      }
+      .gc-bubble-images img:hover {
+        opacity: 0.9;
       }
 
       .gc-send-btn {
@@ -993,6 +1104,59 @@ export function renderChat(props: ChatProps) {
         margin: 16px 0;
       }
 
+      /* Tool call pills */
+      .gc-tool-calls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+        margin-bottom: 2px;
+      }
+      .gc-tool-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        background: var(--bg-muted, var(--secondary));
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 12px;
+        font-family: "SF Mono", "Fira Code", monospace;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      .gc-tool-pill--running {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .gc-tool-pill--done {
+        border-color: var(--success, #22c55e);
+        color: var(--success, #22c55e);
+      }
+      .gc-tool-pill--error {
+        border-color: var(--destructive, #dc2626);
+        color: var(--destructive, #dc2626);
+      }
+      .gc-tool-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+      }
+      .gc-tool-pill--running .gc-tool-dot {
+        animation: gc-pulse 1.2s ease-in-out infinite;
+      }
+      .gc-tool-detail {
+        opacity: 0.7;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+        vertical-align: bottom;
+      }
+
       /* Loading spinner - Gemini style */
       .gc-loading-indicator {
         display: flex;
@@ -1202,7 +1366,7 @@ export function renderChat(props: ChatProps) {
       }
     </style>
 
-    <div class="gc-wrapper ${sidebarCollapsed ? 'gc-sidebar-collapsed' : ''}">
+    <div class="gc-wrapper ${sidebarCollapsed ? "gc-sidebar-collapsed" : ""}">
       <!-- Sidebar -->
       <aside class="gc-sidebar">
         <div class="gc-sidebar-header">
@@ -1215,13 +1379,20 @@ export function renderChat(props: ChatProps) {
           </button>
         </div>
         <div class="gc-sidebar-list">
-          ${conversationsLoading
-            ? html`${[1,2,3,4].map(() => html`<div class="gc-skeleton" style="height:52px;border-radius:8px;margin-bottom:8px"></div>`)}`
-            : conversations.length === 0
-              ? html`<div class="gc-sidebar-empty">${t("chatSidebarEmpty")}</div>`
-              : conversations.map((conv) => html`
+          ${
+            conversationsLoading
+              ? html`${[1, 2, 3, 4].map(
+                  () =>
+                    html`
+                      <div class="gc-skeleton" style="height: 52px; border-radius: 8px; margin-bottom: 8px"></div>
+                    `,
+                )}`
+              : conversations.length === 0
+                ? html`<div class="gc-sidebar-empty">${t("chatSidebarEmpty")}</div>`
+                : conversations.map(
+                    (conv) => html`
                   <div
-                    class="gc-conv-item ${conv.conversation_id === currentConversationId ? 'gc-conv-item--active' : ''}"
+                    class="gc-conv-item ${conv.conversation_id === currentConversationId ? "gc-conv-item--active" : ""}"
                     @click=${() => onSwitchConversation?.(conv.conversation_id)}
                   >
                     <div class="gc-conv-item-content">
@@ -1230,11 +1401,16 @@ export function renderChat(props: ChatProps) {
                     </div>
                     <button
                       class="gc-conv-item-delete"
-                      @click=${(e: Event) => { e.stopPropagation(); onDeleteConversation?.(conv.conversation_id); }}
+                      @click=${(e: Event) => {
+                        e.stopPropagation();
+                        onDeleteConversation?.(conv.conversation_id);
+                      }}
                       title="Xóa"
                     >${icons.trash}</button>
                   </div>
-                `)}
+                `,
+                  )
+          }
         </div>
       </aside>
 
@@ -1243,23 +1419,24 @@ export function renderChat(props: ChatProps) {
         <button class="gc-sidebar-open-btn" @click=${onToggleSidebar} title="Mở sidebar">
           ${icons.panelLeft}
         </button>
-      ${loading
-        ? html`
-            <!-- Loading Skeleton -->
-            <div class="gc-loading">
-              <div class="gc-skeleton gc-skeleton-greeting"></div>
-              <div class="gc-skeleton gc-skeleton-title"></div>
-              <div class="gc-skeleton gc-skeleton-input"></div>
-              <div class="gc-skeleton-suggestions">
-                <div class="gc-skeleton gc-skeleton-pill"></div>
-                <div class="gc-skeleton gc-skeleton-pill"></div>
-                <div class="gc-skeleton gc-skeleton-pill"></div>
-                <div class="gc-skeleton gc-skeleton-pill"></div>
-              </div>
-            </div>
-          `
-        : isEmpty
+      ${
+        loading
           ? html`
+              <!-- Loading Skeleton -->
+              <div class="gc-loading">
+                <div class="gc-skeleton gc-skeleton-greeting"></div>
+                <div class="gc-skeleton gc-skeleton-title"></div>
+                <div class="gc-skeleton gc-skeleton-input"></div>
+                <div class="gc-skeleton-suggestions">
+                  <div class="gc-skeleton gc-skeleton-pill"></div>
+                  <div class="gc-skeleton gc-skeleton-pill"></div>
+                  <div class="gc-skeleton gc-skeleton-pill"></div>
+                  <div class="gc-skeleton gc-skeleton-pill"></div>
+                </div>
+              </div>
+            `
+          : isEmpty
+            ? html`
               <!-- Empty State -->
               <div class="gc-welcome">
                 <div class="gc-greeting">
@@ -1271,6 +1448,13 @@ export function renderChat(props: ChatProps) {
                 <h1 class="gc-subtitle">${t("chatSubtitle")}</h1>
 
                 <div class="gc-input-wrap">
+                  <input type="file" class="gc-image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple
+                    @change=${(e: Event) => {
+                      const input = e.target as HTMLInputElement;
+                      if (input.files?.length) onImageSelect(input.files);
+                      input.value = "";
+                    }}
+                  />
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
@@ -1281,12 +1465,28 @@ export function renderChat(props: ChatProps) {
                         const textarea = e.target as HTMLTextAreaElement;
                         onDraftChange(textarea.value);
                         textarea.style.height = "auto";
-                        textarea.style.height =
-                          Math.min(textarea.scrollHeight, 178) + "px";
+                        textarea.style.height = Math.min(textarea.scrollHeight, 178) + "px";
                       }}
                       @keydown=${handleKeyDown}
+                      @paste=${handlePaste}
                       ?disabled=${sending}
                     ></textarea>
+                    ${
+                      pendingImages.length > 0
+                        ? html`
+                      <div class="gc-image-previews">
+                        ${pendingImages.map(
+                          (img, i) => html`
+                          <div class="gc-image-preview">
+                            <img src=${img.preview} alt="Preview" />
+                            <button type="button" class="gc-image-preview-remove" @click=${() => onImageRemove(i)} title="Xóa">&times;</button>
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    `
+                        : nothing
+                    }
                     <div class="gc-input-actions">
                       <div class="gc-actions-left">
                         <button
@@ -1300,6 +1500,13 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-action-btn"
                           title="Thêm ảnh"
+                          @click=${(e: Event) => {
+                            const btn = e.currentTarget as HTMLElement;
+                            const fileInput = btn
+                              .closest(".gc-input-wrap")
+                              ?.querySelector<HTMLInputElement>(".gc-image-file-input");
+                            fileInput?.click();
+                          }}
                         >
                           ${icons.image}
                         </button>
@@ -1316,7 +1523,7 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-send-btn"
                           @click=${handleSendClick}
-                          ?disabled=${!draft.trim() || sending}
+                          ?disabled=${(!draft.trim() && pendingImages.length === 0) || sending}
                           title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
                         >
                           ${icons.arrowUp}
@@ -1342,7 +1549,7 @@ export function renderChat(props: ChatProps) {
                 </div>
               </div>
             `
-          : html`
+            : html`
               <!-- Chat Messages -->
               <div class="gc-messages-container">
                 <div class="gc-messages" @scroll=${onScroll}>
@@ -1353,31 +1560,41 @@ export function renderChat(props: ChatProps) {
                           ${msg.role === "user" ? icons.user : icons.sparkles}
                         </div>
                         <div
-                          class="gc-content ${msg.role === "user"
-                            ? "gc-user-content"
-                            : "gc-assistant-content"}"
+                          class="gc-content ${
+                            msg.role === "user" ? "gc-user-content" : "gc-assistant-content"
+                          }"
                         >
                           <div class="gc-meta">
                             <span class="gc-name"
-                              >${msg.role === "user"
-                                ? displayName
-                                : botName}</span
+                              >${msg.role === "user" ? displayName : botName}</span
                             >
-                            ${msg.timestamp
-                              ? html`<span class="gc-time"
+                            ${
+                              msg.timestamp
+                                ? html`<span class="gc-time"
                                   >${formatTime(msg.timestamp)}</span
                                 >`
-                              : nothing}
+                                : nothing
+                            }
                           </div>
                           <div class="gc-bubble">
-                            ${renderMarkdown(msg.content)}
+                            ${
+                              msg.images?.length
+                                ? html`
+                              <div class="gc-bubble-images">
+                                ${msg.images.map((img) => html`<img src=${img.preview} alt="Ảnh đính kèm" />`)}
+                              </div>
+                            `
+                                : nothing
+                            }
+                            ${msg.content ? renderMarkdown(msg.content) : nothing}
                           </div>
                         </div>
                       </div>
                     `,
                   )}
-                  ${sending
-                    ? html`
+                  ${
+                    sending
+                      ? html`
                         <div class="gc-message gc-message--assistant">
                           <div class="gc-avatar gc-avatar--assistant gc-avatar--loading">
                             ${icons.sparkles}
@@ -1386,21 +1603,39 @@ export function renderChat(props: ChatProps) {
                             <div class="gc-meta">
                               <span class="gc-name">${botName}</span>
                             </div>
+                            ${
+                              toolCalls.length > 0
+                                ? html`<div class="gc-tool-calls">
+                                  ${toolCalls.map((tc) => {
+                                    const cls =
+                                      tc.phase === "result"
+                                        ? tc.isError
+                                          ? "gc-tool-pill--error"
+                                          : "gc-tool-pill--done"
+                                        : "gc-tool-pill--running";
+                                    return html`<span class="gc-tool-pill ${cls}"><span class="gc-tool-dot"></span>${tc.name}${tc.detail ? html` · <span class="gc-tool-detail">${tc.detail}</span>` : nothing}</span>`;
+                                  })}
+                                </div>`
+                                : nothing
+                            }
                             <div class="gc-bubble">
-                              ${streamingText
-                                ? html`<span class="gc-stream-text">${renderMarkdown(streamingText)}</span><span class="gc-typing-inline"><span class="gc-typing-dot"></span><span class="gc-typing-dot"></span><span class="gc-typing-dot"></span></span>`
-                                : html`
-                                    <div class="gc-typing">
-                                      <span class="gc-typing-dot"></span>
-                                      <span class="gc-typing-dot"></span>
-                                      <span class="gc-typing-dot"></span>
-                                    </div>
-                                  `}
+                              ${
+                                streamingText
+                                  ? html`<span class="gc-stream-text">${renderMarkdown(streamingText)}</span><span class="gc-typing-inline"><span class="gc-typing-dot"></span><span class="gc-typing-dot"></span><span class="gc-typing-dot"></span></span>`
+                                  : html`
+                                      <div class="gc-typing">
+                                        <span class="gc-typing-dot"></span>
+                                        <span class="gc-typing-dot"></span>
+                                        <span class="gc-typing-dot"></span>
+                                      </div>
+                                    `
+                              }
                             </div>
                           </div>
                         </div>
                       `
-                    : nothing}
+                      : nothing
+                  }
                   <!-- Spacer to allow scrolling user message to top -->
                   <div class="gc-scroll-spacer"></div>
                 </div>
@@ -1409,6 +1644,13 @@ export function renderChat(props: ChatProps) {
               <!-- Bottom Input -->
               <div class="gc-input-bottom">
                 <div class="gc-input-wrap">
+                  <input type="file" class="gc-image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple
+                    @change=${(e: Event) => {
+                      const input = e.target as HTMLInputElement;
+                      if (input.files?.length) onImageSelect(input.files);
+                      input.value = "";
+                    }}
+                  />
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
@@ -1419,12 +1661,28 @@ export function renderChat(props: ChatProps) {
                         const textarea = e.target as HTMLTextAreaElement;
                         onDraftChange(textarea.value);
                         textarea.style.height = "auto";
-                        textarea.style.height =
-                          Math.min(textarea.scrollHeight, 178) + "px";
+                        textarea.style.height = Math.min(textarea.scrollHeight, 178) + "px";
                       }}
                       @keydown=${handleKeyDown}
+                      @paste=${handlePaste}
                       ?disabled=${sending}
                     ></textarea>
+                    ${
+                      pendingImages.length > 0
+                        ? html`
+                      <div class="gc-image-previews">
+                        ${pendingImages.map(
+                          (img, i) => html`
+                          <div class="gc-image-preview">
+                            <img src=${img.preview} alt="Preview" />
+                            <button type="button" class="gc-image-preview-remove" @click=${() => onImageRemove(i)} title="Xóa">&times;</button>
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    `
+                        : nothing
+                    }
                     <div class="gc-input-actions">
                       <div class="gc-actions-left">
                         <button
@@ -1438,6 +1696,13 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-action-btn"
                           title="Thêm ảnh"
+                          @click=${(e: Event) => {
+                            const btn = e.currentTarget as HTMLElement;
+                            const fileInput = btn
+                              .closest(".gc-input-wrap")
+                              ?.querySelector<HTMLInputElement>(".gc-image-file-input");
+                            fileInput?.click();
+                          }}
                         >
                           ${icons.image}
                         </button>
@@ -1450,8 +1715,9 @@ export function renderChat(props: ChatProps) {
                         >
                           ${icons.mic}
                         </button>
-                        ${sending
-                          ? html`<button
+                        ${
+                          sending
+                            ? html`<button
                               type="button"
                               class="gc-stop-btn"
                               @click=${onStop}
@@ -1459,22 +1725,24 @@ export function renderChat(props: ChatProps) {
                             >
                               ${icons.stop}
                             </button>`
-                          : html`<button
+                            : html`<button
                               type="button"
                               class="gc-send-btn"
                               @click=${handleSendClick}
-                              ?disabled=${!draft.trim()}
+                              ?disabled=${!draft.trim() && pendingImages.length === 0}
                               title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
                             >
                               ${icons.arrowUp}
-                            </button>`}
+                            </button>`
+                        }
                       </div>
                     </div>
                   </div>
                 </div>
                 <p class="gc-disclaimer">${t("chatDisclaimer")}</p>
               </div>
-            `}
+            `
+      }
       </div>
     </div>
   `;

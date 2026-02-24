@@ -66,10 +66,13 @@ import {
 import {
   subscribeToCronEvents,
   subscribeToChatStream,
+  subscribeToToolEvents,
   stopGatewayClient,
   waitForConnection,
+  getGatewayClient,
   type CronEvent,
   type ChatStreamEvent,
+  type ToolEvent,
 } from "./gateway-client";
 import { t } from "./i18n";
 import { icons } from "./icons";
@@ -83,13 +86,18 @@ import {
   type ResolvedTheme,
 } from "./theme";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
-import { startUsageTracker, stopUsageTracker, reportSSEUsage } from "./usage-tracker";
+import {
+  startUsageTracker,
+  stopUsageTracker,
+  reportSSEUsage,
+  reportCronUsage,
+} from "./usage-tracker";
 import { getUserProfile, updateUserProfile, changePassword, type UserProfile } from "./user-api";
 import { renderAgents } from "./views/agents";
 import { renderAnalytics } from "./views/analytics";
 import { renderBilling } from "./views/billing";
 import { renderChannels } from "./views/channels";
-import { renderChat } from "./views/chat";
+import { renderChat, type PendingImage } from "./views/chat";
 import { renderDocs } from "./views/docs";
 import { renderLogin } from "./views/login";
 import { renderLogs, type LogEntry } from "./views/logs";
@@ -107,13 +115,14 @@ import {
   getWorkflowStatus,
   type WorkflowStatus,
 } from "./workflow-api";
+import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 // Register custom components
 import "./components/operis-input";
 import "./components/operis-select";
 import "./components/operis-modal";
 import "./components/operis-datetime-picker";
 import "./components/operis-confirm";
-import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
+import { getZaloStatus } from "./zalo-api";
 
 // Get page title
 function titleForTab(tab: Tab): string {
@@ -165,6 +174,7 @@ export class OperisApp extends LitElement {
     role: "user" | "assistant";
     content: string;
     timestamp?: Date;
+    images?: Array<{ preview: string }>;
   }> = [];
   @state() chatDraft = "";
   @state() chatSending = false;
@@ -175,6 +185,15 @@ export class OperisApp extends LitElement {
   // Streaming state
   @state() chatStreamingText = "";
   @state() chatStreamingRunId: string | null = null;
+  // Tool call tracking for current run
+  @state() chatToolCalls: Array<{
+    id: string;
+    name: string;
+    phase: "start" | "update" | "result";
+    isError?: boolean;
+    detail?: string;
+  }> = [];
+  @state() chatPendingImages: PendingImage[] = [];
   // Session token tracking
   @state() chatSessionTokens = 0;
   @state() chatTokenBalance = 0;
@@ -250,6 +269,9 @@ export class OperisApp extends LitElement {
   @state() channelsLoading = false;
   @state() channelsError: string | null = null;
   @state() channelsConnecting: ChannelId | null = null;
+  @state() zaloQrBase64: string | null = null;
+  @state() zaloQrStatus: string | null = null;
+  private zaloPollingTimer: ReturnType<typeof setInterval> | null = null;
 
   // Settings state
   @state() userProfile: UserProfile | null = null;
@@ -355,6 +377,7 @@ export class OperisApp extends LitElement {
   private sessionExpiredHandler: (() => void) | null = null;
   private cronEventUnsubscribe: (() => void) | null = null;
   private chatStreamUnsubscribe: (() => void) | null = null;
+  private toolEventUnsubscribe: (() => void) | null = null;
 
   createRenderRoot() {
     return this;
@@ -403,6 +426,11 @@ export class OperisApp extends LitElement {
       this.handleChatStreamEvent(evt);
     });
 
+    // Subscribe to tool events for showing tool calls in chat
+    this.toolEventUnsubscribe = subscribeToToolEvents((evt: ToolEvent) => {
+      this.handleToolEvent(evt);
+    });
+
     // Start usage tracker - reports token usage from WS to Operis BE
     startUsageTracker();
 
@@ -425,6 +453,11 @@ export class OperisApp extends LitElement {
       const newSet = new Set(this.runningWorkflowIds);
       newSet.delete(evt.jobId);
       this.runningWorkflowIds = newSet;
+
+      // Report cron usage to Operis BE (request_type: "cron") when gateway includes it
+      if (evt.usage && (evt.usage.input || evt.usage.output)) {
+        reportCronUsage(evt.usage, evt.jobId);
+      }
     }
 
     // Auto-refresh workflows when on workflow tab (silent - no loading indicator)
@@ -434,6 +467,89 @@ export class OperisApp extends LitElement {
         this.loadWorkflows(true);
       }
     }
+  }
+
+  private handleToolEvent(evt: ToolEvent) {
+    console.log("[app] toolEvent", evt.data?.phase, evt.data?.name, "sending=" + this.chatSending);
+    if (!this.chatSending) return;
+    const { phase, toolCallId, name, isError, args } = evt.data;
+    if (!toolCallId) return;
+
+    const detail = this.extractToolDetail(name, args);
+    const existing = this.chatToolCalls.findIndex((t) => t.id === toolCallId);
+    if (phase === "start" && existing < 0) {
+      this.chatToolCalls = [
+        ...this.chatToolCalls,
+        { id: toolCallId, name: name ?? "tool", phase: "start", detail },
+      ];
+    } else if (existing >= 0) {
+      const updated = [...this.chatToolCalls];
+      updated[existing] = { ...updated[existing], phase, isError, ...(detail ? { detail } : {}) };
+      this.chatToolCalls = updated;
+    }
+  }
+
+  /** Extract a short human-readable detail from tool args (e.g. "navigate · google.com") */
+  private extractToolDetail(name: string | undefined, args: unknown): string | undefined {
+    if (!args || typeof args !== "object") return undefined;
+    const a = args as Record<string, unknown>;
+
+    // Browser tool: action + url/value
+    if (name === "browser") {
+      const action = typeof a.action === "string" ? a.action : undefined;
+      if (!action) return undefined;
+      const url = typeof a.url === "string" ? a.url : undefined;
+      if (url) {
+        try {
+          const host = new URL(url).hostname.replace(/^www\./, "");
+          return `${action} · ${host}`;
+        } catch {
+          return `${action} · ${url.slice(0, 40)}`;
+        }
+      }
+      const value = typeof a.value === "string" ? a.value : undefined;
+      if (value) return `${action} · ${value.slice(0, 40)}`;
+      const ref = typeof a.ref === "string" ? a.ref : undefined;
+      if (ref) return `${action} · ${ref}`;
+      return action;
+    }
+
+    // Shell/bash tools: show command snippet
+    if (name === "shell" || name === "bash" || name === "execute_command") {
+      const cmd = typeof a.command === "string" ? a.command : undefined;
+      if (cmd) return cmd.length > 50 ? cmd.slice(0, 47) + "…" : cmd;
+    }
+
+    // File tools: show path
+    if (name === "read_file" || name === "write_file" || name === "edit_file") {
+      const path =
+        typeof a.path === "string"
+          ? a.path
+          : typeof a.file_path === "string"
+            ? a.file_path
+            : undefined;
+      if (path) {
+        const short = path.split("/").slice(-2).join("/");
+        return short;
+      }
+    }
+
+    // Search tools
+    if (name === "search" || name === "grep" || name === "web_search") {
+      const query =
+        typeof a.query === "string"
+          ? a.query
+          : typeof a.pattern === "string"
+            ? a.pattern
+            : undefined;
+      if (query) return query.length > 50 ? query.slice(0, 47) + "…" : query;
+    }
+
+    // Generic: try action field
+    const action = typeof a.action === "string" ? a.action : undefined;
+    if (action) return action;
+
+    return undefined;
   }
 
   private handleChatStreamEvent(evt: ChatStreamEvent) {
@@ -466,15 +582,23 @@ export class OperisApp extends LitElement {
         ];
       }
 
-      // Accumulate WS token usage
+      // Accumulate WS token usage and report as "chat" source
       const wsUsage = evt.usage ?? evt.message?.usage;
       if (wsUsage) {
         this.chatSessionTokens +=
           wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
+        reportSSEUsage({
+          input: wsUsage.input || 0,
+          output: wsUsage.output || 0,
+          cacheRead: wsUsage.cacheRead || 0,
+          cacheWrite: wsUsage.cacheWrite || 0,
+          totalTokens: wsUsage.totalTokens || 0,
+        });
       }
 
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       // Don't scroll here - user message is already at top
     } else if (evt.state === "error") {
@@ -486,6 +610,7 @@ export class OperisApp extends LitElement {
       ];
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       // Don't scroll here - user message is already at top
     }
@@ -537,6 +662,12 @@ export class OperisApp extends LitElement {
         this.handleChatStreamEvent(evt);
       });
     }
+    // Subscribe to tool events
+    if (!this.toolEventUnsubscribe) {
+      this.toolEventUnsubscribe = subscribeToToolEvents((evt: ToolEvent) => {
+        this.handleToolEvent(evt);
+      });
+    }
     startUsageTracker();
   }
 
@@ -545,6 +676,8 @@ export class OperisApp extends LitElement {
     this.cronEventUnsubscribe = null;
     this.chatStreamUnsubscribe?.();
     this.chatStreamUnsubscribe = null;
+    this.toolEventUnsubscribe?.();
+    this.toolEventUnsubscribe = null;
     stopUsageTracker();
     stopGatewayClient();
   }
@@ -815,43 +948,81 @@ export class OperisApp extends LitElement {
     this.resetToLoggedOut();
   }
 
+  private handleImageSelect(files: FileList) {
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+    for (const file of Array.from(files)) {
+      if (!ALLOWED_TYPES.has(file.type) || file.size > MAX_FILE_SIZE) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        this.chatPendingImages = [
+          ...this.chatPendingImages,
+          {
+            data: base64,
+            mimeType: file.type,
+            preview: dataUrl,
+          },
+        ];
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  private handleImageRemove(index: number) {
+    this.chatPendingImages = this.chatPendingImages.filter((_, i) => i !== index);
+  }
+
   private async handleSendMessage() {
-    if (!this.chatDraft.trim() || this.chatSending) return;
+    if ((!this.chatDraft.trim() && this.chatPendingImages.length === 0) || this.chatSending) return;
 
     const userMessage = this.chatDraft.trim();
+    const images = this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined;
     const isNewConversation = !this.chatConversationId;
     this.chatDraft = "";
+    this.chatPendingImages = [];
     this.chatSending = true;
     this.chatError = null;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
     this.chatAbortController = new AbortController();
 
-    // Add user message
+    // Add user message (with image previews if any)
     this.chatMessages = [
       ...this.chatMessages,
-      { role: "user", content: userMessage, timestamp: new Date() },
+      {
+        role: "user",
+        content: userMessage,
+        timestamp: new Date(),
+        ...(images ? { images: images.map((img) => ({ preview: img.preview })) } : {}),
+      },
     ];
     // Scroll user message to top of viewport before streaming starts
     await this.scrollChatToBottom();
 
     try {
-      // Call real Operis Chat API with SSE streaming
+      // Always send via Operis API POST (auth, history, token balance).
+      // Tool events still arrive via gateway WS if connected.
+      const myController = this.chatAbortController;
       const result = await sendChatMessage(
         userMessage,
         this.chatConversationId ?? undefined,
         // onDelta - update streaming text as chunks arrive
+        // Guard: stop updating if user pressed stop (abort signal)
         (text: string) => {
+          if (myController?.signal.aborted) return;
           this.chatStreamingText = text;
           this.chatStreamingRunId = "sse-stream";
-          // Spacer stays at viewport height (set by scrollChatToBottom before streaming).
-          // overflow-anchor:none keeps scroll position stable as content grows.
         },
         // onDone - mark streaming complete
         () => {
           // Will be handled below when result arrives
         },
-        this.chatAbortController?.signal,
+        myController?.signal,
+        images?.map((img) => ({ data: img.data, mimeType: img.mimeType })),
       );
 
       // Store conversation ID for context
@@ -873,10 +1044,10 @@ export class OperisApp extends LitElement {
         }
       }
 
-      // Report token usage from SSE response to Operis BE
-      console.log("[app] SSE result.usage:", result.usage, "balance:", result.tokenBalance);
+      // SSE chat: operis-api already deducts tokens server-side in chat-stream.service,
+      // so do NOT call reportSSEUsage here (would double-deduct).
+      // Only update local session counter from the response.
       if (result.usage) {
-        reportSSEUsage(result.usage);
         const usedTokens =
           result.usage.totalTokens || (result.usage.input || 0) + (result.usage.output || 0);
         this.chatSessionTokens += usedTokens || 0;
@@ -895,6 +1066,7 @@ export class OperisApp extends LitElement {
       // Clear streaming state FIRST to stop showing streaming bubble
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
 
       // Then add final message
@@ -908,21 +1080,13 @@ export class OperisApp extends LitElement {
       await this.updateComplete;
       this.updateDynamicSpacer(true);
     } catch (err) {
-      // User aborted — keep whatever was streamed so far as the final message
+      // User aborted — discard streaming state, don't save partial response
       if (err instanceof DOMException && err.name === "AbortError") {
-        const partialText = this.chatStreamingText;
         this.chatStreamingText = "";
         this.chatStreamingRunId = null;
+        this.chatToolCalls = [];
         this.chatSending = false;
         this.chatAbortController = null;
-        if (partialText) {
-          this.chatMessages = [
-            ...this.chatMessages,
-            { role: "assistant", content: partialText, timestamp: new Date() },
-          ];
-        }
-        await this.updateComplete;
-        this.updateDynamicSpacer(true);
         return;
       }
 
@@ -931,6 +1095,31 @@ export class OperisApp extends LitElement {
       // Strip any HTML that leaked through (Cloudflare, nginx error pages, etc.)
       if (/<[a-z][\s\S]*>/i.test(errorMsg)) {
         errorMsg = "Gateway không khả dụng. Vui lòng thử lại sau.";
+      }
+
+      // Stream interrupted (chunk timeout, network terminated, etc.)
+      // Preserve partial text if we already received some content.
+      const isStreamInterrupt =
+        errorMsg.includes("Chunk timeout") ||
+        errorMsg.includes("terminated") ||
+        errorMsg.includes("network error") ||
+        errorMsg.includes("Failed to fetch");
+      const partialText = this.chatStreamingText?.trim();
+      if (isStreamInterrupt && partialText) {
+        this.chatMessages = [
+          ...this.chatMessages,
+          {
+            role: "assistant",
+            content: `${partialText}\n\n⚠️ Kết nối bị gián đoạn.`,
+            timestamp: new Date(),
+          },
+        ];
+        this.chatStreamingText = "";
+        this.chatStreamingRunId = null;
+        this.chatToolCalls = [];
+        this.chatSending = false;
+        this.chatAbortController = null;
+        return;
       }
 
       // User-friendly error messages
@@ -945,6 +1134,8 @@ export class OperisApp extends LitElement {
         displayError = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
       } else if (errorMsg.includes("insufficient") || errorMsg.includes("balance")) {
         displayError = "Số dư token không đủ. Vui lòng nạp thêm.";
+      } else if (isStreamInterrupt) {
+        displayError = "Kết nối bị gián đoạn. Vui lòng thử lại.";
       } else {
         displayError = errorMsg;
       }
@@ -956,6 +1147,7 @@ export class OperisApp extends LitElement {
       ];
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
       this.chatSending = false;
       this.chatAbortController = null;
       // Don't scroll - user message stays at top
@@ -963,10 +1155,22 @@ export class OperisApp extends LitElement {
   }
 
   private handleStopChat() {
+    // Capture partial text BEFORE abort (onDelta guard prevents further updates after this)
+    const partialText = this.chatStreamingText;
     if (this.chatAbortController) {
       this.chatAbortController.abort();
-      this.chatAbortController = null;
     }
+    // Save partial response so user sees where it stopped
+    if (partialText) {
+      this.chatMessages = [
+        ...this.chatMessages,
+        { role: "assistant" as const, content: partialText, timestamp: new Date() },
+      ];
+    }
+    this.chatStreamingText = "";
+    this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
+    this.chatSending = false;
   }
 
   // --- Chat sidebar handlers ---
@@ -999,6 +1203,7 @@ export class OperisApp extends LitElement {
     this.chatSessionTokens = 0;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
     this.chatSending = false;
     this.chatError = null;
   }
@@ -1115,6 +1320,10 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowToggle(workflow: Workflow) {
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, không thể thay đổi trạng thái.`, "warning");
+      return;
+    }
     const newState = !workflow.enabled;
     // Optimistic update - update UI immediately
     this.workflows = this.workflows.map((w) =>
@@ -1138,28 +1347,45 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowRun(workflow: Workflow) {
+    // Block if already running
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, vui lòng đợi hoàn thành.`, "warning");
+      return;
+    }
     // Mark as running immediately
     this.runningWorkflowIds = new Set([...this.runningWorkflowIds, workflow.id]);
     try {
       await runWorkflow(workflow.id);
       showToast(`Đang chạy "${workflow.name}"...`, "info");
-      // Update lastRunStatus after a delay (workflow takes time to complete)
+      // Cron events (started/finished) will update runningWorkflowIds via WS.
+      // Fallback: clear after 5min in case WS events are missed.
       setTimeout(() => {
+        if (this.runningWorkflowIds.has(workflow.id)) {
+          const newSet = new Set(this.runningWorkflowIds);
+          newSet.delete(workflow.id);
+          this.runningWorkflowIds = newSet;
+        }
+      }, 300_000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Không thể chạy workflow";
+      const isTimeout = msg.includes("timeout") || msg.includes("Timeout");
+      if (!isTimeout) {
+        // Only clear running state for non-timeout errors (e.g. gateway disconnected).
+        // Timeout means the job is likely still running — let WS "finished" event handle it.
         this.runningWorkflowIds = new Set(
           [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
         );
-      }, 3000);
-    } catch (err) {
-      this.runningWorkflowIds = new Set(
-        [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
-      );
-      const msg = err instanceof Error ? err.message : "Không thể chạy workflow";
-      showToast(msg, "error");
-      this.workflowError = msg;
+        showToast(msg, "error");
+        this.workflowError = msg;
+      }
     }
   }
 
   private async handleWorkflowDelete(workflow: Workflow) {
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, không thể xóa.`, "warning");
+      return;
+    }
     const confirmed = await showConfirm({
       title: "Xóa workflow?",
       message: `Bạn có chắc muốn xóa workflow "${workflow.name}"? Hành động này không thể hoàn tác.`,
@@ -1445,13 +1671,68 @@ export class OperisApp extends LitElement {
     this.channelsConnecting = channelId;
     this.channelsError = null;
     try {
-      await connectChannel(channelId);
+      const result = await connectChannel(channelId);
+      console.log("[channels] connect result:", channelId, result);
+
+      // Zalo: start QR polling flow
+      if (channelId === "zalo" && result.sessionToken) {
+        this.zaloQrStatus = "pending";
+        this.zaloQrBase64 = null;
+        this.startZaloPolling(result.sessionToken);
+        return; // Don't clear channelsConnecting yet — QR modal stays open
+      }
+
       await this.loadChannels();
     } catch (err) {
+      console.error("[channels] connect error:", err);
       this.channelsError = err instanceof Error ? err.message : "Không thể kết nối kênh";
     } finally {
-      this.channelsConnecting = null;
+      if (this.zaloQrStatus === null) {
+        this.channelsConnecting = null;
+      }
     }
+  }
+
+  private startZaloPolling(sessionToken: string) {
+    // Only clear previous timer, don't reset QR state
+    if (this.zaloPollingTimer) {
+      clearInterval(this.zaloPollingTimer);
+      this.zaloPollingTimer = null;
+    }
+    this.zaloPollingTimer = setInterval(async () => {
+      try {
+        const status = await getZaloStatus(sessionToken);
+        this.zaloQrStatus = status.status;
+
+        if (status.qrBase64) {
+          this.zaloQrBase64 = status.qrBase64;
+        }
+
+        // Terminal states
+        if (status.status === "success") {
+          this.stopZaloPolling();
+          this.channelsConnecting = null;
+          await this.loadChannels();
+        } else if (status.status === "error") {
+          this.stopZaloPolling();
+          this.channelsConnecting = null;
+          this.channelsError = status.error || "Kết nối Zalo thất bại";
+        }
+      } catch {
+        this.stopZaloPolling();
+        this.channelsConnecting = null;
+        this.channelsError = "Mất kết nối khi chờ quét mã QR";
+      }
+    }, 2000);
+  }
+
+  private stopZaloPolling() {
+    if (this.zaloPollingTimer) {
+      clearInterval(this.zaloPollingTimer);
+      this.zaloPollingTimer = null;
+    }
+    this.zaloQrBase64 = null;
+    this.zaloQrStatus = null;
   }
 
   private async handleChannelDisconnect(channelId: ChannelId) {
@@ -2447,10 +2728,14 @@ export class OperisApp extends LitElement {
           username: this.settings.username ?? undefined,
           botName: "Operis",
           streamingText: this.chatStreamingText,
+          toolCalls: this.chatToolCalls,
+          pendingImages: this.chatPendingImages,
           onDraftChange: (value) => (this.chatDraft = value),
           onSend: () => this.handleSendMessage(),
           onStop: () => this.handleStopChat(),
           onLoginClick: () => this.setTab("login"),
+          onImageSelect: (files) => this.handleImageSelect(files),
+          onImageRemove: (index) => this.handleImageRemove(index),
           // Sidebar props
           conversations: this.chatConversations,
           conversationsLoading: this.chatConversationsLoading,
@@ -2598,9 +2883,15 @@ export class OperisApp extends LitElement {
           loading: this.channelsLoading,
           error: this.channelsError ?? undefined,
           connectingChannel: this.channelsConnecting ?? undefined,
+          zaloQrBase64: this.zaloQrBase64,
+          zaloQrStatus: this.zaloQrStatus,
           onConnect: (channel) => this.handleChannelConnect(channel),
           onDisconnect: (channel) => this.handleChannelDisconnect(channel),
           onRefresh: () => this.loadChannels(),
+          onCancelZaloQr: () => {
+            this.stopZaloPolling();
+            this.channelsConnecting = null;
+          },
         });
       case "settings":
         return renderSettings({
@@ -2620,9 +2911,15 @@ export class OperisApp extends LitElement {
           channels: this.channels,
           channelsLoading: this.channelsLoading,
           connectingChannel: this.channelsConnecting ?? undefined,
+          zaloQrBase64: this.zaloQrBase64,
+          zaloQrStatus: this.zaloQrStatus,
           onConnectChannel: (channel) => this.handleChannelConnect(channel),
           onDisconnectChannel: (channel) => this.handleChannelDisconnect(channel),
           onRefreshChannels: () => this.loadChannels(),
+          onCancelZaloQr: () => {
+            this.stopZaloPolling();
+            this.channelsConnecting = null;
+          },
           // Security
           showPasswordForm: this.settingsShowPasswordForm,
           onTogglePasswordForm: () =>
