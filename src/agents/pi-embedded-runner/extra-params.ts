@@ -118,6 +118,25 @@ function createOpenRouterHeadersWrapper(baseStreamFn: StreamFn | undefined): Str
 }
 
 /**
+ * Create a streamFn wrapper that injects custom headers from provider config.
+ * Useful for adding User-Agent or other headers to bypass WAF/CDN restrictions.
+ */
+function createCustomHeadersWrapper(
+  baseStreamFn: StreamFn | undefined,
+  customHeaders: Record<string, string>,
+): StreamFn {
+  const underlying = baseStreamFn ?? streamSimple;
+  return (model, context, options) =>
+    underlying(model, context, {
+      ...options,
+      headers: {
+        ...customHeaders,
+        ...options?.headers,
+      },
+    });
+}
+
+/**
  * Apply extra params (like temperature) to an agent's streamFn.
  * Also adds OpenRouter app attribution headers when using the OpenRouter provider.
  *
@@ -152,5 +171,12 @@ export function applyExtraParamsToAgent(
   if (provider === "openrouter") {
     log.debug(`applying OpenRouter app attribution headers for ${provider}/${modelId}`);
     agent.streamFn = createOpenRouterHeadersWrapper(agent.streamFn);
+  }
+
+  // Inject custom headers from provider config (e.g. User-Agent for WAF/CDN bypass).
+  const providerHeaders = cfg?.models?.providers?.[provider]?.headers;
+  if (providerHeaders && Object.keys(providerHeaders).length > 0) {
+    log.debug(`applying custom provider headers for ${provider}/${modelId}`);
+    agent.streamFn = createCustomHeadersWrapper(agent.streamFn, providerHeaders);
   }
 }
