@@ -3,13 +3,23 @@
  * Handles chat with Operis API
  */
 
-import apiClient, { getAccessToken, getRefreshToken, getErrorMessage, refreshAccessToken } from "./api-client";
 import { API_CONFIG } from "../config";
+import apiClient, {
+  getAccessToken,
+  getRefreshToken,
+  getErrorMessage,
+  refreshAccessToken,
+} from "./api-client";
 
 // Detect if text looks like an HTML error page
 function isHtmlErrorPage(text: string): boolean {
   const trimmed = text.trimStart().toLowerCase();
-  return trimmed.startsWith("<!doctype") || trimmed.startsWith("<html") || trimmed.includes("<head>") || trimmed.includes("cloudflare");
+  return (
+    trimmed.startsWith("<!doctype") ||
+    trimmed.startsWith("<html") ||
+    trimmed.includes("<head>") ||
+    trimmed.includes("cloudflare")
+  );
 }
 
 // Extract a clean error message from an HTML error page
@@ -84,10 +94,7 @@ export interface ChatOptions {
 }
 
 // Send chat message (non-streaming)
-export async function sendMessageSync(
-  message: string,
-  options?: ChatOptions,
-): Promise<ChatResult> {
+export async function sendMessageSync(message: string, options?: ChatOptions): Promise<ChatResult> {
   try {
     const response = await apiClient.post<ChatResult>("/chat", {
       message,
@@ -109,6 +116,7 @@ export async function sendMessage(
   onDelta?: (text: string) => void,
   onDone?: (result: ChatResult) => void,
   signal?: AbortSignal,
+  images?: Array<{ data: string; mimeType: string }>,
 ): Promise<ChatResult> {
   const url = `${API_CONFIG.baseUrl}/chat/stream`;
 
@@ -120,7 +128,7 @@ export async function sendMessage(
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ message, conversationId }),
+      body: JSON.stringify({ message, conversationId, ...(images?.length ? { images } : {}) }),
       signal,
     });
   }
@@ -209,14 +217,33 @@ export async function sendMessage(
             } else if (currentEvent === "done") {
               // Normalize usage from backend (may be snake_case or camelCase)
               const raw = data.usage;
-              const usage: TokenUsage = raw ? {
-                input: raw.input ?? raw.input_tokens ?? 0,
-                output: raw.output ?? raw.output_tokens ?? 0,
-                cacheRead: raw.cacheRead ?? raw.cache_read_tokens ?? 0,
-                cacheWrite: raw.cacheWrite ?? raw.cache_write_tokens ?? raw.cache_creation_input_tokens ?? 0,
-                totalTokens: raw.totalTokens ?? raw.total_tokens ?? 0,
-                cost: raw.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              } : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+              const usage: TokenUsage = raw
+                ? {
+                    input: raw.input ?? raw.input_tokens ?? 0,
+                    output: raw.output ?? raw.output_tokens ?? 0,
+                    cacheRead: raw.cacheRead ?? raw.cache_read_tokens ?? 0,
+                    cacheWrite:
+                      raw.cacheWrite ??
+                      raw.cache_write_tokens ??
+                      raw.cache_creation_input_tokens ??
+                      0,
+                    totalTokens: raw.totalTokens ?? raw.total_tokens ?? 0,
+                    cost: raw.cost ?? {
+                      input: 0,
+                      output: 0,
+                      cacheRead: 0,
+                      cacheWrite: 0,
+                      total: 0,
+                    },
+                  }
+                : {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    totalTokens: 0,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                  };
 
               // Build final result from done event
               finalResult = {
@@ -261,7 +288,14 @@ export async function sendMessage(
     content: [{ type: "text", text: accumulatedText }],
     model: "unknown",
     provider: "unknown",
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason: "end_turn",
     conversationId: convId,
     tokenBalance: 0,
@@ -310,9 +344,13 @@ export interface ConversationUsage {
 }
 
 // Get conversation history
-export async function getConversationHistory(conversationId: string): Promise<{ messages: HistoryMessage[]; usage?: ConversationUsage }> {
+export async function getConversationHistory(
+  conversationId: string,
+): Promise<{ messages: HistoryMessage[]; usage?: ConversationUsage }> {
   try {
-    const response = await apiClient.get<{ messages: HistoryMessage[]; usage?: ConversationUsage }>(`/chat/conversations/${conversationId}`);
+    const response = await apiClient.get<{ messages: HistoryMessage[]; usage?: ConversationUsage }>(
+      `/chat/conversations/${conversationId}`,
+    );
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -332,7 +370,9 @@ export async function newConversation(): Promise<{ conversationId: string }> {
 // Delete conversation
 export async function deleteConversation(conversationId: string): Promise<{ success: boolean }> {
   try {
-    const response = await apiClient.delete<{ success: boolean }>(`/chat/conversations/${conversationId}`);
+    const response = await apiClient.delete<{ success: boolean }>(
+      `/chat/conversations/${conversationId}`,
+    );
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));

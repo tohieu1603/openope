@@ -86,6 +86,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp?: string | Date;
+  /** Base64 image previews attached to this message */
+  images?: Array<{ preview: string }>;
 }
 
 export interface ToolCallInfo {
@@ -93,6 +95,14 @@ export interface ToolCallInfo {
   name: string;
   phase: "start" | "update" | "result";
   isError?: boolean;
+  /** Short action detail e.g. "navigate · google.com" */
+  detail?: string;
+}
+
+export interface PendingImage {
+  data: string; // base64
+  mimeType: string;
+  preview: string; // data URL for display
 }
 
 export interface ChatProps {
@@ -105,10 +115,13 @@ export interface ChatProps {
   botName?: string;
   streamingText?: string;
   toolCalls?: ToolCallInfo[];
+  pendingImages?: PendingImage[];
   onDraftChange: (value: string) => void;
   onSend: () => void;
   onStop: () => void;
   onLoginClick: () => void;
+  onImageSelect: (files: FileList) => void;
+  onImageRemove: (index: number) => void;
   onScroll?: (e: Event) => void;
   // Sidebar props
   conversations?: Conversation[];
@@ -184,10 +197,13 @@ export function renderChat(props: ChatProps) {
     botName = "Operis",
     streamingText = "",
     toolCalls = [],
+    pendingImages = [],
     onDraftChange,
     onSend,
     onStop,
     onLoginClick,
+    onImageSelect,
+    onImageRemove,
     onScroll,
     conversations = [],
     conversationsLoading = false,
@@ -222,6 +238,24 @@ export function renderChat(props: ChatProps) {
       onLoginClick();
     } else {
       onSend();
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      for (const f of imageFiles) dt.items.add(f);
+      onImageSelect(dt.files);
     }
   };
 
@@ -568,6 +602,72 @@ export function renderChat(props: ChatProps) {
         stroke: currentColor;
         fill: none;
         stroke-width: 1.5;
+      }
+
+      /* Image preview strip */
+      .gc-image-previews {
+        display: flex;
+        gap: 8px;
+        padding: 0 4px;
+        overflow-x: auto;
+      }
+      .gc-image-previews::-webkit-scrollbar { height: 4px; }
+      .gc-image-previews::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+      .gc-image-preview {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid var(--border);
+      }
+      .gc-image-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .gc-image-preview-remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.6);
+        border: none;
+        border-radius: 50%;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1;
+      }
+      .gc-image-preview-remove:hover {
+        background: rgba(0,0,0,0.8);
+      }
+      .gc-image-file-input {
+        display: none;
+      }
+
+      /* Images in sent message bubbles */
+      .gc-bubble-images {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .gc-bubble-images img {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: 10px;
+        object-fit: cover;
+        cursor: pointer;
+      }
+      .gc-bubble-images img:hover {
+        opacity: 0.9;
       }
 
       .gc-send-btn {
@@ -1047,6 +1147,15 @@ export function renderChat(props: ChatProps) {
       .gc-tool-pill--running .gc-tool-dot {
         animation: gc-pulse 1.2s ease-in-out infinite;
       }
+      .gc-tool-detail {
+        opacity: 0.7;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+        vertical-align: bottom;
+      }
 
       /* Loading spinner - Gemini style */
       .gc-loading-indicator {
@@ -1339,6 +1448,13 @@ export function renderChat(props: ChatProps) {
                 <h1 class="gc-subtitle">${t("chatSubtitle")}</h1>
 
                 <div class="gc-input-wrap">
+                  <input type="file" class="gc-image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple
+                    @change=${(e: Event) => {
+                      const input = e.target as HTMLInputElement;
+                      if (input.files?.length) onImageSelect(input.files);
+                      input.value = "";
+                    }}
+                  />
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
@@ -1352,8 +1468,25 @@ export function renderChat(props: ChatProps) {
                         textarea.style.height = Math.min(textarea.scrollHeight, 178) + "px";
                       }}
                       @keydown=${handleKeyDown}
+                      @paste=${handlePaste}
                       ?disabled=${sending}
                     ></textarea>
+                    ${
+                      pendingImages.length > 0
+                        ? html`
+                      <div class="gc-image-previews">
+                        ${pendingImages.map(
+                          (img, i) => html`
+                          <div class="gc-image-preview">
+                            <img src=${img.preview} alt="Preview" />
+                            <button type="button" class="gc-image-preview-remove" @click=${() => onImageRemove(i)} title="Xóa">&times;</button>
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    `
+                        : nothing
+                    }
                     <div class="gc-input-actions">
                       <div class="gc-actions-left">
                         <button
@@ -1367,6 +1500,13 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-action-btn"
                           title="Thêm ảnh"
+                          @click=${(e: Event) => {
+                            const btn = e.currentTarget as HTMLElement;
+                            const fileInput = btn
+                              .closest(".gc-input-wrap")
+                              ?.querySelector<HTMLInputElement>(".gc-image-file-input");
+                            fileInput?.click();
+                          }}
                         >
                           ${icons.image}
                         </button>
@@ -1383,7 +1523,7 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-send-btn"
                           @click=${handleSendClick}
-                          ?disabled=${!draft.trim() || sending}
+                          ?disabled=${(!draft.trim() && pendingImages.length === 0) || sending}
                           title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
                         >
                           ${icons.arrowUp}
@@ -1437,7 +1577,16 @@ export function renderChat(props: ChatProps) {
                             }
                           </div>
                           <div class="gc-bubble">
-                            ${renderMarkdown(msg.content)}
+                            ${
+                              msg.images?.length
+                                ? html`
+                              <div class="gc-bubble-images">
+                                ${msg.images.map((img) => html`<img src=${img.preview} alt="Ảnh đính kèm" />`)}
+                              </div>
+                            `
+                                : nothing
+                            }
+                            ${msg.content ? renderMarkdown(msg.content) : nothing}
                           </div>
                         </div>
                       </div>
@@ -1464,7 +1613,7 @@ export function renderChat(props: ChatProps) {
                                           ? "gc-tool-pill--error"
                                           : "gc-tool-pill--done"
                                         : "gc-tool-pill--running";
-                                    return html`<span class="gc-tool-pill ${cls}"><span class="gc-tool-dot"></span>${tc.name}</span>`;
+                                    return html`<span class="gc-tool-pill ${cls}"><span class="gc-tool-dot"></span>${tc.name}${tc.detail ? html` · <span class="gc-tool-detail">${tc.detail}</span>` : nothing}</span>`;
                                   })}
                                 </div>`
                                 : nothing
@@ -1495,6 +1644,13 @@ export function renderChat(props: ChatProps) {
               <!-- Bottom Input -->
               <div class="gc-input-bottom">
                 <div class="gc-input-wrap">
+                  <input type="file" class="gc-image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple
+                    @change=${(e: Event) => {
+                      const input = e.target as HTMLInputElement;
+                      if (input.files?.length) onImageSelect(input.files);
+                      input.value = "";
+                    }}
+                  />
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
@@ -1508,8 +1664,25 @@ export function renderChat(props: ChatProps) {
                         textarea.style.height = Math.min(textarea.scrollHeight, 178) + "px";
                       }}
                       @keydown=${handleKeyDown}
+                      @paste=${handlePaste}
                       ?disabled=${sending}
                     ></textarea>
+                    ${
+                      pendingImages.length > 0
+                        ? html`
+                      <div class="gc-image-previews">
+                        ${pendingImages.map(
+                          (img, i) => html`
+                          <div class="gc-image-preview">
+                            <img src=${img.preview} alt="Preview" />
+                            <button type="button" class="gc-image-preview-remove" @click=${() => onImageRemove(i)} title="Xóa">&times;</button>
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    `
+                        : nothing
+                    }
                     <div class="gc-input-actions">
                       <div class="gc-actions-left">
                         <button
@@ -1523,6 +1696,13 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-action-btn"
                           title="Thêm ảnh"
+                          @click=${(e: Event) => {
+                            const btn = e.currentTarget as HTMLElement;
+                            const fileInput = btn
+                              .closest(".gc-input-wrap")
+                              ?.querySelector<HTMLInputElement>(".gc-image-file-input");
+                            fileInput?.click();
+                          }}
                         >
                           ${icons.image}
                         </button>
@@ -1549,7 +1729,7 @@ export function renderChat(props: ChatProps) {
                               type="button"
                               class="gc-send-btn"
                               @click=${handleSendClick}
-                              ?disabled=${!draft.trim()}
+                              ?disabled=${!draft.trim() && pendingImages.length === 0}
                               title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
                             >
                               ${icons.arrowUp}

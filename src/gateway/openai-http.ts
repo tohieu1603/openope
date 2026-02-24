@@ -2,10 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ImageContent } from "../commands/agent/types.js";
+import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
 import { buildHistoryContextFromEntries, type HistoryEntry } from "../auto-reply/reply/history.js";
 import { createDefaultDeps } from "../cli/deps.js";
 import { agentCommand } from "../commands/agent.js";
-import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
 import {
   loadSessionStore,
   resolveStorePath,
@@ -54,6 +55,11 @@ function asMessages(val: unknown): OpenAiChatMessage[] {
   return Array.isArray(val) ? (val as OpenAiChatMessage[]) : [];
 }
 
+/** Allowed image MIME types for vision requests. */
+const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const MAX_IMAGE_BYTES = 5_000_000; // 5 MB
+
+/** Extract text from a message content field (string or content parts array). */
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") {
     return content;
@@ -82,6 +88,68 @@ function extractTextContent(content: unknown): string {
       .join("\n");
   }
   return "";
+}
+
+/**
+ * Extract image_url content parts from an OpenAI messages array.
+ * Supports data URLs (base64 inline) and HTTP URLs (fetched).
+ * Only images from the last user message are extracted (vision context).
+ */
+async function extractImagesFromMessages(messagesUnknown: unknown): Promise<ImageContent[]> {
+  if (!Array.isArray(messagesUnknown)) return [];
+
+  // Find the last user message with image content
+  let lastUserContent: unknown = null;
+  for (let i = messagesUnknown.length - 1; i >= 0; i--) {
+    const msg = messagesUnknown[i];
+    if (msg?.role === "user" && Array.isArray(msg.content)) {
+      lastUserContent = msg.content;
+      break;
+    }
+  }
+  if (!lastUserContent || !Array.isArray(lastUserContent)) return [];
+
+  const images: ImageContent[] = [];
+  for (const part of lastUserContent) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type !== "image_url") continue;
+
+    const imageUrl = part.image_url;
+    if (!imageUrl || typeof imageUrl !== "object") continue;
+    const url = (imageUrl as { url?: string }).url;
+    if (typeof url !== "string") continue;
+
+    // Parse data URL: data:<mime>;base64,<data>
+    const dataUrlMatch = /^data:([^;]+);base64,(.+)$/.exec(url);
+    if (dataUrlMatch) {
+      const mimeType = dataUrlMatch[1];
+      const data = dataUrlMatch[2];
+      if (!ALLOWED_IMAGE_MIMES.has(mimeType)) continue;
+      const estimatedBytes = Math.ceil((data.length * 3) / 4);
+      if (estimatedBytes > MAX_IMAGE_BYTES) continue;
+      images.push({ type: "image", data, mimeType });
+      continue;
+    }
+
+    // Fetch HTTP/HTTPS URL images
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      try {
+        const resp = await fetch(url, {
+          signal: AbortSignal.timeout(10_000),
+          headers: { accept: "image/*" },
+        });
+        if (!resp.ok) continue;
+        const contentType = resp.headers.get("content-type")?.split(";")[0]?.trim() || "";
+        if (!ALLOWED_IMAGE_MIMES.has(contentType)) continue;
+        const buffer = Buffer.from(await resp.arrayBuffer());
+        if (buffer.byteLength > MAX_IMAGE_BYTES) continue;
+        images.push({ type: "image", data: buffer.toString("base64"), mimeType: contentType });
+      } catch {
+        // Skip failed fetches
+      }
+    }
+  }
+  return images;
 }
 
 function buildAgentPrompt(messagesUnknown: unknown): {
@@ -217,7 +285,8 @@ export async function handleOpenAiHttpRequest(
     return true;
   }
 
-  const body = await readJsonBodyOrError(req, res, opts.maxBodyBytes ?? 1024 * 1024);
+  // 10 MB limit to accommodate base64 image payloads
+  const body = await readJsonBodyOrError(req, res, opts.maxBodyBytes ?? 10 * 1024 * 1024);
   if (body === undefined) {
     return true;
   }
@@ -227,11 +296,12 @@ export async function handleOpenAiHttpRequest(
   const model = typeof payload.model === "string" ? payload.model : "openclaw";
   const user = typeof payload.user === "string" ? payload.user : undefined;
   // Always include usage for streaming (default true), can be disabled with include_usage=false
-  const includeUsage = stream ? (payload.stream_options?.include_usage !== false) : false;
+  const includeUsage = stream ? payload.stream_options?.include_usage !== false : false;
 
   const agentId = resolveAgentIdForRequest({ req, model });
   const sessionKey = resolveOpenAiSessionKey({ req, agentId, user });
   const prompt = buildAgentPrompt(payload.messages);
+  const images = await extractImagesFromMessages(payload.messages);
   if (!prompt.message) {
     sendJson(res, 400, {
       error: {
@@ -250,6 +320,7 @@ export async function handleOpenAiHttpRequest(
       const result = await agentCommand(
         {
           message: prompt.message,
+          images: images.length > 0 ? images : undefined,
           extraSystemPrompt: prompt.extraSystemPrompt,
           sessionKey,
           runId,
@@ -294,7 +365,8 @@ export async function handleOpenAiHttpRequest(
       // Try getting usage directly from result first
       const resultUsage = typedResult?.meta?.agentMeta?.usage;
       if (resultUsage) {
-        const inputTokens = (resultUsage.input ?? 0) + (resultUsage.cacheRead ?? 0) + (resultUsage.cacheWrite ?? 0);
+        const inputTokens =
+          (resultUsage.input ?? 0) + (resultUsage.cacheRead ?? 0) + (resultUsage.cacheWrite ?? 0);
         const outputTokens = resultUsage.output ?? 0;
         usage = {
           prompt_tokens: inputTokens,
@@ -439,6 +511,7 @@ export async function handleOpenAiHttpRequest(
       result = await agentCommand(
         {
           message: prompt.message,
+          images: images.length > 0 ? images : undefined,
           extraSystemPrompt: prompt.extraSystemPrompt,
           sessionKey,
           runId,
@@ -537,7 +610,10 @@ export async function handleOpenAiHttpRequest(
             } | null;
             const resultUsage = typedResult?.meta?.agentMeta?.usage;
             if (resultUsage) {
-              const inputTokens = (resultUsage.input ?? 0) + (resultUsage.cacheRead ?? 0) + (resultUsage.cacheWrite ?? 0);
+              const inputTokens =
+                (resultUsage.input ?? 0) +
+                (resultUsage.cacheRead ?? 0) +
+                (resultUsage.cacheWrite ?? 0);
               const outputTokens = resultUsage.output ?? 0;
               usage = {
                 prompt_tokens: inputTokens,

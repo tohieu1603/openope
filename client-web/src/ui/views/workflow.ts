@@ -1,5 +1,5 @@
 import { html, nothing } from "lit";
-import { icons } from "../icons";
+import type { WorkflowRun, WorkflowStatus } from "../workflow-api";
 import type {
   Workflow,
   WorkflowFormState,
@@ -10,9 +10,9 @@ import type {
   PayloadKind,
   DeliveryMode,
 } from "../workflow-types";
-import { formatSchedule } from "../workflow-types";
 import { t } from "../i18n";
-import type { WorkflowRun, WorkflowStatus } from "../workflow-api";
+import { icons } from "../icons";
+import { formatSchedule } from "../workflow-types";
 
 export interface WorkflowProps {
   workflows: Workflow[];
@@ -133,9 +133,7 @@ const DELIVERY_MODE_OPTIONS = [
   },
   { value: "none", label: "None (internal)", description: "Không thông báo" },
 ];
-const CHANNEL_OPTIONS = [
-  { value: "last", label: "last", description: "Kênh cuối cùng tương tác" },
-];
+const CHANNEL_OPTIONS = [{ value: "last", label: "last", description: "Kênh cuối cùng tương tác" }];
 
 // Scheduler status card (left side) - Clean moltbot-style
 function renderStatusCard(props: WorkflowProps) {
@@ -189,8 +187,7 @@ function renderScheduleFields(props: WorkflowProps) {
         <input
           type="datetime-local"
           .value=${form.atDatetime}
-          @input=${(e: Event) =>
-            onFormChange({ atDatetime: (e.target as HTMLInputElement).value })}
+          @input=${(e: Event) => onFormChange({ atDatetime: (e.target as HTMLInputElement).value })}
         />
       </label>
     `;
@@ -206,8 +203,7 @@ function renderScheduleFields(props: WorkflowProps) {
             .value=${String(form.everyAmount)}
             @input=${(e: Event) =>
               onFormChange({
-                everyAmount:
-                  parseInt((e.target as HTMLInputElement).value, 10) || 1,
+                everyAmount: parseInt((e.target as HTMLInputElement).value, 10) || 1,
               })}
           />
         </label>
@@ -216,8 +212,7 @@ function renderScheduleFields(props: WorkflowProps) {
           <operis-select
             .value=${form.everyUnit}
             .options=${EVERY_UNIT_OPTIONS}
-            @change=${(e: CustomEvent) =>
-              onFormChange({ everyUnit: e.detail.value as EveryUnit })}
+            @change=${(e: CustomEvent) => onFormChange({ everyUnit: e.detail.value as EveryUnit })}
           ></operis-select>
         </label>
       </div>
@@ -230,8 +225,7 @@ function renderScheduleFields(props: WorkflowProps) {
         <input
           .value=${form.cronExpr}
           placeholder="0 9 * * *"
-          @input=${(e: Event) =>
-            onFormChange({ cronExpr: (e.target as HTMLInputElement).value })}
+          @input=${(e: Event) => onFormChange({ cronExpr: (e.target as HTMLInputElement).value })}
         />
       </label>
       <label class="wf-field">
@@ -239,8 +233,7 @@ function renderScheduleFields(props: WorkflowProps) {
         <input
           .value=${form.cronTz}
           placeholder="UTC"
-          @input=${(e: Event) =>
-            onFormChange({ cronTz: (e.target as HTMLInputElement).value })}
+          @input=${(e: Event) => onFormChange({ cronTz: (e.target as HTMLInputElement).value })}
         />
       </label>
     </div>
@@ -269,8 +262,7 @@ function renderFormCard(props: WorkflowProps) {
           <input
             .value=${form.name}
             placeholder="VD: Báo cáo buổi sáng"
-            @input=${(e: Event) =>
-              onFormChange({ name: (e.target as HTMLInputElement).value })}
+            @input=${(e: Event) => onFormChange({ name: (e.target as HTMLInputElement).value })}
           />
         </label>
         <label class="wf-field">
@@ -297,8 +289,9 @@ function renderFormCard(props: WorkflowProps) {
               onFormChange({ scheduleKind: e.detail.value as ScheduleKind })}
           ></operis-select>
         </label>
-        ${form.scheduleKind === "at"
-          ? html`
+        ${
+          form.scheduleKind === "at"
+            ? html`
               <label class="wf-field">
                 <span>Thời gian</span>
                 <input
@@ -311,8 +304,8 @@ function renderFormCard(props: WorkflowProps) {
                 />
               </label>
             `
-          : form.scheduleKind === "every"
-            ? html`
+            : form.scheduleKind === "every"
+              ? html`
                 <label class="wf-field">
                   <span>Mỗi</span>
                   <input
@@ -321,9 +314,7 @@ function renderFormCard(props: WorkflowProps) {
                     .value=${String(form.everyAmount)}
                     @input=${(e: Event) =>
                       onFormChange({
-                        everyAmount:
-                          parseInt((e.target as HTMLInputElement).value, 10) ||
-                          1,
+                        everyAmount: parseInt((e.target as HTMLInputElement).value, 10) || 1,
                       })}
                   />
                 </label>
@@ -337,7 +328,7 @@ function renderFormCard(props: WorkflowProps) {
                   ></operis-select>
                 </label>
               `
-            : html`
+              : html`
                 <label class="wf-field">
                   <span>Biểu thức</span>
                   <input
@@ -360,7 +351,8 @@ function renderFormCard(props: WorkflowProps) {
                       })}
                   />
                 </label>
-              `}
+              `
+        }
       </div>
 
       <!-- Execution -->
@@ -379,8 +371,7 @@ function renderFormCard(props: WorkflowProps) {
           <operis-select
             .value=${form.wakeMode}
             .options=${WAKE_MODE_OPTIONS}
-            @change=${(e: CustomEvent) =>
-              onFormChange({ wakeMode: e.detail.value as WakeMode })}
+            @change=${(e: CustomEvent) => onFormChange({ wakeMode: e.detail.value as WakeMode })}
           ></operis-select>
         </label>
         <label class="wf-field">
@@ -404,8 +395,9 @@ function renderFormCard(props: WorkflowProps) {
       </div>
 
       <!-- Delivery (for agentTurn) -->
-      ${form.payloadKind === "agentTurn"
-        ? html`
+      ${
+        form.payloadKind === "agentTurn"
+          ? html`
             <div class="wf-form-grid" style="margin-top: 12px;">
               <label class="wf-field">
                 <span>Delivery</span>
@@ -426,13 +418,13 @@ function renderFormCard(props: WorkflowProps) {
                   .value=${String(form.timeout)}
                   @input=${(e: Event) =>
                     onFormChange({
-                      timeout:
-                        parseInt((e.target as HTMLInputElement).value, 10) || 0,
+                      timeout: parseInt((e.target as HTMLInputElement).value, 10) || 0,
                     })}
                 />
               </label>
-              ${form.deliveryMode === "announce"
-                ? html`
+              ${
+                form.deliveryMode === "announce"
+                  ? html`
                     <label class="wf-field">
                       <span>Channel</span>
                       <operis-select
@@ -454,24 +446,23 @@ function renderFormCard(props: WorkflowProps) {
                       />
                     </label>
                   `
-                : nothing}
+                  : nothing
+              }
             </div>
           `
-        : nothing}
+          : nothing
+      }
 
       <!-- Task/Message -->
       <label class="wf-field" style="margin-top: 12px;">
         <span
-          >${form.payloadKind === "systemEvent"
-            ? "System text"
-            : "Tin nhắn cho AI"}</span
+          >${form.payloadKind === "systemEvent" ? "System text" : "Tin nhắn cho AI"}</span
         >
         <textarea
           .value=${form.prompt}
           rows="4"
           placeholder="VD: Kiểm tra email mới và tóm tắt những email quan trọng"
-          @input=${(e: Event) =>
-            onFormChange({ prompt: (e.target as HTMLTextAreaElement).value })}
+          @input=${(e: Event) => onFormChange({ prompt: (e.target as HTMLTextAreaElement).value })}
         ></textarea>
       </label>
 
@@ -490,11 +481,7 @@ function renderFormCard(props: WorkflowProps) {
 }
 
 // Beautiful workflow card (original style)
-function renderWorkflowCard(
-  workflow: Workflow,
-  props: WorkflowProps,
-  isRunning: boolean,
-) {
+function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isRunning: boolean) {
   const {
     onToggle,
     onRun,
@@ -512,46 +499,44 @@ function renderWorkflowCard(
 
   return html`
     <div
-      class="wf-card ${workflow.enabled ? "" : "wf-card-paused"} ${isRunning
-        ? "wf-card-running"
-        : ""} ${isSelected ? "wf-card-selected" : ""} ${isExpanded
-        ? "wf-card-expanded"
-        : ""}"
+      class="wf-card ${workflow.enabled ? "" : "wf-card-paused"} ${
+        isRunning ? "wf-card-running" : ""
+      } ${isSelected ? "wf-card-selected" : ""} ${isExpanded ? "wf-card-expanded" : ""}"
     >
       <div class="wf-card-main">
         <div
-          class="wf-card-icon ${isRunning
-            ? "wf-card-icon-running"
-            : workflow.enabled
-              ? "wf-card-icon-active"
-              : ""}"
+          class="wf-card-icon ${
+            isRunning ? "wf-card-icon-running" : workflow.enabled ? "wf-card-icon-active" : ""
+          }"
         >
           ${icons.workflow}
         </div>
         <div class="wf-card-content">
           <div class="wf-card-header">
             <h4 class="wf-card-title">${workflow.name}</h4>
-            ${isRunning
-              ? html`
+            ${
+              isRunning
+                ? html`
                   <span class="wf-status wf-status-running">
                     <span class="wf-status-dot wf-status-dot-pulse"></span>
                     ${t("wfRunning")}
                   </span>
                 `
-              : html`
+                : html`
                   <span
-                    class="wf-status ${workflow.enabled
-                      ? "wf-status-active"
-                      : "wf-status-paused"}"
+                    class="wf-status ${workflow.enabled ? "wf-status-active" : "wf-status-paused"}"
                   >
                     <span class="wf-status-dot"></span>
                     ${workflow.enabled ? t("wfActive") : t("wfPaused")}
                   </span>
-                `}
+                `
+            }
           </div>
-          ${workflow.description
-            ? html`<p class="wf-card-desc">${workflow.description}</p>`
-            : nothing}
+          ${
+            workflow.description
+              ? html`<p class="wf-card-desc">${workflow.description}</p>`
+              : nothing
+          }
           <div class="wf-card-meta">
             <span class="wf-meta-item">
               <span class="wf-meta-icon">${icons.clock}</span>
@@ -564,55 +549,59 @@ function renderWorkflowCard(
               <span class="wf-run-dot"></span>
               ${t("wfLast")}: ${lastRun.time}
             </span>
-            ${workflow.nextRunAt
-              ? html`
+            ${
+              workflow.nextRunAt
+                ? html`
                   <span class="wf-meta-item wf-meta-next">
                     <span class="wf-meta-icon">${icons.arrowRight}</span>
                     ${t("wfNext")}:
                     ${formatRelativeTimeFromNow(workflow.nextRunAt)}
                   </span>
                 `
-              : nothing}
+                : nothing
+            }
           </div>
-          ${!isExpanded && workflow.prompt
-            ? html`<div class="wf-card-prompt">
-                "${workflow.prompt.length > 100
-                  ? workflow.prompt.slice(0, 100) + "..."
-                  : workflow.prompt}"
+          ${
+            !isExpanded && workflow.prompt
+              ? html`<div class="wf-card-prompt">
+                "${
+                  workflow.prompt.length > 100
+                    ? workflow.prompt.slice(0, 100) + "..."
+                    : workflow.prompt
+                }"
               </div>`
-            : nothing}
+              : nothing
+          }
         </div>
       </div>
-      ${isExpanded
-        ? html`
+      ${
+        isExpanded
+          ? html`
             <div class="wf-card-details">
               <div class="wf-details-grid">
                 <div class="wf-detail-item">
                   <span class="wf-detail-label">Phiên</span>
                   <span class="wf-detail-value"
-                    >${workflow.sessionTarget === "main"
-                      ? "Phiên chính"
-                      : "Riêng biệt"}</span
+                    >${workflow.sessionTarget === "main" ? "Phiên chính" : "Riêng biệt"}</span
                   >
                 </div>
                 <div class="wf-detail-item">
                   <span class="wf-detail-label">Cách đánh thức</span>
                   <span class="wf-detail-value"
-                    >${workflow.wakeMode === "now"
-                      ? "Ngay lập tức"
-                      : "Heartbeat tiếp"}</span
+                    >${workflow.wakeMode === "now" ? "Ngay lập tức" : "Heartbeat tiếp"}</span
                   >
                 </div>
                 <div class="wf-detail-item">
                   <span class="wf-detail-label">Loại payload</span>
                   <span class="wf-detail-value"
-                    >${workflow.payloadKind === "agentTurn"
-                      ? "Gửi tin nhắn"
-                      : "Sự kiện hệ thống"}</span
+                    >${
+                      workflow.payloadKind === "agentTurn" ? "Gửi tin nhắn" : "Sự kiện hệ thống"
+                    }</span
                   >
                 </div>
-                ${workflow.lastRunAt
-                  ? html`
+                ${
+                  workflow.lastRunAt
+                    ? html`
                       <div class="wf-detail-item">
                         <span class="wf-detail-label">Chạy lần cuối</span>
                         <span class="wf-detail-value"
@@ -620,9 +609,11 @@ function renderWorkflowCard(
                         >
                       </div>
                     `
-                  : nothing}
-                ${workflow.nextRunAt
-                  ? html`
+                    : nothing
+                }
+                ${
+                  workflow.nextRunAt
+                    ? html`
                       <div class="wf-detail-item">
                         <span class="wf-detail-label">Chạy tiếp theo</span>
                         <span class="wf-detail-value"
@@ -630,10 +621,12 @@ function renderWorkflowCard(
                         >
                       </div>
                     `
-                  : nothing}
+                    : nothing
+                }
               </div>
-              ${workflow.prompt
-                ? html`
+              ${
+                workflow.prompt
+                  ? html`
                     <div class="wf-detail-prompt">
                       <span class="wf-detail-label">Nội dung</span>
                       <div class="wf-detail-prompt-text">
@@ -641,10 +634,12 @@ function renderWorkflowCard(
                       </div>
                     </div>
                   `
-                : nothing}
+                  : nothing
+              }
             </div>
           `
-        : nothing}
+          : nothing
+      }
       <div class="wf-card-actions">
         <button
           class="wf-action ${isExpanded ? "wf-action-active" : ""}"
@@ -656,7 +651,7 @@ function renderWorkflowCard(
         <button
           class="wf-action"
           @click=${() => onToggle(workflow)}
-          ?disabled=${saving}
+          ?disabled=${saving || isRunning}
         >
           ${workflow.enabled ? icons.pause : icons.play}
           <span>${workflow.enabled ? t("wfPause") : t("wfStart")}</span>
@@ -664,10 +659,10 @@ function renderWorkflowCard(
         <button
           class="wf-action wf-action-run"
           @click=${() => onRun(workflow)}
-          ?disabled=${saving}
+          ?disabled=${saving || isRunning}
         >
           ${icons.zap}
-          <span>${t("wfRun")}</span>
+          <span>${isRunning ? "Đang chạy..." : t("wfRun")}</span>
         </button>
         <button
           class="wf-action ${isSelected ? "wf-action-active" : ""}"
@@ -680,7 +675,7 @@ function renderWorkflowCard(
         <button
           class="wf-action wf-action-delete"
           @click=${() => onDelete(workflow)}
-          ?disabled=${saving}
+          ?disabled=${saving || isRunning}
         >
           ${icons.trash}
         </button>
@@ -698,9 +693,7 @@ function renderRunItem(entry: WorkflowRun) {
           ${entry.status}
         </div>
         <div class="wf-run-summary">${entry.summary ?? ""}</div>
-        ${entry.error
-          ? html`<div class="wf-run-error">${entry.error}</div>`
-          : nothing}
+        ${entry.error ? html`<div class="wf-run-error">${entry.error}</div>` : nothing}
       </div>
       <div class="wf-run-meta">
         <div>${formatMs(entry.ts)}</div>
@@ -729,9 +722,7 @@ export function renderWorkflow(props: WorkflowProps) {
   });
 
   const runningCount = runningWorkflowIds.size;
-  const selectedWorkflow = runsWorkflowId
-    ? workflows.find((w) => w.id === runsWorkflowId)
-    : null;
+  const selectedWorkflow = runsWorkflowId ? workflows.find((w) => w.id === runsWorkflowId) : null;
 
   return html`
     <style>
@@ -1448,40 +1439,45 @@ export function renderWorkflow(props: WorkflowProps) {
     <!-- Workflow list section -->
     <div class="wf-section-header">
       <h3 class="wf-section-title">Workflows</h3>
-      ${runningCount > 0
-        ? html`
+      ${
+        runningCount > 0
+          ? html`
             <span class="wf-running-badge">
               <span class="wf-running-badge-dot"></span>
               ${runningCount} ${t("wfRunning")}
             </span>
           `
-        : nothing}
+          : nothing
+      }
     </div>
 
-    ${loading
-      ? html`
+    ${
+      loading
+        ? html`
           <div class="wf-loading">
             <div class="wf-loading-spinner"></div>
             <span class="wf-loading-text">${t("workflowLoading")}</span>
           </div>
         `
-      : workflows.length === 0
-        ? html`
+        : workflows.length === 0
+          ? html`
             <div class="wf-empty">
               <div class="wf-empty-icon">${icons.workflow}</div>
               <h3 class="wf-empty-title">${t("workflowEmpty")}</h3>
               <p class="wf-empty-desc">${t("workflowEmptyDesc")}</p>
             </div>
           `
-        : html`
+          : html`
             <div class="wf-list">
               ${sortedWorkflows.map((w) =>
                 renderWorkflowCard(w, props, runningWorkflowIds.has(w.id)),
               )}
             </div>
-          `}
-    ${runsWorkflowId
-      ? html`
+          `
+    }
+    ${
+      runsWorkflowId
+        ? html`
           <div class="wf-runs-section">
             <div class="wf-runs-header">
               <div class="wf-runs-header-left">
@@ -1497,21 +1493,26 @@ export function renderWorkflow(props: WorkflowProps) {
                 ${icons.x}
               </button>
             </div>
-            ${runsLoading
-              ? html`
-                  <div class="wf-runs-loading">
-                    <div class="wf-loading-spinner"></div>
-                  </div>
-                `
-              : runs.length === 0
-                ? html` <div class="wf-runs-empty">Chưa có lần chạy nào.</div> `
-                : html`
+            ${
+              runsLoading
+                ? html`
+                    <div class="wf-runs-loading">
+                      <div class="wf-loading-spinner"></div>
+                    </div>
+                  `
+                : runs.length === 0
+                  ? html`
+                      <div class="wf-runs-empty">Chưa có lần chạy nào.</div>
+                    `
+                  : html`
                     <div class="wf-runs-list">
                       ${runs.map((entry) => renderRunItem(entry))}
                     </div>
-                  `}
+                  `
+            }
           </div>
         `
-      : nothing}
+        : nothing
+    }
   `;
 }

@@ -429,10 +429,8 @@ export function createAgentEventHandler({
     const last = agentRunSeq.get(evt.runId) ?? 0;
     const isToolEvent = evt.stream === "tool";
     const toolVerbose = isToolEvent ? resolveToolVerboseLevel(evt.runId, sessionKey) : "off";
-    if (isToolEvent && toolVerbose === "off") {
-      agentRunSeq.set(evt.runId, evt.seq);
-      return;
-    }
+    // Never drop tool events — always broadcast to webchat UIs (with stripped payload).
+    // The verbose level only controls whether result/partialResult are included.
     const toolPayload =
       isToolEvent && toolVerbose !== "full"
         ? (() => {

@@ -4,7 +4,7 @@
  */
 
 import { html, nothing } from "lit";
-import type { ChannelStatus, ChannelId } from "../channels-api";
+import { DISABLED_CHANNELS, type ChannelStatus, type ChannelId } from "../channels-api";
 import { icons } from "../icons";
 
 export interface ChannelsProps {
@@ -85,6 +85,7 @@ export function renderChannels(props: ChannelsProps) {
   const renderChannelCard = (channel: ChannelStatus) => {
     const brand = CHANNEL_BRANDS[channel.id];
     const isConnecting = connectingChannel === channel.id;
+    const isDisabled = DISABLED_CHANNELS.includes(channel.id);
 
     return html`
       <div class="channel-card" style="--channel-color: ${brand.color}; --channel-bg: ${brand.bgColor};">
@@ -136,9 +137,9 @@ export function renderChannels(props: ChannelsProps) {
               class="btn btn-primary"
               style="background: ${brand.color}; border-color: ${brand.color};"
               @click=${() => onConnect(channel.id)}
-              ?disabled=${isConnecting}
+              ?disabled=${isConnecting || isDisabled}
             >
-              ${isConnecting ? "Đang kết nối..." : "Kết nối"}
+              ${isDisabled ? "Sắp có" : isConnecting ? "Đang kết nối..." : "Kết nối"}
             </button>
           `
           }

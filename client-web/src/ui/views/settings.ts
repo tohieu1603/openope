@@ -4,9 +4,9 @@
  */
 
 import { html, nothing } from "lit";
-import type { ChannelStatus, ChannelId } from "../channels-api";
 import type { Tab } from "../navigation";
 import type { UserProfile } from "../user-api";
+import { DISABLED_CHANNELS, type ChannelStatus, type ChannelId } from "../channels-api";
 import { icons } from "../icons";
 
 export interface SettingsProps {
@@ -163,6 +163,7 @@ export function renderSettings(props: SettingsProps) {
   const renderChannelCard = (channel: ChannelStatus) => {
     const brand = CHANNEL_BRANDS[channel.id];
     const isConnecting = connectingChannel === channel.id;
+    const isDisabled = DISABLED_CHANNELS.includes(channel.id);
 
     return html`
       <div class="st-channel-card ${channel.connected ? "connected" : ""}" style="--ch-color: ${brand.color}; --ch-bg: ${brand.bgColor}; --ch-gradient: ${brand.gradient};">
@@ -189,8 +190,8 @@ export function renderSettings(props: SettingsProps) {
             </button>
           `
               : html`
-            <button class="st-btn-channel connect" @click=${() => onConnectChannel(channel.id)} ?disabled=${isConnecting}>
-              ${isConnecting ? "..." : "Kết nối"}
+            <button class="st-btn-channel connect" @click=${() => onConnectChannel(channel.id)} ?disabled=${isConnecting || isDisabled}>
+              ${isDisabled ? "Sắp có" : isConnecting ? "..." : "Kết nối"}
             </button>
           `
           }

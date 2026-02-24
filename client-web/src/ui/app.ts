@@ -92,7 +92,7 @@ import { renderAgents } from "./views/agents";
 import { renderAnalytics } from "./views/analytics";
 import { renderBilling } from "./views/billing";
 import { renderChannels } from "./views/channels";
-import { renderChat } from "./views/chat";
+import { renderChat, type PendingImage } from "./views/chat";
 import { renderDocs } from "./views/docs";
 import { renderLogin } from "./views/login";
 import { renderLogs, type LogEntry } from "./views/logs";
@@ -169,6 +169,7 @@ export class OperisApp extends LitElement {
     role: "user" | "assistant";
     content: string;
     timestamp?: Date;
+    images?: Array<{ preview: string }>;
   }> = [];
   @state() chatDraft = "";
   @state() chatSending = false;
@@ -185,7 +186,9 @@ export class OperisApp extends LitElement {
     name: string;
     phase: "start" | "update" | "result";
     isError?: boolean;
+    detail?: string;
   }> = [];
+  @state() chatPendingImages: PendingImage[] = [];
   // Session token tracking
   @state() chatSessionTokens = 0;
   @state() chatTokenBalance = 0;
@@ -459,20 +462,84 @@ export class OperisApp extends LitElement {
   private handleToolEvent(evt: ToolEvent) {
     console.log("[app] toolEvent", evt.data?.phase, evt.data?.name, "sending=" + this.chatSending);
     if (!this.chatSending) return;
-    const { phase, toolCallId, name, isError } = evt.data;
+    const { phase, toolCallId, name, isError, args } = evt.data;
     if (!toolCallId) return;
 
+    const detail = this.extractToolDetail(name, args);
     const existing = this.chatToolCalls.findIndex((t) => t.id === toolCallId);
     if (phase === "start" && existing < 0) {
       this.chatToolCalls = [
         ...this.chatToolCalls,
-        { id: toolCallId, name: name ?? "tool", phase: "start" },
+        { id: toolCallId, name: name ?? "tool", phase: "start", detail },
       ];
     } else if (existing >= 0) {
       const updated = [...this.chatToolCalls];
-      updated[existing] = { ...updated[existing], phase, isError };
+      updated[existing] = { ...updated[existing], phase, isError, ...(detail ? { detail } : {}) };
       this.chatToolCalls = updated;
     }
+  }
+
+  /** Extract a short human-readable detail from tool args (e.g. "navigate · google.com") */
+  private extractToolDetail(name: string | undefined, args: unknown): string | undefined {
+    if (!args || typeof args !== "object") return undefined;
+    const a = args as Record<string, unknown>;
+
+    // Browser tool: action + url/value
+    if (name === "browser") {
+      const action = typeof a.action === "string" ? a.action : undefined;
+      if (!action) return undefined;
+      const url = typeof a.url === "string" ? a.url : undefined;
+      if (url) {
+        try {
+          const host = new URL(url).hostname.replace(/^www\./, "");
+          return `${action} · ${host}`;
+        } catch {
+          return `${action} · ${url.slice(0, 40)}`;
+        }
+      }
+      const value = typeof a.value === "string" ? a.value : undefined;
+      if (value) return `${action} · ${value.slice(0, 40)}`;
+      const ref = typeof a.ref === "string" ? a.ref : undefined;
+      if (ref) return `${action} · ${ref}`;
+      return action;
+    }
+
+    // Shell/bash tools: show command snippet
+    if (name === "shell" || name === "bash" || name === "execute_command") {
+      const cmd = typeof a.command === "string" ? a.command : undefined;
+      if (cmd) return cmd.length > 50 ? cmd.slice(0, 47) + "…" : cmd;
+    }
+
+    // File tools: show path
+    if (name === "read_file" || name === "write_file" || name === "edit_file") {
+      const path =
+        typeof a.path === "string"
+          ? a.path
+          : typeof a.file_path === "string"
+            ? a.file_path
+            : undefined;
+      if (path) {
+        const short = path.split("/").slice(-2).join("/");
+        return short;
+      }
+    }
+
+    // Search tools
+    if (name === "search" || name === "grep" || name === "web_search") {
+      const query =
+        typeof a.query === "string"
+          ? a.query
+          : typeof a.pattern === "string"
+            ? a.pattern
+            : undefined;
+      if (query) return query.length > 50 ? query.slice(0, 47) + "…" : query;
+    }
+
+    // Generic: try action field
+    const action = typeof a.action === "string" ? a.action : undefined;
+    if (action) return action;
+
+    return undefined;
   }
 
   private handleChatStreamEvent(evt: ChatStreamEvent) {
@@ -864,12 +931,41 @@ export class OperisApp extends LitElement {
     this.resetToLoggedOut();
   }
 
+  private handleImageSelect(files: FileList) {
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+    for (const file of Array.from(files)) {
+      if (!ALLOWED_TYPES.has(file.type) || file.size > MAX_FILE_SIZE) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) return;
+        this.chatPendingImages = [
+          ...this.chatPendingImages,
+          {
+            data: base64,
+            mimeType: file.type,
+            preview: dataUrl,
+          },
+        ];
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  private handleImageRemove(index: number) {
+    this.chatPendingImages = this.chatPendingImages.filter((_, i) => i !== index);
+  }
+
   private async handleSendMessage() {
-    if (!this.chatDraft.trim() || this.chatSending) return;
+    if ((!this.chatDraft.trim() && this.chatPendingImages.length === 0) || this.chatSending) return;
 
     const userMessage = this.chatDraft.trim();
+    const images = this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined;
     const isNewConversation = !this.chatConversationId;
     this.chatDraft = "";
+    this.chatPendingImages = [];
     this.chatSending = true;
     this.chatError = null;
     this.chatStreamingText = "";
@@ -877,38 +973,30 @@ export class OperisApp extends LitElement {
     this.chatToolCalls = [];
     this.chatAbortController = new AbortController();
 
-    // Add user message
+    // Add user message (with image previews if any)
     this.chatMessages = [
       ...this.chatMessages,
-      { role: "user", content: userMessage, timestamp: new Date() },
+      {
+        role: "user",
+        content: userMessage,
+        timestamp: new Date(),
+        ...(images ? { images: images.map((img) => ({ preview: img.preview })) } : {}),
+      },
     ];
     // Scroll user message to top of viewport before streaming starts
     await this.scrollChatToBottom();
 
     try {
-      // Try gateway WebSocket chat.send first (supports tools + tool events).
-      // Fall back to Operis API SSE if gateway isn't connected.
-      const gw = getGatewayClient();
-      if (gw.connected) {
-        // Send via gateway WS — streaming + tool events handled by WS event listeners
-        const runId = crypto.randomUUID();
-        console.log("[app] sending via gateway WS, runId=" + runId);
-        await gw.request("chat.send", {
-          sessionKey: "agent:main:main",
-          message: userMessage,
-          idempotencyKey: runId,
-        });
-        // chat.send returns immediately with ack. Content + tool events arrive via
-        // handleChatStreamEvent and handleToolEvent WS listeners. Wait for completion.
-        return;
-      }
-
-      // Fallback: Operis API SSE streaming (no tool support)
+      // Always send via Operis API POST (auth, history, token balance).
+      // Tool events still arrive via gateway WS if connected.
+      const myController = this.chatAbortController;
       const result = await sendChatMessage(
         userMessage,
         this.chatConversationId ?? undefined,
         // onDelta - update streaming text as chunks arrive
+        // Guard: stop updating if user pressed stop (abort signal)
         (text: string) => {
+          if (myController?.signal.aborted) return;
           this.chatStreamingText = text;
           this.chatStreamingRunId = "sse-stream";
         },
@@ -916,7 +1004,8 @@ export class OperisApp extends LitElement {
         () => {
           // Will be handled below when result arrives
         },
-        this.chatAbortController?.signal,
+        myController?.signal,
+        images?.map((img) => ({ data: img.data, mimeType: img.mimeType })),
       );
 
       // Store conversation ID for context
@@ -974,22 +1063,13 @@ export class OperisApp extends LitElement {
       await this.updateComplete;
       this.updateDynamicSpacer(true);
     } catch (err) {
-      // User aborted — keep whatever was streamed so far as the final message
+      // User aborted — discard streaming state, don't save partial response
       if (err instanceof DOMException && err.name === "AbortError") {
-        const partialText = this.chatStreamingText;
         this.chatStreamingText = "";
         this.chatStreamingRunId = null;
         this.chatToolCalls = [];
         this.chatSending = false;
         this.chatAbortController = null;
-        if (partialText) {
-          this.chatMessages = [
-            ...this.chatMessages,
-            { role: "assistant", content: partialText, timestamp: new Date() },
-          ];
-        }
-        await this.updateComplete;
-        this.updateDynamicSpacer(true);
         return;
       }
 
@@ -1031,10 +1111,22 @@ export class OperisApp extends LitElement {
   }
 
   private handleStopChat() {
+    // Capture partial text BEFORE abort (onDelta guard prevents further updates after this)
+    const partialText = this.chatStreamingText;
     if (this.chatAbortController) {
       this.chatAbortController.abort();
-      this.chatAbortController = null;
     }
+    // Save partial response so user sees where it stopped
+    if (partialText) {
+      this.chatMessages = [
+        ...this.chatMessages,
+        { role: "assistant" as const, content: partialText, timestamp: new Date() },
+      ];
+    }
+    this.chatStreamingText = "";
+    this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
+    this.chatSending = false;
   }
 
   // --- Chat sidebar handlers ---
@@ -1184,6 +1276,10 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowToggle(workflow: Workflow) {
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, không thể thay đổi trạng thái.`, "warning");
+      return;
+    }
     const newState = !workflow.enabled;
     // Optimistic update - update UI immediately
     this.workflows = this.workflows.map((w) =>
@@ -1207,17 +1303,25 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowRun(workflow: Workflow) {
+    // Block if already running
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, vui lòng đợi hoàn thành.`, "warning");
+      return;
+    }
     // Mark as running immediately
     this.runningWorkflowIds = new Set([...this.runningWorkflowIds, workflow.id]);
     try {
       await runWorkflow(workflow.id);
       showToast(`Đang chạy "${workflow.name}"...`, "info");
-      // Update lastRunStatus after a delay (workflow takes time to complete)
+      // Cron events (started/finished) will update runningWorkflowIds via WS.
+      // Fallback: clear after 5min in case WS events are missed.
       setTimeout(() => {
-        this.runningWorkflowIds = new Set(
-          [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
-        );
-      }, 3000);
+        if (this.runningWorkflowIds.has(workflow.id)) {
+          const newSet = new Set(this.runningWorkflowIds);
+          newSet.delete(workflow.id);
+          this.runningWorkflowIds = newSet;
+        }
+      }, 300_000);
     } catch (err) {
       this.runningWorkflowIds = new Set(
         [...this.runningWorkflowIds].filter((id) => id !== workflow.id),
@@ -1229,6 +1333,10 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowDelete(workflow: Workflow) {
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" đang chạy, không thể xóa.`, "warning");
+      return;
+    }
     const confirmed = await showConfirm({
       title: "Xóa workflow?",
       message: `Bạn có chắc muốn xóa workflow "${workflow.name}"? Hành động này không thể hoàn tác.`,
@@ -2572,10 +2680,13 @@ export class OperisApp extends LitElement {
           botName: "Operis",
           streamingText: this.chatStreamingText,
           toolCalls: this.chatToolCalls,
+          pendingImages: this.chatPendingImages,
           onDraftChange: (value) => (this.chatDraft = value),
           onSend: () => this.handleSendMessage(),
           onStop: () => this.handleStopChat(),
           onLoginClick: () => this.setTab("login"),
+          onImageSelect: (files) => this.handleImageSelect(files),
+          onImageRemove: (index) => this.handleImageRemove(index),
           // Sidebar props
           conversations: this.chatConversations,
           conversationsLoading: this.chatConversationsLoading,
