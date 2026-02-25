@@ -427,6 +427,22 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    // Abort any in-flight runs for this session before starting a new one.
+    // Without this, previous agents keep running and their responses still get delivered.
+    abortChatRunsForSessionKey(
+      {
+        chatAbortControllers: context.chatAbortControllers,
+        chatRunBuffers: context.chatRunBuffers,
+        chatDeltaSentAt: context.chatDeltaSentAt,
+        chatAbortedRuns: context.chatAbortedRuns,
+        removeChatRun: context.removeChatRun,
+        agentRunSeq: context.agentRunSeq,
+        broadcast: context.broadcast,
+        nodeSendToSession: context.nodeSendToSession,
+      },
+      { sessionKey: p.sessionKey, stopReason: "superseded" },
+    );
+
     try {
       const abortController = new AbortController();
       context.chatAbortControllers.set(clientRunId, {
