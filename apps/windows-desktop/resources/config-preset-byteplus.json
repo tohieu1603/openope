@@ -11,8 +11,8 @@
         "models": [
           { "id": "bytedance-seed-code", "name": "bytedance-seed-code" },
           { "id": "glm-4.7", "name": "glm-4.7" },
-          { "id": "kimi-k2-thinking", "name": "kimi-k2-thinking" },
-          { "id": "kimi-k2.5", "name": "kimi-k2.5" },
+          { "id": "kimi-k2-thinking", "name": "kimi-k2-thinking", "input": ["text", "image"] },
+          { "id": "kimi-k2.5", "name": "kimi-k2.5", "input": ["text", "image"] },
           { "id": "gpt-oss-120b", "name": "gpt-oss-120b" }
         ]
       }
@@ -31,6 +31,8 @@
         "byteplus/glm-4.7": { "alias": "glm" },
         "byteplus/bytedance-seed-code": { "alias": "seed-code" }
       },
+      "verboseDefault": "on",
+      "reasoningDefault": "stream",
       "maxConcurrent": 4,
       "subagents": {
         "maxConcurrent": 8
