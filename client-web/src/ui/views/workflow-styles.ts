@@ -773,17 +773,20 @@ export const workflowStyles = html`<style>
     background: var(--accent-subtle, rgba(0,0,0,.03));
     font-size: 12px;
     color: var(--muted);
-    line-height: 1.4;
+    line-height: 1.5;
     overflow: hidden;
+    max-height: 72px;
   }
   .wf-thinking-icon {
     flex-shrink: 0;
     font-size: 14px;
+    margin-top: 1px;
   }
   .wf-thinking-text {
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
 
   /* Activity list (tool calls feed) */

@@ -400,12 +400,16 @@ export async function runCronIsolatedAgentTurn(params: {
               });
             }
           } else if (evt.stream === "assistant") {
-            const d = evt.data as { delta?: string };
-            if (d.delta && d.delta.length > 0) {
+            const d = evt.data as { text?: string; delta?: string };
+            // Use full accumulated text so UI shows a growing sentence, not fragments.
+            const full = d.text ?? d.delta ?? "";
+            if (full.length > 0) {
+              // Show last 200 chars so user sees the latest portion being written.
+              const tail = full.length > 200 ? "…" + full.slice(-197) : full;
               params.onActivity!({
                 kind: "thinking",
                 id: `think-${evt.seq}`,
-                detail: d.delta.length > 120 ? d.delta.slice(0, 120) + "…" : d.delta,
+                detail: tail,
               });
             }
           }
