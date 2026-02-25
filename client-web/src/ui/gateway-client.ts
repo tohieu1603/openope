@@ -339,16 +339,23 @@ export type ToolEvent = {
   };
 };
 
+// Cron progress step milestones
+export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
+
 // Cron event type from gateway
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Progress milestone step (only for action: "progress"). */
+  step?: CronProgressStep;
+  /** Human-readable detail for the progress step. */
+  stepDetail?: string;
   usage?: {
     input: number;
     output: number;

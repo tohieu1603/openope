@@ -198,6 +198,9 @@ export async function executeJob(
     const res = await state.deps.runIsolatedAgentJob({
       job,
       message: job.payload.message,
+      onProgress: (step, detail) => {
+        emit(state, { jobId: job.id, action: "progress", step, stepDetail: detail });
+      },
     });
 
     // Post a short summary back to the main session so the user sees

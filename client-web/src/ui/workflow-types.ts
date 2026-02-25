@@ -1,6 +1,27 @@
 // Workflow types for Client Web
 // Matches Admin UI's Cron types for full compatibility
 
+import type { CronProgressStep } from "./gateway-client";
+
+/** Ephemeral progress state for a running workflow (not persisted). */
+export type CronProgressState = {
+  jobId: string;
+  steps: CronProgressStep[];
+  currentStep: CronProgressStep;
+  detail?: string;
+  startedAtMs: number;
+  finishedAtMs?: number;
+  status?: "ok" | "error" | "skipped";
+};
+
+/** All milestone definitions for rendering. */
+export const PROGRESS_MILESTONES: { step: CronProgressStep; label: string }[] = [
+  { step: "initializing", label: "Khởi tạo" },
+  { step: "prompting", label: "Gửi prompt" },
+  { step: "executing", label: "Xử lý kết quả" },
+  { step: "delivering", label: "Gửi kết quả" },
+];
+
 export type ScheduleKind = "every" | "at" | "cron";
 export type EveryUnit = "minutes" | "hours" | "days";
 export type SessionTarget = "main" | "isolated";

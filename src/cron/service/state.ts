@@ -1,15 +1,21 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob, CronJobCreate, CronJobPatch, CronStoreFile } from "../types.js";
 
+export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
+
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Progress milestone step (only for action: "progress"). */
+  step?: CronProgressStep;
+  /** Human-readable detail for the progress step. */
+  stepDetail?: string;
   /** Token usage from isolated agent run (for analytics/billing). */
   usage?: {
     input: number;
@@ -35,7 +41,11 @@ export type CronServiceDeps = {
   enqueueSystemEvent: (text: string, opts?: { agentId?: string }) => void;
   requestHeartbeatNow: (opts?: { reason?: string }) => void;
   runHeartbeatOnce?: (opts?: { reason?: string }) => Promise<HeartbeatRunResult>;
-  runIsolatedAgentJob: (params: { job: CronJob; message: string }) => Promise<{
+  runIsolatedAgentJob: (params: {
+    job: CronJob;
+    message: string;
+    onProgress?: (step: CronProgressStep, detail?: string) => void;
+  }) => Promise<{
     status: "ok" | "error" | "skipped";
     summary?: string;
     /** Last non-empty agent text output (not truncated). */

@@ -1,6 +1,7 @@
 import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AgentDefaultsConfig } from "../../config/types.js";
+import type { CronProgressStep } from "../service/state.js";
 import type { CronJob } from "../types.js";
 import {
   resolveAgentConfig,
@@ -115,6 +116,7 @@ export async function runCronIsolatedAgentTurn(params: {
   sessionKey: string;
   agentId?: string;
   lane?: string;
+  onProgress?: (step: CronProgressStep, detail?: string) => void;
 }): Promise<RunCronAgentTurnResult> {
   const defaultAgentId = resolveDefaultAgentId(params.cfg);
   const requestedAgentId =
@@ -351,7 +353,9 @@ export async function runCronIsolatedAgentTurn(params: {
       sessionKey: agentSessionKey,
       verboseLevel: resolvedVerboseLevel,
     });
+    params.onProgress?.("initializing", "Session & model resolved");
     const messageChannel = resolvedDelivery.channel;
+    params.onProgress?.("prompting", `${provider}/${model}`);
     const fallbackResult = await runWithModelFallback({
       cfg: cfgWithAgentDefaults,
       provider,
@@ -401,6 +405,7 @@ export async function runCronIsolatedAgentTurn(params: {
     runResult = fallbackResult.result;
     fallbackProvider = fallbackResult.provider;
     fallbackModel = fallbackResult.model;
+    params.onProgress?.("executing", "Processing agent response");
   } catch (err) {
     return { status: "error", error: String(err) };
   }
@@ -470,6 +475,7 @@ export async function runCronIsolatedAgentTurn(params: {
     );
 
   if (deliveryRequested && !skipHeartbeatDelivery && !skipMessagingToolDelivery) {
+    params.onProgress?.("delivering", resolvedDelivery.channel);
     if (resolvedDelivery.error) {
       if (!deliveryBestEffort) {
         return {
