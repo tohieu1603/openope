@@ -277,17 +277,25 @@ app.whenReady().then(async () => {
     }
   });
 
-  // First run: auto-create config + apply edition preset
+  const presetPath = resolvePresetPath(edition);
+
+  // First run: auto-create config + apply edition preset + clean old logs
   if (!onboardMgr.isConfigured()) {
     onboardMgr.createMinimalConfig();
-    // Apply edition-specific preset (e.g. BytePlus providers/models)
-    const presetPath = resolvePresetPath(edition);
     if (presetPath) {
       onboardMgr.applyPreset(presetPath);
     }
+    // Clean old gateway logs on fresh install for easier debugging
+    for (const name of ["gateway.log", "gateway.log.old"]) {
+      const logFile = path.join(app.getPath("userData"), name);
+      try { fs.unlinkSync(logFile); } catch { /* not exist */ }
+    }
   }
 
-  // Always: ensure config + auth store, start gateway, load client-web
+  // Every startup: fill missing preset keys into existing config (non-destructive)
+  if (presetPath) {
+    onboardMgr.ensurePresetDefaults(presetPath);
+  }
   onboardMgr.ensureElectronConfig();
   onboardMgr.ensureAgentAuthStore();
   const gatewayToken = onboardMgr.readGatewayToken();

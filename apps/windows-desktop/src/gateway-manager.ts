@@ -19,6 +19,7 @@ const MAX_BACKOFF_MS = 30_000;
 const BASE_BACKOFF_MS = 1_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 const MAX_LOG_LINES = 200;
+const MAX_LOG_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export class GatewayManager {
   private child: ChildProcess | null = null;
@@ -84,9 +85,26 @@ export class GatewayManager {
     }
   }
 
+  /** Rotate log file if it exceeds the size limit */
+  private rotateLogIfNeeded(): void {
+    try {
+      const logPath = this.getLogFilePath();
+      if (!fs.existsSync(logPath)) return;
+      const stats = fs.statSync(logPath);
+      if (stats.size > MAX_LOG_FILE_BYTES) {
+        const oldPath = logPath + ".old";
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+        fs.renameSync(logPath, oldPath);
+      }
+    } catch {
+      // Ignore rotation errors
+    }
+  }
+
   /** Open log file stream for writing */
   private openLogStream(): void {
     try {
+      this.rotateLogIfNeeded();
       const logPath = this.getLogFilePath();
       this.logStream = fs.createWriteStream(logPath, { flags: "a" });
       this.appendLog("system", "--- Gateway starting ---");

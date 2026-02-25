@@ -83,6 +83,29 @@ export class OnboardManager {
     }
   }
 
+  /**
+   * Ensure preset defaults exist in the user's config (idempotent).
+   * Called on every app startup — fills in missing keys from the preset
+   * without overwriting anything the user has already configured.
+   */
+  ensurePresetDefaults(presetPath: string): void {
+    try {
+      const presetRaw = fs.readFileSync(presetPath, "utf-8");
+      const preset = JSON.parse(presetRaw);
+      const configRaw = fs.readFileSync(this.configFilePath, "utf-8");
+      const config = JSON.parse(configRaw);
+
+      const merged = deepMergeDefaults(config, preset);
+      const mergedStr = JSON.stringify(merged, null, 2);
+      // Only write if something actually changed
+      if (mergedStr !== JSON.stringify(config, null, 2)) {
+        fs.writeFileSync(this.configFilePath, mergedStr, "utf-8");
+      }
+    } catch (err) {
+      console.error("[onboard] Failed to ensure preset defaults:", err);
+    }
+  }
+
   /** Read the gateway auth token from config (for passing to UI via URL query). */
   readGatewayToken(): string | null {
     try {
@@ -213,6 +236,27 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     } else {
       result[key] = srcVal;
     }
+  }
+  return result;
+}
+
+/**
+ * Deep merge where target (user config) wins — only fills missing keys from source (preset).
+ * Objects are recursed; existing leaf values are never overwritten.
+ */
+function deepMergeDefaults(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = result[key];
+    if (tgtVal === undefined) {
+      // Key missing in user config — add from preset
+      result[key] = srcVal;
+    } else if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
+      // Both are objects — recurse to fill nested missing keys
+      result[key] = deepMergeDefaults(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
+    }
+    // Otherwise: user already has a value — keep it
   }
   return result;
 }
