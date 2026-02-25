@@ -1,26 +1,33 @@
 // Workflow types for Client Web
 // Matches Admin UI's Cron types for full compatibility
 
-import type { CronProgressStep } from "./gateway-client";
+import type { CronActivity, CronProgressStep } from "./gateway-client";
+
+/** A resolved tool call entry for UI rendering. */
+export type CronToolEntry = {
+  id: string;
+  name: string;
+  detail?: string;
+  startedAtMs: number;
+  finishedAtMs?: number;
+  isError?: boolean;
+};
 
 /** Ephemeral progress state for a running workflow (not persisted). */
 export type CronProgressState = {
   jobId: string;
-  steps: CronProgressStep[];
-  currentStep: CronProgressStep;
-  detail?: string;
+  /** High-level phase (kept for header display). */
+  phase: CronProgressStep;
+  /** Live tool calls in order. */
+  toolCalls: CronToolEntry[];
+  /** Latest thinking text from assistant. */
+  thinkingText?: string;
   startedAtMs: number;
   finishedAtMs?: number;
   status?: "ok" | "error" | "skipped";
 };
 
-/** All milestone definitions for rendering. */
-export const PROGRESS_MILESTONES: { step: CronProgressStep; label: string }[] = [
-  { step: "initializing", label: "Khởi tạo" },
-  { step: "prompting", label: "Gửi prompt" },
-  { step: "executing", label: "Xử lý kết quả" },
-  { step: "delivering", label: "Gửi kết quả" },
-];
+export type { CronActivity };
 
 export type ScheduleKind = "every" | "at" | "cron";
 export type EveryUnit = "minutes" | "hours" | "days";

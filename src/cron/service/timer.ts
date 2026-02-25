@@ -201,6 +201,9 @@ export async function executeJob(
       onProgress: (step, detail) => {
         emit(state, { jobId: job.id, action: "progress", step, stepDetail: detail });
       },
+      onActivity: (activity) => {
+        emit(state, { jobId: job.id, action: "activity", activity });
+      },
     });
 
     // Post a short summary back to the main session so the user sees

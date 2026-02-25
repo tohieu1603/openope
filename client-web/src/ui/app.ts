@@ -457,8 +457,8 @@ export class OperisApp extends LitElement {
       const pm = new Map(this.progressMap);
       pm.set(evt.jobId, {
         jobId: evt.jobId,
-        steps: [],
-        currentStep: "initializing",
+        phase: "initializing",
+        toolCalls: [],
         startedAtMs: evt.runAtMs ?? Date.now(),
       });
       this.progressMap = pm;
@@ -473,8 +473,34 @@ export class OperisApp extends LitElement {
       const pm = new Map(this.progressMap);
       const prev = pm.get(evt.jobId);
       if (prev) {
-        const steps = prev.steps.includes(step) ? prev.steps : [...prev.steps, step];
-        pm.set(evt.jobId, { ...prev, steps, currentStep: step, detail: evt.stepDetail });
+        pm.set(evt.jobId, { ...prev, phase: step });
+      }
+      this.progressMap = pm;
+    } else if (evt.action === "activity") {
+      const a = evt.activity;
+      if (!a) return;
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (!prev) return;
+
+      if (a.kind === "tool") {
+        const toolCalls = [...prev.toolCalls];
+        if (a.phase === "start") {
+          toolCalls.push({
+            id: a.id,
+            name: a.name ?? "tool",
+            detail: a.detail,
+            startedAtMs: Date.now(),
+          });
+        } else if (a.phase === "result") {
+          const idx = toolCalls.findIndex((t) => t.id === a.id);
+          if (idx >= 0) {
+            toolCalls[idx] = { ...toolCalls[idx], finishedAtMs: Date.now(), isError: a.isError };
+          }
+        }
+        pm.set(evt.jobId, { ...prev, toolCalls });
+      } else if (a.kind === "thinking") {
+        pm.set(evt.jobId, { ...prev, thinkingText: a.detail });
       }
       this.progressMap = pm;
     } else if (evt.action === "finished") {
@@ -482,15 +508,18 @@ export class OperisApp extends LitElement {
       newSet.delete(evt.jobId);
       this.runningWorkflowIds = newSet;
 
-      // Auto-complete all milestones in progress state
+      // Mark progress as finished
       const pm = new Map(this.progressMap);
       const prev = pm.get(evt.jobId);
       if (prev) {
-        const allSteps: CronProgressState["steps"] = ["initializing", "prompting", "executing", "delivering"];
+        // Mark any still-running tools as finished
+        const toolCalls = prev.toolCalls.map((t) =>
+          t.finishedAtMs ? t : { ...t, finishedAtMs: Date.now() },
+        );
         pm.set(evt.jobId, {
           ...prev,
-          steps: allSteps,
-          currentStep: "delivering",
+          phase: "delivering",
+          toolCalls,
           finishedAtMs: Date.now(),
           status: evt.status ?? "ok",
         });

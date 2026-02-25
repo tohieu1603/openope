@@ -737,94 +737,156 @@ export const workflowStyles = html`<style>
     max-height: 70vh;
   }
 
-  /* === Progress timeline === */
+  /* === Progress panel (activity feed) === */
   .wf-progress-panel {
-    padding: 20px;
-  }
-  .wf-progress-title {
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0 0 16px;
-    color: var(--text-strong, var(--text));
-  }
-  .wf-progress-list {
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 12px;
   }
-  .wf-milestone {
+  .wf-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .wf-progress-phase {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .wf-progress-phase-done {
+    color: var(--ok);
+  }
+  .wf-progress-elapsed {
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Thinking indicator */
+  .wf-thinking {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    padding: 10px 0;
-    position: relative;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--accent-subtle, rgba(0,0,0,.03));
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+    overflow: hidden;
   }
-  .wf-milestone:not(:last-child)::after {
-    content: "";
-    position: absolute;
-    left: 11px;
-    top: 34px;
-    bottom: -10px;
-    width: 2px;
-    background: var(--border);
+  .wf-thinking-icon {
+    flex-shrink: 0;
+    font-size: 14px;
   }
-  .wf-milestone-done:not(:last-child)::after {
-    background: var(--accent);
+  .wf-thinking-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .wf-milestone-dot {
-    width: 24px;
-    height: 24px;
+
+  /* Activity list (tool calls feed) */
+  .wf-act-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .wf-act-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: background .15s;
+  }
+  .wf-act-item:hover {
+    background: var(--hover, rgba(0,0,0,.03));
+  }
+  .wf-act-dot {
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border: 2px solid var(--border);
-    background: var(--card);
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 700;
   }
-  .wf-milestone-done .wf-milestone-dot {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-foreground, #fff);
+  .wf-act-done .wf-act-dot {
+    background: var(--ok-subtle, rgba(34,197,94,.12));
+    color: var(--ok);
   }
-  .wf-milestone-active .wf-milestone-dot {
-    border-color: var(--accent);
-    background: var(--accent-subtle);
+  .wf-act-active .wf-act-dot {
+    background: var(--accent-subtle, rgba(59,130,246,.12));
     color: var(--accent);
-    animation: wf-pulse 1.5s ease-in-out infinite;
   }
-  .wf-milestone-info {
+  .wf-act-error .wf-act-dot {
+    background: var(--danger-subtle, rgba(239,68,68,.12));
+    color: var(--danger);
+  }
+  .wf-act-spinner {
+    display: block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: wf-spin .8s linear infinite;
+  }
+  @keyframes wf-spin {
+    to { transform: rotate(360deg); }
+  }
+  .wf-act-body {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
-  .wf-milestone-label {
-    font-size: 14px;
+  .wf-act-name {
     font-weight: 500;
     color: var(--text);
   }
-  .wf-milestone-pending .wf-milestone-label {
+  .wf-act-detail {
+    font-size: 11px;
     color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .wf-milestone-detail {
-    font-size: 12px;
+  .wf-act-time {
+    font-size: 11px;
     color: var(--muted);
-    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
-  .wf-progress-elapsed {
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
+  .wf-act-empty {
+    text-align: center;
+    padding: 24px 16px;
     font-size: 13px;
     color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Finished result bar */
+  .wf-progress-result {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
   }
   .wf-progress-status-ok {
+    background: var(--ok-subtle, rgba(34,197,94,.08));
     color: var(--ok);
-    font-weight: 600;
   }
   .wf-progress-status-error {
+    background: var(--danger-subtle, rgba(239,68,68,.08));
     color: var(--danger);
-    font-weight: 600;
   }
 
   /* Empty right panel */

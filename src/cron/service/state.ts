@@ -3,9 +3,24 @@ import type { CronJob, CronJobCreate, CronJobPatch, CronStoreFile } from "../typ
 
 export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
 
+/** Live activity item from agent execution (tool call or assistant text). */
+export type CronActivity = {
+  kind: "tool" | "thinking";
+  /** Unique id for tool calls (toolCallId); auto-generated for thinking. */
+  id: string;
+  /** Tool name (e.g. "read", "shell", "browser") — only for kind="tool". */
+  name?: string;
+  /** Phase of tool execution — only for kind="tool". */
+  phase?: "start" | "result";
+  /** Human-readable summary (e.g. file path, command snippet). */
+  detail?: string;
+  /** Whether the tool result was an error. */
+  isError?: boolean;
+};
+
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished" | "progress";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress" | "activity";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
@@ -16,6 +31,8 @@ export type CronEvent = {
   step?: CronProgressStep;
   /** Human-readable detail for the progress step. */
   stepDetail?: string;
+  /** Live activity from agent run (only for action: "activity"). */
+  activity?: CronActivity;
   /** Token usage from isolated agent run (for analytics/billing). */
   usage?: {
     input: number;
@@ -45,6 +62,7 @@ export type CronServiceDeps = {
     job: CronJob;
     message: string;
     onProgress?: (step: CronProgressStep, detail?: string) => void;
+    onActivity?: (activity: CronActivity) => void;
   }) => Promise<{
     status: "ok" | "error" | "skipped";
     summary?: string;
