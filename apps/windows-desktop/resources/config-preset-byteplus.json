@@ -1,0 +1,54 @@
+{
+  "models": {
+    "providers": {
+      "byteplus": {
+        "baseUrl": "https://admin.operis.vn/api/v1/byteplus",
+        "apiKey": "sk_test_anthropic_proxy_2026",
+        "api": "openai-completions",
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        },
+        "models": [
+          { "id": "bytedance-seed-code", "name": "bytedance-seed-code" },
+          { "id": "glm-4.7", "name": "glm-4.7" },
+          { "id": "kimi-k2-thinking", "name": "kimi-k2-thinking" },
+          { "id": "kimi-k2.5", "name": "kimi-k2.5" },
+          { "id": "gpt-oss-120b", "name": "gpt-oss-120b" }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "byteplus/kimi-k2.5",
+        "fallbacks": ["byteplus/kimi-k2-thinking", "byteplus/glm-4.7"]
+      },
+      "models": {
+        "byteplus/kimi-k2.5": { "alias": "kimi" },
+        "byteplus/kimi-k2-thinking": { "alias": "kimi-think" },
+        "byteplus/gpt-oss-120b": { "alias": "gpt-oss" },
+        "byteplus/glm-4.7": { "alias": "glm" },
+        "byteplus/bytedance-seed-code": { "alias": "seed-code" }
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "model": "byteplus/kimi-k2.5"
+      }
+    ]
+  },
+  "auth": {
+    "profiles": {
+      "byteplus:default": {
+        "provider": "byteplus",
+        "mode": "api_key"
+      }
+    }
+  }
+}

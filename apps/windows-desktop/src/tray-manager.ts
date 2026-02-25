@@ -29,7 +29,7 @@ export class TrayManager {
     this.actions = actions;
 
     this.tray = new Tray(getTrayIcon("stopped"));
-    this.tray.setToolTip("Agent Operis - Stopped");
+    this.tray.setToolTip(`${app.getName()} - Stopped`);
 
     this.tray.on("double-click", () => {
       this.showWindow();
@@ -42,7 +42,7 @@ export class TrayManager {
   updateGateway(status: GatewayStatus): void {
     this.gatewayStatus = status;
     this.tray?.setImage(getTrayIcon(status));
-    this.tray?.setToolTip(`Agent Operis - Gateway ${status}`);
+    this.tray?.setToolTip(`${app.getName()} - Gateway ${status}`);
     this.buildMenu();
   }
 
