@@ -258,6 +258,12 @@ function readSessionContextWindow(sessionKey: string): number {
   }
 }
 
+/**
+ * Track in-flight agent runs per sessionKey so we can abort previous ones
+ * when a new request arrives for the same session.
+ */
+const activeRunsBySession = new Map<string, { runId: string; controller: AbortController }>();
+
 export async function handleOpenAiHttpRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -315,6 +321,15 @@ export async function handleOpenAiHttpRequest(
   const runId = `chatcmpl_${randomUUID()}`;
   const deps = createDefaultDeps();
 
+  // Abort any in-flight run for this session before starting a new one.
+  const prev = activeRunsBySession.get(sessionKey);
+  if (prev) {
+    prev.controller.abort();
+    activeRunsBySession.delete(sessionKey);
+  }
+  const abortController = new AbortController();
+  activeRunsBySession.set(sessionKey, { runId, controller: abortController });
+
   if (!stream) {
     try {
       const result = await agentCommand(
@@ -327,6 +342,7 @@ export async function handleOpenAiHttpRequest(
           deliver: false,
           messageChannel: "webchat",
           bestEffortDeliver: false,
+          abortSignal: abortController.signal,
         },
         defaultRuntime,
         deps,
@@ -431,15 +447,39 @@ export async function handleOpenAiHttpRequest(
       sendJson(res, 500, {
         error: { message: String(err), type: "api_error" },
       });
+    } finally {
+      // Clean up tracker if this run is still the active one
+      if (activeRunsBySession.get(sessionKey)?.runId === runId) {
+        activeRunsBySession.delete(sessionKey);
+      }
     }
     return true;
   }
 
   setSseHeaders(res);
+  // Immediately send an SSE comment so the client/tunnel sees data right away
+  // and doesn't timeout waiting for the first real chunk.
+  res.write(": connected\n\n");
 
   let wroteRole = false;
   let sawAssistantDelta = false;
   let closed = false;
+
+  // Send SSE keepalive comments every 5s to prevent tunnel/proxy timeouts.
+  // Per SSE spec, lines starting with ":" are comments — clients ignore them
+  // but proxies/tunnels see data flowing and won't kill the connection.
+  const keepaliveInterval = setInterval(() => {
+    if (closed) {
+      clearInterval(keepaliveInterval);
+      return;
+    }
+    try {
+      res.write(": keepalive\n\n");
+    } catch {
+      // Connection already closed
+      clearInterval(keepaliveInterval);
+    }
+  }, 5_000);
 
   const unsubscribe = onAgentEvent((evt) => {
     if (evt.runId !== runId) {
@@ -502,7 +542,12 @@ export async function handleOpenAiHttpRequest(
 
   req.on("close", () => {
     closed = true;
+    clearInterval(keepaliveInterval);
     unsubscribe();
+    abortController.abort();
+    if (activeRunsBySession.get(sessionKey)?.runId === runId) {
+      activeRunsBySession.delete(sessionKey);
+    }
   });
 
   void (async () => {
@@ -518,6 +563,7 @@ export async function handleOpenAiHttpRequest(
           deliver: false,
           messageChannel: "webchat",
           bestEffortDeliver: false,
+          abortSignal: abortController.signal,
         },
         defaultRuntime,
         deps,
@@ -586,6 +632,7 @@ export async function handleOpenAiHttpRequest(
         data: { phase: "error" },
       });
     } finally {
+      clearInterval(keepaliveInterval);
       if (!closed) {
         closed = true;
         unsubscribe();
@@ -670,6 +717,10 @@ export async function handleOpenAiHttpRequest(
 
         writeDone(res);
         res.end();
+      }
+      // Clean up tracker if this run is still the active one
+      if (activeRunsBySession.get(sessionKey)?.runId === runId) {
+        activeRunsBySession.delete(sessionKey);
       }
     }
   })();
