@@ -172,6 +172,9 @@ export function createHooksRequestHandler(
 
     const token = extractHookToken(req);
     if (!token || token !== hooksConfig.token) {
+      logHooks.warn(
+        `hooks auth failed: received=${token ? token.slice(0, 8) + "..." : "(none)"} expected=${hooksConfig.token ? hooksConfig.token.slice(0, 8) + "..." : "(not set)"}`,
+      );
       res.statusCode = 401;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Unauthorized");
