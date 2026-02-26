@@ -1,5 +1,6 @@
 import type { TlsOptions } from "node:tls";
 import type { WebSocketServer } from "ws";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync, chmodSync } from "node:fs";
 import {
   createServer as createHttpServer,
   type Server as HttpServer,
@@ -7,9 +8,12 @@ import {
   type ServerResponse,
 } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
+import { join } from "node:path";
+import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import type { CanvasHostHandler } from "../canvas-host/server.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import { updateAuthProfileStoreWithLock } from "../agents/auth-profiles/store.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import {
   A2UI_PATH,
@@ -18,6 +22,7 @@ import {
   handleA2uiHttpRequest,
 } from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
+import { STATE_DIR } from "../config/paths.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
 import { authorizeGatewayConnect, isLocalDirectRequest, type ResolvedGatewayAuth } from "./auth.js";
 import {
@@ -38,8 +43,6 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
-import { updateAuthProfileStoreWithLock } from "../agents/auth-profiles/store.js";
-import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import { sendUnauthorized } from "./http-common.js";
 import { getBearerToken, getHeader } from "./http-utils.js";
 import { resolveGatewayClientIp } from "./net.js";
@@ -218,7 +221,11 @@ export function createHooksRequestHandler(
     if (subPath === "sync-auth-profiles") {
       const data = payload as Record<string, unknown>;
       const authProfiles = data.authProfiles as
-        | { version?: number; profiles?: Record<string, AuthProfileCredential>; lastGood?: Record<string, string> }
+        | {
+            version?: number;
+            profiles?: Record<string, AuthProfileCredential>;
+            lastGood?: Record<string, string>;
+          }
         | undefined;
 
       if (!authProfiles?.profiles || typeof authProfiles.profiles !== "object") {
@@ -279,6 +286,48 @@ export function createHooksRequestHandler(
           .catch((e) => logHooks.warn(`sync-auth-profiles: callback failed: ${e.message}`));
       }
 
+      return true;
+    }
+
+    // Sync channel credentials from remote operis-api to local gateway filesystem
+    if (subPath === "sync-credentials") {
+      const data = payload as Record<string, unknown>;
+      const channel = typeof data.channel === "string" ? data.channel.trim() : "";
+      const accountId = typeof data.accountId === "string" ? data.accountId.trim() : "default";
+      const action = data.action === "remove" ? "remove" : "sync";
+      const credentials = data.credentials as Record<string, unknown> | undefined;
+
+      if (!channel) {
+        sendJson(res, 400, { ok: false, error: "channel is required" });
+        return true;
+      }
+      if (action === "sync" && (!credentials || typeof credentials !== "object")) {
+        sendJson(res, 400, { ok: false, error: "credentials object is required for sync" });
+        return true;
+      }
+
+      const credDir = join(STATE_DIR, "credentials", channel);
+      const credPath = join(credDir, `${accountId}.json`);
+
+      try {
+        if (action === "remove") {
+          if (existsSync(credPath)) {
+            unlinkSync(credPath);
+          }
+          logHooks.info(`sync-credentials: removed ${channel}/${accountId}`);
+          sendJson(res, 200, { ok: true, action: "remove", channel, accountId });
+        } else {
+          mkdirSync(credDir, { recursive: true, mode: 0o700 });
+          writeFileSync(credPath, JSON.stringify(credentials, null, 2), "utf-8");
+          chmodSync(credPath, 0o600);
+          logHooks.info(`sync-credentials: synced ${channel}/${accountId}`);
+          sendJson(res, 200, { ok: true, action: "sync", channel, accountId });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logHooks.warn(`sync-credentials: failed: ${msg}`);
+        sendJson(res, 500, { ok: false, error: `credential sync failed: ${msg}` });
+      }
       return true;
     }
 

@@ -592,7 +592,7 @@ export async function handleOpenAiHttpRequest(
                 .map((p) => (typeof p.text === "string" ? p.text : ""))
                 .filter(Boolean)
                 .join("\n\n")
-            : "No response from OpenClaw.";
+            : "No response from Operis.";
 
         sawAssistantDelta = true;
         writeSse(res, {

@@ -138,7 +138,7 @@ export async function getPricing(): Promise<PricingResponse> {
       name: pkg.name,
       price: pkg.priceVnd,
       tokens: pkg.tokens,
-      bonus: pkg.bonus,
+      bonus: pkg.bonus ?? 0,
       popular: pkg.popular,
     })),
     currency: response.currency,
@@ -162,24 +162,36 @@ function transformPaymentInfo(backend: BackendPaymentInfo): PaymentInfo {
 // Handles both snake_case and camelCase from backend
 function transformDeposit(backend: BackendDepositOrder & Record<string, unknown>): DepositOrder {
   // Backend may return snake_case or camelCase depending on endpoint
-  const orderCode = backend.order_code ?? (backend as unknown as { orderCode?: string }).orderCode ?? "";
-  const amountVnd = backend.amount_vnd ?? (backend as unknown as { amountVnd?: number }).amountVnd ?? 0;
-  const tokenAmount = backend.token_amount ?? (backend as unknown as { tokenAmount?: number }).tokenAmount ?? 0;
-  const expiresAt = backend.expires_at ?? (backend as unknown as { expiresAt?: string }).expiresAt ?? "";
-  const createdAt = backend.created_at ?? (backend as unknown as { createdAt?: string }).createdAt ?? "";
-  const completedAt = backend.completed_at ?? (backend as unknown as { completedAt?: string }).completedAt;
+  const orderCode =
+    backend.order_code ?? (backend as unknown as { orderCode?: string }).orderCode ?? "";
+  const amountVnd =
+    backend.amount_vnd ?? (backend as unknown as { amountVnd?: number }).amountVnd ?? 0;
+  const tokenAmount =
+    backend.token_amount ?? (backend as unknown as { tokenAmount?: number }).tokenAmount ?? 0;
+  const expiresAt =
+    backend.expires_at ?? (backend as unknown as { expiresAt?: string }).expiresAt ?? "";
+  const createdAt =
+    backend.created_at ?? (backend as unknown as { createdAt?: string }).createdAt ?? "";
+  const completedAt =
+    backend.completed_at ?? (backend as unknown as { completedAt?: string }).completedAt;
 
   // Handle payment info - could be snake_case or camelCase
-  const paymentInfoRaw = backend.payment_info ?? (backend as unknown as { paymentInfo?: BackendPaymentInfo }).paymentInfo;
+  const paymentInfoRaw =
+    backend.payment_info ??
+    (backend as unknown as { paymentInfo?: BackendPaymentInfo }).paymentInfo;
   let paymentInfo: PaymentInfo;
   if (paymentInfoRaw) {
     // Check if it's already camelCase
     const pi = paymentInfoRaw as BackendPaymentInfo & Record<string, unknown>;
     paymentInfo = {
       bankName: pi.bank_name ?? (pi as unknown as { bankName?: string }).bankName ?? "",
-      accountNumber: pi.account_number ?? (pi as unknown as { accountNumber?: string }).accountNumber ?? "",
+      accountNumber:
+        pi.account_number ?? (pi as unknown as { accountNumber?: string }).accountNumber ?? "",
       accountName: pi.account_name ?? (pi as unknown as { accountName?: string }).accountName ?? "",
-      transferContent: pi.transfer_content ?? (pi as unknown as { transferContent?: string }).transferContent ?? "",
+      transferContent:
+        pi.transfer_content ??
+        (pi as unknown as { transferContent?: string }).transferContent ??
+        "",
       qrCodeUrl: pi.qr_code_url ?? (pi as unknown as { qrCodeUrl?: string }).qrCodeUrl ?? "",
     };
   } else {
@@ -209,9 +221,7 @@ function transformDeposit(backend: BackendDepositOrder & Record<string, unknown>
  * Create deposit order
  * @param request - Either { tierId: "tier_pro" } or { amount: 150000 }
  */
-export async function createDeposit(
-  request: CreateDepositRequest,
-): Promise<DepositOrder> {
+export async function createDeposit(request: CreateDepositRequest): Promise<DepositOrder> {
   // Build request body - send tierId or amount
   const body: Record<string, unknown> = {};
   if (request.tierId) {
@@ -292,10 +302,7 @@ export async function getDepositHistory(
 /**
  * Get token history from deposits
  */
-export async function getTokenHistory(
-  limit = 20,
-  offset = 0,
-): Promise<TokenHistoryResponse> {
+export async function getTokenHistory(limit = 20, offset = 0): Promise<TokenHistoryResponse> {
   return apiRequest<TokenHistoryResponse>(
     `/deposits/tokens/history?limit=${limit}&offset=${offset}`,
   );
@@ -314,7 +321,11 @@ export async function pollDepositStatus(
   while (Date.now() - startTime < timeoutMs) {
     const order = await getDeposit(orderId);
 
-    if (order.status === "completed" || order.status === "cancelled" || order.status === "expired") {
+    if (
+      order.status === "completed" ||
+      order.status === "cancelled" ||
+      order.status === "expired"
+    ) {
       return order;
     }
 

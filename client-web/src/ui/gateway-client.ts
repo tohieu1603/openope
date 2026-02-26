@@ -356,6 +356,7 @@ export type CronEvent = {
     cacheWrite?: number;
     totalTokens?: number;
   };
+  model?: string;
 };
 
 // Token usage from gateway agent runs

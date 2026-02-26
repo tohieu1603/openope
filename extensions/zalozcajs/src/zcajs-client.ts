@@ -24,7 +24,7 @@ type Credentials = {
 };
 
 function resolveCredentialsDir(): string {
-  return join(homedir(), ".openclaw", "credentials", "zalozcajs");
+  return join(homedir(), ".operis", "credentials", "zalozcajs");
 }
 
 /**
