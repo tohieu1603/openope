@@ -10,10 +10,9 @@
     "build:gateway": "cd ../.. && pnpm build",
     "build:bundle-gateway": "node bundle-gateway.js",
     "build:electron": "tsc -p tsconfig.json",
+    "build:ui": "cd ../.. && pnpm ui:build",
     "build:installer": "electron-builder --win --config electron-builder.yml",
-    "build:installer:byteplus": "electron-builder --win --config electron-builder-byteplus.yml",
-    "build": "pnpm build:gateway && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer",
-    "build:byteplus": "pnpm build:gateway && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer:byteplus"
+    "build": "pnpm build:gateway && pnpm build:ui && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer"
   },
   "devDependencies": {
     "electron": "^35.0.0",

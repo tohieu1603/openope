@@ -73,6 +73,9 @@ extraResources:
     to: "tray-red.ico"
   - from: "resources/tray-gray.ico"
     to: "tray-gray.ico"
+  # BytePlus config preset (provider/model defaults applied on first run)
+  - from: "resources/config-preset-byteplus.json"
+    to: "config-preset-byteplus.json"
   # App window icon
   - from: "resources/icon.ico"
     to: "icon.ico"

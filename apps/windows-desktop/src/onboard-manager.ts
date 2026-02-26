@@ -3,8 +3,7 @@
  * Creates minimal gateway config on first run; ensures Electron-specific
  * settings on every startup.
  *
- * Supports edition-based presets: when a preset config is provided,
- * its settings are deep-merged into the minimal config on first run.
+ * BytePlus provider preset is always bundled and deep-merged on first run.
  */
 import path from "node:path";
 import fs from "node:fs";
@@ -12,10 +11,7 @@ import fs from "node:fs";
 export class OnboardManager {
   private readonly stateDir: string;
 
-  /**
-   * @param stateDir Override the state directory (default: ~/.operis).
-   *   BytePlus edition uses ~/.operis-byteplus to avoid conflicts.
-   */
+  /** @param stateDir Override the state directory (default: ~/.operis). */
   constructor(stateDir?: string) {
     const home = process.env.USERPROFILE || process.env.HOME || "";
     this.stateDir = stateDir || path.join(home, ".operis");
@@ -75,7 +71,7 @@ export class OnboardManager {
 
   /**
    * Apply a preset config (deep-merge) on top of existing config.
-   * Used by the BytePlus edition to inject provider/model defaults on first run.
+   * Injects provider/model defaults from bundled preset on first run.
    */
   applyPreset(presetPath: string): void {
     try {
