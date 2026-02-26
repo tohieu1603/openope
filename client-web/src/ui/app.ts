@@ -15,7 +15,7 @@ import type {
   CronJob,
   CronStatus,
 } from "./agent-types";
-import type { Workflow, WorkflowFormState } from "./workflow-types";
+import type { Workflow, WorkflowFormState, CronProgressState } from "./workflow-types";
 import {
   getDailyUsage,
   getRangeUsage,
@@ -217,6 +217,10 @@ export class OperisApp extends LitElement {
   @state() workflowExpandedId: string | null = null;
   @state() runningWorkflowIds: Set<string> = new Set();
   @state() workflowStatus: WorkflowStatus | null = null;
+  // Split panel: selection + progress
+  @state() selectedWorkflowId: string | null = null;
+  @state() progressMap: Map<string, CronProgressState> = new Map();
+  private progressTimer: ReturnType<typeof setInterval> | null = null;
   // Run history state
   @state() workflowRunsId: string | null = null;
   @state() workflowRuns: Array<{
@@ -450,10 +454,85 @@ export class OperisApp extends LitElement {
     // Track running workflows
     if (evt.action === "started") {
       this.runningWorkflowIds = new Set([...this.runningWorkflowIds, evt.jobId]);
+      // Init progress state
+      const pm = new Map(this.progressMap);
+      pm.set(evt.jobId, {
+        jobId: evt.jobId,
+        phase: "initializing",
+        toolCalls: [],
+        startedAtMs: evt.runAtMs ?? Date.now(),
+      });
+      this.progressMap = pm;
+      this.startProgressTimer();
+      // Auto-select running workflow if none selected
+      if (!this.selectedWorkflowId) {
+        this.selectedWorkflowId = evt.jobId;
+      }
+    } else if (evt.action === "progress") {
+      const step = evt.step;
+      if (!step) return;
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (prev) {
+        pm.set(evt.jobId, { ...prev, phase: step });
+      }
+      this.progressMap = pm;
+    } else if (evt.action === "activity") {
+      const a = evt.activity;
+      if (!a) return;
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (!prev) return;
+
+      if (a.kind === "tool") {
+        const toolCalls = [...prev.toolCalls];
+        if (a.phase === "start") {
+          toolCalls.push({
+            id: a.id,
+            name: a.name ?? "tool",
+            detail: a.detail,
+            startedAtMs: Date.now(),
+          });
+        } else if (a.phase === "result") {
+          const idx = toolCalls.findIndex((t) => t.id === a.id);
+          if (idx >= 0) {
+            toolCalls[idx] = { ...toolCalls[idx], finishedAtMs: Date.now(), isError: a.isError };
+          }
+        }
+        pm.set(evt.jobId, { ...prev, toolCalls });
+      } else if (a.kind === "thinking") {
+        pm.set(evt.jobId, { ...prev, thinkingText: a.detail });
+      }
+      this.progressMap = pm;
     } else if (evt.action === "finished") {
       const newSet = new Set(this.runningWorkflowIds);
       newSet.delete(evt.jobId);
       this.runningWorkflowIds = newSet;
+
+      // Mark progress as finished
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (prev) {
+        // Mark any still-running tools as finished
+        const toolCalls = prev.toolCalls.map((t) =>
+          t.finishedAtMs ? t : { ...t, finishedAtMs: Date.now() },
+        );
+        pm.set(evt.jobId, {
+          ...prev,
+          phase: "delivering",
+          toolCalls,
+          finishedAtMs: Date.now(),
+          status: evt.status ?? "ok",
+        });
+        this.progressMap = pm;
+        // Clear progress after 8s
+        setTimeout(() => {
+          const pm2 = new Map(this.progressMap);
+          pm2.delete(evt.jobId);
+          this.progressMap = pm2;
+          this.stopProgressTimerIfIdle();
+        }, 8000);
+      }
 
       // Report cron usage to Operis BE (request_type: "cron") when gateway includes it
       if (evt.usage && (evt.usage.input || evt.usage.output)) {
@@ -467,6 +546,23 @@ export class OperisApp extends LitElement {
       if (!this.workflowLoading) {
         this.loadWorkflows(true);
       }
+    }
+  }
+
+  private startProgressTimer() {
+    if (this.progressTimer) return;
+    this.progressTimer = setInterval(() => {
+      // Trigger re-render for elapsed time updates
+      if (this.progressMap.size > 0) {
+        this.progressMap = new Map(this.progressMap);
+      }
+    }, 1000);
+  }
+
+  private stopProgressTimerIfIdle() {
+    if (this.progressMap.size === 0 && this.progressTimer) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = null;
     }
   }
 
@@ -2868,6 +2964,16 @@ export class OperisApp extends LitElement {
           },
           expandedWorkflowId: this.workflowExpandedId,
           runningWorkflowIds: this.runningWorkflowIds,
+          // Split panel
+          selectedWorkflowId: this.selectedWorkflowId,
+          progressMap: this.progressMap,
+          onSelectWorkflow: (id: string | null) => {
+            this.selectedWorkflowId = id;
+            // Auto-load run history when selecting idle workflow
+            if (id && !this.progressMap.has(id)) {
+              this.loadWorkflowRuns(id);
+            }
+          },
           // Run history
           runsWorkflowId: this.workflowRunsId,
           runs: this.workflowRuns,
