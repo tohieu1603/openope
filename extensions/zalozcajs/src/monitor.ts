@@ -569,13 +569,28 @@ export async function monitorZalozcajsProvider(
 
   await startListenerLoop();
 
-  // Watch for credentials file deletion (external disconnect)
+  // Watch for credentials file changes (external disconnect/reconnect via operis-api)
+  let credentialsRemoved = false;
   credentialsWatcher = setInterval(() => {
-    if (!existsSync(account.credentialsPath)) {
+    const exists = existsSync(account.credentialsPath);
+    if (!exists && !credentialsRemoved) {
+      // Credentials removed — tear down listener but stay alive to detect re-creation
+      credentialsRemoved = true;
       runtime.log?.(`[${account.accountId}] credentials removed, stopping zalozcajs listener`);
-      stop();
+      if (listenerHandle) {
+        listenerHandle.stop();
+        listenerHandle = null;
+      }
+      disconnectInstance(account.credentialsPath);
+    } else if (exists && credentialsRemoved) {
+      // Credentials re-created (e.g. operis-api reconnect) — restart listener
+      credentialsRemoved = false;
+      runtime.log?.(`[${account.accountId}] credentials restored, restarting zalozcajs listener`);
+      if (!stopped && !abortSignal.aborted) {
+        void startListenerLoop();
+      }
     }
-  }, 5_000);
+  }, 3_000);
 
   // Wait for the running promise to resolve (on abort/stop)
   await runningPromise;
