@@ -564,7 +564,7 @@ export async function monitorZalozcajsProvider(
   // Create a promise that stays pending until abort or stop
   const runningPromise = new Promise<void>((resolve) => {
     resolveRunning = resolve;
-    abortSignal.addEventListener("abort", () => resolve(), { once: true });
+    abortSignal.addEventListener("abort", () => stop(), { once: true });
   });
 
   await startListenerLoop();

@@ -393,11 +393,16 @@ export async function startGatewayServer(
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
 
-  // Wire credential sync to channel start: when operis-api pushes credentials, restart the channel.
-  credentialSyncHandler = (channel, _accountId, action) => {
+  // Wire credential sync to channel lifecycle: stop → start on sync, stop on remove.
+  credentialSyncHandler = (channel, accountId, action) => {
+    const chId = channel as ChannelId;
+    const acctId = accountId || undefined;
     if (action === "sync") {
-      logChannels.info(`credential sync → starting channel ${channel}`);
-      void startChannel(channel as ChannelId);
+      logChannels.info(`credential sync → restarting channel ${channel}/${accountId}`);
+      void stopChannel(chId, acctId).then(() => startChannel(chId, acctId));
+    } else if (action === "remove") {
+      logChannels.info(`credential sync → stopping channel ${channel}/${accountId}`);
+      void stopChannel(chId, acctId);
     }
   };
 
