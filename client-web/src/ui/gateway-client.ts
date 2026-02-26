@@ -339,16 +339,35 @@ export type ToolEvent = {
   };
 };
 
+// Cron progress step milestones
+export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
+
+/** Live activity item from agent execution (tool call or assistant text). */
+export type CronActivity = {
+  kind: "tool" | "thinking";
+  id: string;
+  name?: string;
+  phase?: "start" | "result";
+  detail?: string;
+  isError?: boolean;
+};
+
 // Cron event type from gateway
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress" | "activity";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Progress milestone step (only for action: "progress"). */
+  step?: CronProgressStep;
+  /** Human-readable detail for the progress step. */
+  stepDetail?: string;
+  /** Live activity from agent run (only for action: "activity"). */
+  activity?: CronActivity;
   usage?: {
     input: number;
     output: number;

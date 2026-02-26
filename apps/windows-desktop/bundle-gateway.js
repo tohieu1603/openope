@@ -107,6 +107,72 @@ try {
   if (fs.existsSync(STUB_FILE)) fs.unlinkSync(STUB_FILE);
 }
 
+// --- Bundle plugin-sdk for runtime plugin loading ---
+// The jiti loader resolves openclaw/plugin-sdk via an alias that walks up from
+// entry.js looking for dist/plugin-sdk/index.js. We bundle it standalone so
+// plugins in dist-extensions/ can import from it at runtime.
+const PLUGIN_SDK_ENTRY = path.join(DIST, 'plugin-sdk', 'index.js');
+const PLUGIN_SDK_OUT = path.join(OUT, 'dist', 'plugin-sdk');
+
+if (fs.existsSync(PLUGIN_SDK_ENTRY)) {
+  fs.mkdirSync(PLUGIN_SDK_OUT, { recursive: true });
+  const sdkScript = `
+const esbuild = require(${JSON.stringify(esbuildPkg)});
+
+const stubPlugin = {
+  name: 'stub-optional-packages',
+  setup(build) {
+    const re = new RegExp(${JSON.stringify(stubRegexSrc)});
+    build.onResolve({ filter: /.*/ }, (args) => {
+      if (re.test(args.path)) {
+        return { path: ${JSON.stringify(STUB_FILE)} };
+      }
+    });
+  },
+};
+
+async function main() {
+  const result = await esbuild.build({
+    entryPoints: [${JSON.stringify(PLUGIN_SDK_ENTRY)}],
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    outfile: ${JSON.stringify(path.join(PLUGIN_SDK_OUT, 'index.js'))},
+    external: ['node:*', ${[...NATIVE_EXTERNAL_PACKAGES, ...EXTERNAL_JS_PACKAGES].map(p => JSON.stringify(p)).join(', ')}],
+    plugins: [stubPlugin],
+    resolveExtensions: ['.js', '.mjs', '.cjs', '.json'],
+    nodePaths: [${JSON.stringify(path.join(ROOT, 'node_modules'))}],
+    packages: 'bundle',
+    logLevel: 'warning',
+    banner: {
+      js: 'import{createRequire as __esbuild_cr}from"node:module";var require=__esbuild_cr(import.meta.url);',
+    },
+  });
+  if (result.errors.length) {
+    console.error('plugin-sdk build errors:', result.errors);
+    process.exit(1);
+  }
+  const stat = require('fs').statSync(${JSON.stringify(path.join(PLUGIN_SDK_OUT, 'index.js'))});
+  console.log('Plugin SDK bundled: dist-gateway/dist/plugin-sdk/index.js (' + (stat.size / 1024 / 1024).toFixed(1) + ' MB)');
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
+`;
+  const sdkTmpScript = path.join(__dirname, '_bundle-sdk-tmp.cjs');
+  // Re-create stub file if cleaned up
+  if (!fs.existsSync(STUB_FILE)) fs.writeFileSync(STUB_FILE, 'module.exports = {};');
+  fs.writeFileSync(sdkTmpScript, sdkScript);
+  try {
+    execSync(`node "${sdkTmpScript}"`, { stdio: 'inherit', cwd: ROOT });
+  } finally {
+    fs.unlinkSync(sdkTmpScript);
+    if (fs.existsSync(STUB_FILE)) fs.unlinkSync(STUB_FILE);
+  }
+} else {
+  console.warn('Plugin SDK entry not found, skipping plugin-sdk bundle');
+}
+
 // --- Copy native modules to dist-gateway/node_modules/ ---
 
 /**

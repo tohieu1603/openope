@@ -1,6 +1,8 @@
 import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AgentDefaultsConfig } from "../../config/types.js";
+import type { CronActivity, CronProgressStep } from "../service/state.js";
+import { onAgentEvent } from "../../infra/agent-events.js";
 import type { CronJob } from "../types.js";
 import {
   resolveAgentConfig,
@@ -107,6 +109,31 @@ export type RunCronAgentTurnResult = {
   };
 };
 
+/** Extract a short human-readable summary from tool name + args. */
+function extractToolSummary(name: string, args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const a = args as Record<string, unknown>;
+  // File operations: show path
+  if (typeof a.path === "string") return a.path.length > 80 ? "…" + a.path.slice(-77) : a.path;
+  if (typeof a.file_path === "string") {
+    const p = a.file_path as string;
+    return p.length > 80 ? "…" + p.slice(-77) : p;
+  }
+  // Shell/exec: show command snippet
+  if (typeof a.command === "string") {
+    const cmd = (a.command as string).trim();
+    return cmd.length > 80 ? cmd.slice(0, 77) + "…" : cmd;
+  }
+  // Browser: show URL
+  if (typeof a.url === "string") {
+    const u = a.url as string;
+    return u.length > 80 ? u.slice(0, 77) + "…" : u;
+  }
+  // Search: show query
+  if (typeof a.query === "string") return a.query as string;
+  return undefined;
+}
+
 export async function runCronIsolatedAgentTurn(params: {
   cfg: OpenClawConfig;
   deps: CliDeps;
@@ -115,6 +142,8 @@ export async function runCronIsolatedAgentTurn(params: {
   sessionKey: string;
   agentId?: string;
   lane?: string;
+  onProgress?: (step: CronProgressStep, detail?: string) => void;
+  onActivity?: (activity: CronActivity) => void;
 }): Promise<RunCronAgentTurnResult> {
   const defaultAgentId = resolveDefaultAgentId(params.cfg);
   const requestedAgentId =
@@ -341,17 +370,55 @@ export async function runCronIsolatedAgentTurn(params: {
   let runResult: Awaited<ReturnType<typeof runEmbeddedPiAgent>>;
   let fallbackProvider = provider;
   let fallbackModel = model;
+  let unsubActivity: (() => void) | undefined;
   try {
     const sessionFile = resolveSessionTranscriptPath(cronSession.sessionEntry.sessionId, agentId);
     const resolvedVerboseLevel =
       normalizeVerboseLevel(cronSession.sessionEntry.verboseLevel) ??
       normalizeVerboseLevel(agentCfg?.verboseDefault) ??
       "off";
-    registerAgentRunContext(cronSession.sessionEntry.sessionId, {
+    const runId = cronSession.sessionEntry.sessionId;
+    registerAgentRunContext(runId, {
       sessionKey: agentSessionKey,
       verboseLevel: resolvedVerboseLevel,
     });
+
+    // Subscribe to agent events to forward tool + assistant activity to the UI.
+    unsubActivity = params.onActivity
+      ? onAgentEvent((evt) => {
+          if (evt.runId !== runId) return;
+          if (evt.stream === "tool") {
+            const d = evt.data as { phase?: string; name?: string; toolCallId?: string; isError?: boolean; args?: unknown };
+            if (d.phase === "start" || d.phase === "result") {
+              params.onActivity!({
+                kind: "tool",
+                id: String(d.toolCallId ?? evt.seq),
+                name: String(d.name ?? "tool"),
+                phase: d.phase,
+                detail: extractToolSummary(String(d.name ?? ""), d.args),
+                isError: d.phase === "result" ? Boolean(d.isError) : undefined,
+              });
+            }
+          } else if (evt.stream === "assistant") {
+            const d = evt.data as { text?: string; delta?: string };
+            // Use full accumulated text so UI shows a growing sentence, not fragments.
+            const full = d.text ?? d.delta ?? "";
+            if (full.length > 0) {
+              // Show last 200 chars so user sees the latest portion being written.
+              const tail = full.length > 200 ? "…" + full.slice(-197) : full;
+              params.onActivity!({
+                kind: "thinking",
+                id: `think-${evt.seq}`,
+                detail: tail,
+              });
+            }
+          }
+        })
+      : undefined;
+
+    params.onProgress?.("initializing", "Session & model resolved");
     const messageChannel = resolvedDelivery.channel;
+    params.onProgress?.("prompting", `${provider}/${model}`);
     const fallbackResult = await runWithModelFallback({
       cfg: cfgWithAgentDefaults,
       provider,
@@ -401,9 +468,12 @@ export async function runCronIsolatedAgentTurn(params: {
     runResult = fallbackResult.result;
     fallbackProvider = fallbackResult.provider;
     fallbackModel = fallbackResult.model;
+    params.onProgress?.("executing", "Processing agent response");
   } catch (err) {
+    unsubActivity?.();
     return { status: "error", error: String(err) };
   }
+  unsubActivity?.();
 
   const payloads = runResult.payloads ?? [];
 
@@ -470,6 +540,7 @@ export async function runCronIsolatedAgentTurn(params: {
     );
 
   if (deliveryRequested && !skipHeartbeatDelivery && !skipMessagingToolDelivery) {
+    params.onProgress?.("delivering", resolvedDelivery.channel);
     if (resolvedDelivery.error) {
       if (!deliveryBestEffort) {
         return {
