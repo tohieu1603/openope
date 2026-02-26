@@ -60,6 +60,14 @@ export class OnboardManager {
       hooks: { enabled: true, token: hooksToken },
       auth: { profiles: {} },
       browser: { defaultProfile: "openclaw" },
+      plugins: {
+        entries: {
+          zalozcajs: { enabled: true },
+        },
+      },
+      channels: {
+        zalozcajs: { enabled: true, dmPolicy: "open" },
+      },
     };
 
     fs.writeFileSync(this.configFilePath, JSON.stringify(config, null, 2), "utf-8");
@@ -210,6 +218,27 @@ export class OnboardManager {
       // Disable Chrome sandbox: required when gateway spawns Chrome as a child of Electron
       if (config.browser.noSandbox !== true) {
         config.browser.noSandbox = true;
+        modified = true;
+      }
+
+      // Enable zalozcajs plugin (bundled Zalo personal account via zca-js)
+      config.plugins ??= {};
+      config.plugins.entries ??= {};
+      config.plugins.entries.zalozcajs ??= {};
+      if (config.plugins.entries.zalozcajs.enabled !== true) {
+        config.plugins.entries.zalozcajs.enabled = true;
+        modified = true;
+      }
+
+      // Enable zalozcajs channel with open DM policy
+      config.channels ??= {};
+      config.channels.zalozcajs ??= {};
+      if (config.channels.zalozcajs.enabled !== true) {
+        config.channels.zalozcajs.enabled = true;
+        modified = true;
+      }
+      if (!config.channels.zalozcajs.dmPolicy) {
+        config.channels.zalozcajs.dmPolicy = "open";
         modified = true;
       }
 
