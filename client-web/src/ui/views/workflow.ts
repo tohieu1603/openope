@@ -5,7 +5,7 @@ import { workflowStyles } from "./workflow-styles";
 import { renderStatusCard } from "./workflow-status-card";
 import { renderFormCard } from "./workflow-form-card";
 import { renderWorkflowCard } from "./workflow-card";
-import { renderRunItem } from "./workflow-run-history";
+import { renderRunItem, renderRunDetailModal } from "./workflow-run-history";
 import { renderProgressTimeline } from "./workflow-progress-timeline";
 import { t } from "../i18n";
 import { icons } from "../icons";
@@ -27,6 +27,10 @@ export interface WorkflowProps {
   runsWorkflowId?: string | null;
   runs?: WorkflowRun[];
   runsLoading?: boolean;
+  // Run detail modal
+  modalRun?: WorkflowRun | null;
+  onOpenRunDetail?: (run: WorkflowRun) => void;
+  onCloseRunDetail?: () => void;
   // Handlers
   onRefresh: () => void;
   onFormChange: (patch: Partial<WorkflowFormState>) => void;
@@ -37,6 +41,8 @@ export interface WorkflowProps {
   onToggleDetails?: (workflowId: string) => void;
   onLoadRuns?: (workflowId: string | null) => void;
   onSelectWorkflow?: (workflowId: string | null) => void;
+  showForm?: boolean;
+  onToggleForm?: () => void;
 }
 
 export function renderWorkflow(props: WorkflowProps) {
@@ -68,10 +74,11 @@ export function renderWorkflow(props: WorkflowProps) {
   return html`
     ${workflowStyles}
 
-    <!-- Top section: Status + Form (two columns) -->
-    <div class="wf-top-grid">
-      ${renderStatusCard(props)} ${renderFormCard(props)}
-    </div>
+    <!-- Metrics bar -->
+    ${renderStatusCard(props)}
+
+    <!-- Collapsible form -->
+    ${props.showForm ? html`<div class="wf-form-collapse">${renderFormCard(props)}</div>` : nothing}
 
     <!-- Workflow list section header -->
     <div class="wf-section-header">
@@ -120,6 +127,11 @@ export function renderWorkflow(props: WorkflowProps) {
             </div>
           `
     }
+
+    <!-- Run detail modal -->
+    ${props.modalRun && props.onCloseRunDetail
+      ? renderRunDetailModal(props.modalRun, props.onCloseRunDetail)
+      : nothing}
   `;
 }
 
@@ -163,7 +175,7 @@ function renderRightPanel(
           ? html`<div class="wf-right-runs-loading"><div class="wf-loading-spinner"></div></div>`
           : runs.length === 0
             ? html`<div class="wf-right-runs-empty">Chưa có lần chạy nào.</div>`
-            : html`<div class="wf-right-runs-list">${runs.map((r) => renderRunItem(r))}</div>`
+            : html`<div class="wf-right-runs-list">${runs.map((r) => renderRunItem(r, props.onOpenRunDetail))}</div>`
       }
     `;
   }

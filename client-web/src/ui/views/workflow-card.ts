@@ -2,7 +2,7 @@ import { html, nothing } from "lit";
 import type { Workflow } from "../workflow-types";
 import { formatSchedule } from "../workflow-types";
 import type { WorkflowProps } from "./workflow";
-import { formatLastRun, formatMs, formatRelativeTimeFromNow } from "./workflow-helpers";
+import { formatLastRun, formatMs, formatRelativeTimeFromNow, renderMd } from "./workflow-helpers";
 import { t } from "../i18n";
 import { icons } from "../icons";
 
@@ -89,13 +89,11 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
           </div>
           ${
             !isExpanded && workflow.prompt
-              ? html`<div class="wf-card-prompt">
-                "${
-                  workflow.prompt.length > 100
-                    ? workflow.prompt.slice(0, 100) + "..."
+              ? html`<div class="wf-card-prompt wf-md">${renderMd(
+                  workflow.prompt.length > 200
+                    ? workflow.prompt.slice(0, 200) + "..."
                     : workflow.prompt
-                }"
-              </div>`
+                )}</div>`
               : nothing
           }
         </div>
@@ -155,8 +153,8 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
                   ? html`
                     <div class="wf-detail-prompt">
                       <span class="wf-detail-label">Nội dung</span>
-                      <div class="wf-detail-prompt-text">
-                        ${workflow.prompt}
+                      <div class="wf-detail-prompt-text wf-md">
+                        ${renderMd(workflow.prompt)}
                       </div>
                     </div>
                   `
