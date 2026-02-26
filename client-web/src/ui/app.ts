@@ -115,6 +115,7 @@ import {
   getWorkflowStatus,
   seedDefaultWorkflows,
   type WorkflowStatus,
+  type WorkflowRun,
 } from "./workflow-api";
 import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 // Register custom components
@@ -231,6 +232,8 @@ export class OperisApp extends LitElement {
     error?: string;
   }> = [];
   @state() workflowRunsLoading = false;
+  @state() workflowShowForm = false;
+  @state() workflowModalRun: WorkflowRun | null = null;
 
   // Logs state
   @state() logsEntries: LogEntry[] = [];
@@ -1411,6 +1414,7 @@ export class OperisApp extends LitElement {
       await createWorkflow(this.workflowForm);
       showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
       this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+      this.workflowShowForm = false;
       // Silent background refresh - no loading indicator
       this.loadWorkflows(true);
     } catch (err) {
@@ -2979,6 +2983,11 @@ export class OperisApp extends LitElement {
           runs: this.workflowRuns,
           runsLoading: this.workflowRunsLoading,
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
+          showForm: this.workflowShowForm,
+          onToggleForm: () => { this.workflowShowForm = !this.workflowShowForm; },
+          modalRun: this.workflowModalRun,
+          onOpenRunDetail: (run: WorkflowRun) => { this.workflowModalRun = run; },
+          onCloseRunDetail: () => { this.workflowModalRun = null; },
         });
       case "docs":
         return renderDocs({

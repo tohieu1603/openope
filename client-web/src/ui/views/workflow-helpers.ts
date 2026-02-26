@@ -1,5 +1,13 @@
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { marked } from "marked";
 import { t } from "../i18n";
 import type { Workflow } from "../workflow-types";
+
+/** Render markdown string to lit unsafeHTML (GFM, no KaTeX) */
+export function renderMd(content: string) {
+  const htmlContent = marked.parse(content, { async: false, breaks: true, gfm: true }) as string;
+  return unsafeHTML(htmlContent);
+}
 
 // Format timestamp
 export function formatMs(ts: number): string {
