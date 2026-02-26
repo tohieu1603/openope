@@ -48,7 +48,6 @@ export async function createGatewayRuntimeState(params: {
   log: { info: (msg: string) => void; warn: (msg: string) => void };
   logHooks: ReturnType<typeof createSubsystemLogger>;
   logPlugins: ReturnType<typeof createSubsystemLogger>;
-  /** Called after credentials are synced/removed so the channel can be started/stopped */
   onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
 }): Promise<{
   canvasHost: CanvasHostHandler | null;

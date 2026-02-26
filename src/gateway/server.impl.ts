@@ -310,12 +310,10 @@ export async function startGatewayServer(
   if (cfgAtStart.gateway?.tls?.enabled && !gatewayTls.enabled) {
     throw new Error(gatewayTls.error ?? "gateway tls: failed to enable");
   }
-  // Late-binding holder — channelManager is created after runtime state
-  const channelOps: {
-    startChannel?: (channelId: string, accountId?: string) => Promise<void>;
-    stopChannel?: (channelId: string, accountId?: string) => void;
-  } = {};
-
+  // Late-binding: channelManager is created after runtime state, so we forward via a mutable ref.
+  let credentialSyncHandler:
+    | ((channel: string, accountId: string, action: "sync" | "remove") => void)
+    | null = null;
   const {
     canvasHost,
     httpServer,
@@ -356,15 +354,8 @@ export async function startGatewayServer(
     log,
     logHooks,
     logPlugins,
-    onCredentialSync: (channel, accountId, action) => {
-      if (action === "sync" && channelOps.startChannel) {
-        channelOps.startChannel(channel, accountId).catch((err: unknown) => {
-          log.warn(`auto-start channel ${channel}/${accountId} failed: ${err}`);
-        });
-      } else if (action === "remove" && channelOps.stopChannel) {
-        channelOps.stopChannel(channel, accountId);
-      }
-    },
+    onCredentialSync: (channel, accountId, action) =>
+      credentialSyncHandler?.(channel, accountId, action),
   });
   let bonjourStop: (() => Promise<void>) | null = null;
   const nodeRegistry = new NodeRegistry();
@@ -402,9 +393,13 @@ export async function startGatewayServer(
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
 
-  // Wire late-binding so sync-credentials hook can auto-start/stop channels
-  channelOps.startChannel = startChannel;
-  channelOps.stopChannel = stopChannel;
+  // Wire credential sync to channel start: when operis-api pushes credentials, restart the channel.
+  credentialSyncHandler = (channel, _accountId, action) => {
+    if (action === "sync") {
+      logChannels.info(`credential sync → starting channel ${channel}`);
+      void startChannel(channel as ChannelId);
+    }
+  };
 
   const machineDisplayName = await getMachineDisplayName();
   const discovery = await startGatewayDiscovery({

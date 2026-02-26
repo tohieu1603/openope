@@ -54,6 +54,7 @@ type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
 type HookDispatchers = {
   dispatchWakeHook: (value: { text: string; mode: "now" | "next-heartbeat" }) => void;
+  onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
   dispatchAgentHook: (value: {
     message: string;
     name: string;
@@ -142,7 +143,15 @@ export function createHooksRequestHandler(
     onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
   } & HookDispatchers,
 ): HooksRequestHandler {
-  const { getHooksConfig, bindHost, port, logHooks, dispatchAgentHook, dispatchWakeHook, onCredentialSync } = opts;
+  const {
+    getHooksConfig,
+    bindHost,
+    port,
+    logHooks,
+    dispatchAgentHook,
+    dispatchWakeHook,
+    onCredentialSync,
+  } = opts;
   return async (req, res) => {
     const hooksConfig = getHooksConfig();
     if (!hooksConfig) {
@@ -317,12 +326,14 @@ export function createHooksRequestHandler(
             unlinkSync(credPath);
           }
           logHooks.info(`sync-credentials: removed ${channel}/${accountId}`);
+          onCredentialSync?.(channel, accountId, "remove");
           sendJson(res, 200, { ok: true, action: "remove", channel, accountId });
         } else {
           mkdirSync(credDir, { recursive: true, mode: 0o700 });
           writeFileSync(credPath, JSON.stringify(credentials, null, 2), "utf-8");
           chmodSync(credPath, 0o600);
           logHooks.info(`sync-credentials: synced ${channel}/${accountId}`);
+          onCredentialSync?.(channel, accountId, "sync");
           sendJson(res, 200, { ok: true, action: "sync", channel, accountId });
         }
         // Auto-start/stop channel after credential change
