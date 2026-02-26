@@ -17,14 +17,11 @@ export type ZcaJsApiInstance = {
   credentialsPath: string;
 };
 
-type Credentials = {
-  imei: string;
-  cookie: unknown;
-  userAgent: string;
-};
+// All credential fields returned by zca-js GotLoginInfo (imei, cookie, userAgent, zpw_enk, etc.)
+type Credentials = Record<string, unknown>;
 
 function resolveCredentialsDir(): string {
-  return join(homedir(), ".openclaw", "credentials", "zalozcajs");
+  return join(homedir(), ".operis", "credentials", "zalozcajs");
 }
 
 /**
@@ -126,15 +123,11 @@ export async function loginWithQR(accountId: string): Promise<ZcaJsApiInstance> 
         });
     }
 
-    // GotLoginInfo event: capture credentials
+    // GotLoginInfo event: capture ALL credential fields (imei, cookie, userAgent, zpw_enk, etc.)
     if (ev.data && typeof ev.data === "object") {
       const data = ev.data;
       if (data.imei && data.cookie && data.userAgent) {
-        capturedCreds = {
-          imei: String(data.imei),
-          cookie: data.cookie,
-          userAgent: String(data.userAgent),
-        };
+        capturedCreds = { ...data };
       }
     }
   });
@@ -168,7 +161,14 @@ export async function getApiInstance(credentialsPath: string): Promise<ZcaJsApiI
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
   const existing = apiInstances.get(path);
-  if (existing) return existing;
+  if (existing) {
+    // Credentials file removed externally (e.g. operis-api disconnect) → tear down cached instance
+    if (!existsSync(path)) {
+      disconnectInstance(path);
+      return null;
+    }
+    return existing;
+  }
   return loginWithCredentials(path);
 }
 

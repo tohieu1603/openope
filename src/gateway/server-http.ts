@@ -138,9 +138,11 @@ export function createHooksRequestHandler(
     bindHost: string;
     port: number;
     logHooks: SubsystemLogger;
+    /** Called after credentials are synced/removed so the channel can be started/stopped */
+    onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
   } & HookDispatchers,
 ): HooksRequestHandler {
-  const { getHooksConfig, bindHost, port, logHooks, dispatchAgentHook, dispatchWakeHook } = opts;
+  const { getHooksConfig, bindHost, port, logHooks, dispatchAgentHook, dispatchWakeHook, onCredentialSync } = opts;
   return async (req, res) => {
     const hooksConfig = getHooksConfig();
     if (!hooksConfig) {
@@ -323,6 +325,8 @@ export function createHooksRequestHandler(
           logHooks.info(`sync-credentials: synced ${channel}/${accountId}`);
           sendJson(res, 200, { ok: true, action: "sync", channel, accountId });
         }
+        // Auto-start/stop channel after credential change
+        onCredentialSync?.(channel, accountId, action);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logHooks.warn(`sync-credentials: failed: ${msg}`);
