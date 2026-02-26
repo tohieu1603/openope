@@ -48,6 +48,7 @@ export async function createGatewayRuntimeState(params: {
   log: { info: (msg: string) => void; warn: (msg: string) => void };
   logHooks: ReturnType<typeof createSubsystemLogger>;
   logPlugins: ReturnType<typeof createSubsystemLogger>;
+  onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
 }): Promise<{
   canvasHost: CanvasHostHandler | null;
   httpServer: HttpServer;
@@ -116,6 +117,7 @@ export async function createGatewayRuntimeState(params: {
     bindHost: params.bindHost,
     port: params.port,
     logHooks: params.logHooks,
+    onCredentialSync: params.onCredentialSync,
   });
 
   const handlePluginRequest = createGatewayPluginRequestHandler({
