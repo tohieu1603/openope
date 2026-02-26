@@ -127,6 +127,7 @@ export async function executeJob(
       durationMs: job.state.lastDurationMs,
       nextRunAtMs: job.state.nextRunAtMs,
       usage,
+      model: job.payload.kind === "agentTurn" ? job.payload.model : undefined,
     });
 
     if (shouldDelete && state.store) {

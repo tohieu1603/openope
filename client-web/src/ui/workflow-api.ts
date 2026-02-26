@@ -1,6 +1,7 @@
 import type { Workflow, WorkflowFormState } from "./workflow-types";
 // Workflow API service - communicates with Gateway via WebSocket RPC
 import { waitForConnection } from "./gateway-client";
+import { WORKFLOW_PRESETS } from "./workflow-presets";
 import { formToCronPayload, parseCronSchedule } from "./workflow-types";
 
 type CronJob = {
@@ -129,6 +130,52 @@ export async function getWorkflowRuns(id: string): Promise<WorkflowRun[]> {
     return Array.isArray(result.entries) ? result.entries : [];
   } catch (error) {
     console.error("Failed to get workflow runs:", error);
+    return [];
+  }
+}
+
+const SEED_STORAGE_KEY = "operis_workflows_seeded";
+
+/**
+ * Auto-seed default workflow presets if no workflows exist.
+ * Only runs once per browser (tracked via localStorage).
+ * Returns the seeded workflows, or empty array if skipped.
+ */
+export async function seedDefaultWorkflows(): Promise<Workflow[]> {
+  // Skip if already seeded in this browser
+  if (localStorage.getItem(SEED_STORAGE_KEY)) return [];
+
+  try {
+    const existing = await listWorkflows();
+    if (existing.length > 0) {
+      // Workflows already exist — mark as seeded and skip
+      localStorage.setItem(SEED_STORAGE_KEY, Date.now().toString());
+      return [];
+    }
+
+    console.log(
+      `[workflow-seed] No workflows found, seeding ${WORKFLOW_PRESETS.length} presets...`,
+    );
+
+    for (const preset of WORKFLOW_PRESETS) {
+      const form: WorkflowFormState = {
+        ...preset,
+        atDatetime: preset.atDatetime ?? "",
+      };
+      try {
+        await createWorkflow(form);
+        console.log(`[workflow-seed] Created: ${preset.name}`);
+      } catch (err) {
+        console.warn(`[workflow-seed] Failed to create "${preset.name}":`, err);
+      }
+    }
+
+    localStorage.setItem(SEED_STORAGE_KEY, Date.now().toString());
+
+    // Return fresh list
+    return listWorkflows();
+  } catch (err) {
+    console.warn("[workflow-seed] Seed failed:", err);
     return [];
   }
 }

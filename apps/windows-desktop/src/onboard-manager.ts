@@ -2,23 +2,31 @@
  * First-run detection and config management for Agent Operis Desktop.
  * Creates minimal gateway config on first run; ensures Electron-specific
  * settings on every startup.
+ *
+ * Supports edition-based presets: when a preset config is provided,
+ * its settings are deep-merged into the minimal config on first run.
  */
 import path from "node:path";
 import fs from "node:fs";
 
 export class OnboardManager {
-  /**
-   * Path to Operis config file.
-   * Config lives at ~/.operis/operis.json on all platforms.
-   */
-  private get configFilePath(): string {
-    const home = process.env.USERPROFILE || process.env.HOME || "";
-    return path.join(home, ".operis", "operis.json");
-  }
+  private readonly stateDir: string;
 
   /**
-   * Check if Operis config already exists.
+   * @param stateDir Override the state directory (default: ~/.operis).
+   *   BytePlus edition uses ~/.operis-byteplus to avoid conflicts.
    */
+  constructor(stateDir?: string) {
+    const home = process.env.USERPROFILE || process.env.HOME || "";
+    this.stateDir = stateDir || path.join(home, ".operis");
+  }
+
+  /** Path to Operis config file inside the state directory */
+  private get configFilePath(): string {
+    return path.join(this.stateDir, "operis.json");
+  }
+
+  /** Check if Operis config already exists. */
   isConfigured(): boolean {
     return fs.existsSync(this.configFilePath);
   }
@@ -29,12 +37,10 @@ export class OnboardManager {
    * by the backend via POST /hooks/sync-auth-profiles through the tunnel.
    */
   createMinimalConfig(): void {
-    const configDir = path.dirname(this.configFilePath);
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
+    if (!fs.existsSync(this.stateDir)) {
+      fs.mkdirSync(this.stateDir, { recursive: true });
     }
 
-    // Generate random tokens for gateway auth and hooks
     const randomHex = (bytes: number) =>
       Array.from({ length: bytes }, () =>
         Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
@@ -60,8 +66,47 @@ export class OnboardManager {
   }
 
   /**
-   * Read the gateway auth token from config (for passing to UI via URL query).
+   * Apply a preset config (deep-merge) on top of existing config.
+   * Used by the BytePlus edition to inject provider/model defaults on first run.
    */
+  applyPreset(presetPath: string): void {
+    try {
+      const presetRaw = fs.readFileSync(presetPath, "utf-8");
+      const preset = JSON.parse(presetRaw);
+      const configRaw = fs.readFileSync(this.configFilePath, "utf-8");
+      const config = JSON.parse(configRaw);
+
+      const merged = deepMerge(config, preset);
+      fs.writeFileSync(this.configFilePath, JSON.stringify(merged, null, 2), "utf-8");
+    } catch (err) {
+      console.error("[onboard] Failed to apply preset:", err);
+    }
+  }
+
+  /**
+   * Ensure preset defaults exist in the user's config (idempotent).
+   * Called on every app startup — fills in missing keys from the preset
+   * without overwriting anything the user has already configured.
+   */
+  ensurePresetDefaults(presetPath: string): void {
+    try {
+      const presetRaw = fs.readFileSync(presetPath, "utf-8");
+      const preset = JSON.parse(presetRaw);
+      const configRaw = fs.readFileSync(this.configFilePath, "utf-8");
+      const config = JSON.parse(configRaw);
+
+      const merged = deepMergeDefaults(config, preset);
+      const mergedStr = JSON.stringify(merged, null, 2);
+      // Only write if something actually changed
+      if (mergedStr !== JSON.stringify(config, null, 2)) {
+        fs.writeFileSync(this.configFilePath, mergedStr, "utf-8");
+      }
+    } catch (err) {
+      console.error("[onboard] Failed to ensure preset defaults:", err);
+    }
+  }
+
+  /** Read the gateway auth token from config (for passing to UI via URL query). */
   readGatewayToken(): string | null {
     try {
       const raw = fs.readFileSync(this.configFilePath, "utf-8");
@@ -77,8 +122,7 @@ export class OnboardManager {
    * where the backend tries to sync before the agent has run once.
    */
   ensureAgentAuthStore(): void {
-    const home = process.env.USERPROFILE || process.env.HOME || "";
-    const agentDir = path.join(home, ".operis", "agents", "main", "agent");
+    const agentDir = path.join(this.stateDir, "agents", "main", "agent");
     const authPath = path.join(agentDir, "auth-profiles.json");
 
     if (fs.existsSync(authPath)) return;
@@ -105,9 +149,6 @@ export class OnboardManager {
   /**
    * Ensure gateway config has Electron-specific settings (idempotent).
    * Called after onboard and on every app startup.
-   * - Enables /v1/chat/completions HTTP endpoint
-   * - Allows file:// origin for WebSocket (Electron loads UI from file://)
-   * - Sets browser default profile to "openclaw" (independent browser, no Chrome extension needed)
    */
   ensureElectronConfig(): void {
     try {
@@ -126,7 +167,6 @@ export class OnboardManager {
       }
 
       // Disable control UI served by gateway (Electron loads UI from local file://)
-      // Prevents exposing the UI via Cloudflare tunnel — only API endpoints remain accessible
       config.gateway.controlUi ??= {};
       if (config.gateway.controlUi.enabled !== false) {
         config.gateway.controlUi.enabled = false;
@@ -155,15 +195,13 @@ export class OnboardManager {
       }
 
       // Use independent openclaw browser (agent launches its own Chrome via CDP)
-      // instead of default "chrome" extension relay which requires a Chrome extension
       config.browser ??= {};
       if (config.browser.defaultProfile !== "openclaw") {
         config.browser.defaultProfile = "openclaw";
         modified = true;
       }
 
-      // Remove stale executablePath if file no longer exists (e.g. app moved to different machine)
-      // Gateway auto-detects Edge/Chrome/Brave dynamically — no need to persist a machine-specific path
+      // Remove stale executablePath if file no longer exists
       if (config.browser.executablePath && !fs.existsSync(config.browser.executablePath)) {
         delete config.browser.executablePath;
         modified = true;
@@ -182,4 +220,47 @@ export class OnboardManager {
       // Config may not exist yet
     }
   }
+}
+
+/**
+ * Simple recursive deep merge: source values override target values.
+ * Arrays are replaced (not concatenated) to keep preset models list exact.
+ */
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = result[key];
+    if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
+      result[key] = deepMerge(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
+    } else {
+      result[key] = srcVal;
+    }
+  }
+  return result;
+}
+
+/**
+ * Deep merge where target (user config) wins — only fills missing keys from source (preset).
+ * Objects are recursed; existing leaf values are never overwritten.
+ */
+function deepMergeDefaults(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = result[key];
+    if (tgtVal === undefined) {
+      // Key missing in user config — add from preset
+      result[key] = srcVal;
+    } else if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
+      // Both are objects — recurse to fill nested missing keys
+      result[key] = deepMergeDefaults(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
+    }
+    // Otherwise: user already has a value — keep it
+  }
+  return result;
+}
+
+function isPlainObject(val: unknown): val is Record<string, unknown> {
+  return typeof val === "object" && val !== null && !Array.isArray(val);
 }

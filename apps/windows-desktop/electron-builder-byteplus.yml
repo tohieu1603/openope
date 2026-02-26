@@ -1,0 +1,94 @@
+appId: com.operis.agent.byteplus
+productName: Agent Operis BytePlus
+copyright: Copyright (c) 2026 Agent Operis
+
+directories:
+  output: release_byteplus
+  buildResources: resources
+
+asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/better-sqlite3/**/*"
+  - "**/*.node"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent Operis BytePlus
+  uninstallDisplayName: Agent Operis BytePlus
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+  include: installer-byteplus.nsh
+
+extraResources:
+  # Gateway: esbuild-bundled entry + native modules (node_modules/)
+  - from: "dist-gateway/"
+    to: "gateway/"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  # ESM package.json for gateway
+  - from: "resources/gateway-package.json"
+    to: "gateway/package.json"
+  # Client-web UI build (must be "control-ui" so gateway resolveControlUiRootSync finds it)
+  - from: "../../dist/control-ui"
+    to: "control-ui"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  # Cloudflare tunnel binary
+  - from: "resources/cloudflared.exe"
+    to: "cloudflared.exe"
+  # First-run setup page
+  - from: "resources/setup.html"
+    to: "setup.html"
+  # jiti babel.cjs for loading .ts extensions at runtime
+  - from: "resources/jiti-babel.cjs"
+    to: "dist/babel.cjs"
+  # Built-in plugins (pre-compiled, renamed to .ts for upgrade compat)
+  - from: "dist-extensions"
+    to: "extensions"
+    filter:
+      - "**/*"
+  # BytePlus config preset (triggers edition detection at runtime)
+  - from: "resources/config-preset-byteplus.json"
+    to: "config-preset-byteplus.json"
+  # Tray status icons
+  - from: "resources/tray-green.ico"
+    to: "tray-green.ico"
+  - from: "resources/tray-yellow.ico"
+    to: "tray-yellow.ico"
+  - from: "resources/tray-red.ico"
+    to: "tray-red.ico"
+  - from: "resources/tray-gray.ico"
+    to: "tray-gray.ico"
+  # App window icon
+  - from: "resources/icon.ico"
+    to: "icon.ico"
+
+extraFiles:
+  # Workspace templates at app root
+  - from: "../../docs/reference/templates"
+    to: "docs/reference/templates"
+    filter:
+      - "**/*"
+
+files:
+  - "dist-electron/**/*"
+  - "!node_modules/@lydell/node-pty/**"
+  - "!node_modules/playwright-core/**"
+  - "!**/*.map"

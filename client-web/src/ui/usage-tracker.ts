@@ -34,6 +34,7 @@ export function reportCronUsage(
     totalTokens?: number;
   },
   jobId?: string,
+  model?: string,
 ) {
   if (!usage.input && !usage.output) return;
   reportUsage({
@@ -42,6 +43,7 @@ export function reportCronUsage(
     output_tokens: usage.output,
     cache_read_tokens: usage.cacheRead,
     cache_write_tokens: usage.cacheWrite,
+    model,
     metadata: jobId ? { jobId } : undefined,
   });
 }

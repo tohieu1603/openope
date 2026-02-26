@@ -102,7 +102,8 @@ export function validateWorkflowForm(form: WorkflowFormState): string | null {
   if (!name) return "Tên workflow không được để trống";
   if (!prompt) return "Nội dung công việc không được để trống";
   if (form.scheduleKind === "at" && !form.atDatetime) return "Vui lòng chọn thời gian chạy";
-  if (form.scheduleKind === "cron" && !form.cronExpr.trim()) return "Biểu thức cron không được để trống";
+  if (form.scheduleKind === "cron" && !form.cronExpr.trim())
+    return "Biểu thức cron không được để trống";
   if (form.scheduleKind === "every" && form.everyAmount < 1) return "Chu kỳ phải lớn hơn 0";
   return null; // Valid
 }
@@ -153,6 +154,7 @@ export function formToCronPayload(form: WorkflowFormState) {
   type AgentTurnPayload = {
     kind: "agentTurn";
     message: string;
+    model?: string;
     deliver?: boolean;
     channel?: string;
     to?: string;
@@ -168,6 +170,7 @@ export function formToCronPayload(form: WorkflowFormState) {
     const agentPayload: AgentTurnPayload = {
       kind: "agentTurn",
       message: promptText,
+      model: "byteplus/kimi-k2.5",
     };
 
     // Delivery settings go INSIDE payload for agentTurn
@@ -263,7 +266,11 @@ export function parseCronSchedule(cronJob: {
   if (sched.kind === "every" && sched.everyMs) {
     const ms = sched.everyMs;
     if (ms >= 24 * 60 * 60 * 1000) {
-      return { kind: "every", everyAmount: Math.floor(ms / (24 * 60 * 60 * 1000)), everyUnit: "days" };
+      return {
+        kind: "every",
+        everyAmount: Math.floor(ms / (24 * 60 * 60 * 1000)),
+        everyUnit: "days",
+      };
     } else if (ms >= 60 * 60 * 1000) {
       return { kind: "every", everyAmount: Math.floor(ms / (60 * 60 * 1000)), everyUnit: "hours" };
     } else {
