@@ -97,6 +97,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const plugin = getChannelPlugin(channelId);
     const startAccount = plugin?.gateway?.startAccount;
     if (!startAccount) {
+      channelLogs[channelId]?.warn?.(`[${channelId}] startChannel: no startAccount handler`);
       return;
     }
     const cfg = loadConfig();
@@ -104,12 +105,14 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const store = getStore(channelId);
     const accountIds = accountId ? [accountId] : plugin.config.listAccountIds(cfg);
     if (accountIds.length === 0) {
+      channelLogs[channelId]?.warn?.(`[${channelId}] startChannel: no account IDs`);
       return;
     }
 
     await Promise.all(
       accountIds.map(async (id) => {
         if (store.tasks.has(id)) {
+          channelLogs[channelId]?.info?.(`[${id}] startChannel: already running, skipped`);
           return;
         }
         const account = plugin.config.resolveAccount(cfg, id);
@@ -117,6 +120,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
           ? plugin.config.isEnabled(account, cfg)
           : isAccountEnabled(account);
         if (!enabled) {
+          channelLogs[channelId]?.info?.(`[${id}] startChannel: disabled`);
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
@@ -130,6 +134,9 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
           configured = await plugin.config.isConfigured(account, cfg);
         }
         if (!configured) {
+          channelLogs[channelId]?.info?.(
+            `[${id}] startChannel: not configured (credentialsPath=${(account as Record<string, unknown>).credentialsPath ?? "?"})`,
+          );
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
