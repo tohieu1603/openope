@@ -312,6 +312,19 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
             }
           }
 
+          // Auto-inject cron model override for agentTurn jobs when not explicitly set
+          if (
+            job &&
+            typeof job === "object" &&
+            "payload" in job &&
+            (job as { payload?: { kind?: string; model?: string } }).payload?.kind === "agentTurn"
+          ) {
+            const payload = (job as { payload: { kind: string; model?: string } }).payload;
+            if (!payload.model) {
+              payload.model = "byteplus/kimi-k2.5";
+            }
+          }
+
           // [Fix Issue 3] Infer delivery target from session key for isolated jobs if not provided
           if (
             opts?.agentSessionKey &&

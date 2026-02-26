@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
-import { icons } from "../icons";
 import type { PricingTier, DepositOrder } from "../deposits-api";
+import { icons } from "../icons";
 
 export type PaymentMode = "tier" | "amount";
 
@@ -1490,8 +1490,9 @@ export function renderBilling(props: BillingProps) {
             <span class="b-card-title">Thêm Tokens</span>
           </div>
           <div class="b-card-body">
-            ${pendingOrder
-              ? html`
+            ${
+              pendingOrder
+                ? html`
                   <!-- Hiển thị thông tin thanh toán trực tiếp khi có đơn pending -->
                   <div class="payment-inline">
                     <div class="payment-inline-header">
@@ -1510,17 +1511,18 @@ export function renderBilling(props: BillingProps) {
                       </div>
                     </div>
 
-                    ${pendingOrder.paymentInfo
-                      ? html`
+                    ${
+                      pendingOrder.paymentInfo
+                        ? html`
                           <div class="payment-inline-content">
-                            ${pendingOrder.paymentInfo.qrCodeUrl
-                              ? html`
+                            ${
+                              pendingOrder.paymentInfo.qrCodeUrl
+                                ? html`
                                   <div class="payment-qr-section">
                                     <div class="payment-qr-wrapper">
                                       <img
                                         class="payment-qr-image"
-                                        src="${pendingOrder.paymentInfo
-                                          .qrCodeUrl}"
+                                        src="${pendingOrder.paymentInfo.qrCodeUrl}"
                                         alt="QR Code"
                                       />
                                     </div>
@@ -1529,7 +1531,8 @@ export function renderBilling(props: BillingProps) {
                                     </div>
                                   </div>
                                 `
-                              : nothing}
+                                : nothing
+                            }
 
                             <div class="payment-bank-details">
                               <div class="payment-bank-title">
@@ -1597,11 +1600,10 @@ export function renderBilling(props: BillingProps) {
                             >
                           </div>
                         `
-                      : html`
-                          <div class="history-empty">
-                            Không có thông tin thanh toán
-                          </div>
-                        `}
+                        : html`
+                            <div class="history-empty">Không có thông tin thanh toán</div>
+                          `
+                    }
 
                     <div class="payment-inline-actions">
                       <button
@@ -1609,9 +1611,11 @@ export function renderBilling(props: BillingProps) {
                         ?disabled=${checkingTransaction}
                         @click=${() => props.onCheckTransaction?.()}
                       >
-                        ${checkingTransaction
-                          ? "Đang kiểm tra..."
-                          : html`${icons.refresh} Kiểm tra giao dịch`}
+                        ${
+                          checkingTransaction
+                            ? "Đang kiểm tra..."
+                            : html`${icons.refresh} Kiểm tra giao dịch`
+                        }
                       </button>
                       <button
                         class="payment-cancel-btn"
@@ -1622,7 +1626,7 @@ export function renderBilling(props: BillingProps) {
                     </div>
                   </div>
                 `
-              : html`
+                : html`
                   <!-- Payment mode tabs -->
                   <div class="payment-mode-tabs">
                     <button
@@ -1639,40 +1643,41 @@ export function renderBilling(props: BillingProps) {
                     </button>
                   </div>
 
-                  ${paymentMode === "tier"
-                    ? html`
-                        ${pricingLoading
-                          ? html`
+                  ${
+                    paymentMode === "tier"
+                      ? html`
+                        ${
+                          pricingLoading
+                            ? html`
                               <div class="packages-grid">
                                 ${[1, 2, 3].map(
                                   () => html`
-                                    <div
-                                      class="loading-skeleton"
-                                      style="height: 100px;"
-                                    ></div>
+                                    <div class="loading-skeleton" style="height: 100px"></div>
                                   `,
                                 )}
                               </div>
                             `
-                          : pricingTiers.length === 0
-                            ? html`
-                                <div class="history-empty">Không có gói nào</div>
-                              `
-                            : html`
+                            : pricingTiers.length === 0
+                              ? html`
+                                  <div class="history-empty">Không có gói nào</div>
+                                `
+                              : html`
                                 <div class="packages-grid">
                                   ${pricingTiers.map(
                                     (tier, i) => html`
                                       <div
-                                        class="package-card ${selectedPackage === i
-                                          ? "selected"
-                                          : ""} ${tier.popular ? "popular" : ""}"
+                                        class="package-card ${
+                                          selectedPackage === i ? "selected" : ""
+                                        } ${tier.popular ? "popular" : ""}"
                                         @click=${() => props.onSelectPackage?.(i)}
                                       >
-                                        ${tier.popular
-                                          ? html`<div class="package-badge">
-                                              PHỔ BIẾN
-                                            </div>`
-                                          : nothing}
+                                        ${
+                                          tier.popular
+                                            ? html`
+                                                <div class="package-badge">PHỔ BIẾN</div>
+                                              `
+                                            : nothing
+                                        }
                                         <div class="package-name">${tier.name}</div>
                                         <div class="package-price">
                                           ${formatVND(tier.price)}
@@ -1680,18 +1685,22 @@ export function renderBilling(props: BillingProps) {
                                         <div class="package-tokens">
                                           ${formatNumber(tier.tokens)} tokens
                                         </div>
-                                        ${tier.bonus > 0
-                                          ? html`<div class="package-bonus">
+                                        ${
+                                          tier.bonus > 0
+                                            ? html`<div class="package-bonus">
                                               +${formatNumber(tier.bonus)} bonus
                                             </div>`
-                                          : nothing}
+                                            : nothing
+                                        }
                                       </div>
                                     `,
                                   )}
                                 </div>
-                              `}
-                        ${selectedTier
-                          ? html`
+                              `
+                        }
+                        ${
+                          selectedTier
+                            ? html`
                               <div class="order-summary">
                                 <div class="order-summary-title">
                                   Tóm tắt đơn hàng
@@ -1702,7 +1711,7 @@ export function renderBilling(props: BillingProps) {
                                   >
                                   <span class="order-summary-tokens"
                                     >${formatNumber(
-                                      selectedTier.tokens + selectedTier.bonus,
+                                      selectedTier.tokens + (selectedTier.bonus ?? 0),
                                     )}
                                     tokens</span
                                   >
@@ -1729,14 +1738,19 @@ export function renderBilling(props: BillingProps) {
                                 ?disabled=${buyLoading}
                                 @click=${() => props.onBuyTokens?.()}
                               >
-                                ${buyLoading
-                                  ? html`<span>Đang xử lý...</span>`
-                                  : html`${icons.qrCode} Mua Tokens`}
+                                ${
+                                  buyLoading
+                                    ? html`
+                                        <span>Đang xử lý...</span>
+                                      `
+                                    : html`${icons.qrCode} Mua Tokens`
+                                }
                               </button>
                             `
-                          : nothing}
+                            : nothing
+                        }
                       `
-                    : html`
+                      : html`
                         <!-- Custom amount input -->
                         <div class="form-label" style="margin-bottom: 8px;">Số tiền (VNĐ)</div>
                         <input
@@ -1750,12 +1764,17 @@ export function renderBilling(props: BillingProps) {
                             props.onCustomAmountChange?.(raw);
                           }}
                         />
-                        ${customAmount
-                          ? html`<div class="custom-amount-hint">${formatVND(Number(customAmount))}</div>`
-                          : html`<div class="custom-amount-hint">Nhập số tiền bạn muốn nạp</div>`}
+                        ${
+                          customAmount
+                            ? html`<div class="custom-amount-hint">${formatVND(Number(customAmount))}</div>`
+                            : html`
+                                <div class="custom-amount-hint">Nhập số tiền bạn muốn nạp</div>
+                              `
+                        }
 
-                        ${Number(customAmount) > 0
-                          ? html`
+                        ${
+                          Number(customAmount) > 0
+                            ? html`
                               <div class="order-summary">
                                 <div class="order-summary-title">Tóm tắt đơn hàng</div>
                                 <div class="order-summary-row">
@@ -1778,14 +1797,21 @@ export function renderBilling(props: BillingProps) {
                                 ?disabled=${buyLoading}
                                 @click=${() => props.onBuyTokens?.()}
                               >
-                                ${buyLoading
-                                  ? html`<span>Đang xử lý...</span>`
-                                  : html`${icons.qrCode} Mua Tokens`}
+                                ${
+                                  buyLoading
+                                    ? html`
+                                        <span>Đang xử lý...</span>
+                                      `
+                                    : html`${icons.qrCode} Mua Tokens`
+                                }
                               </button>
                             `
-                          : nothing}
-                      `}
-                `}
+                            : nothing
+                        }
+                      `
+                  }
+                `
+            }
           </div>
         </div>
       </div>
@@ -1821,21 +1847,18 @@ export function renderBilling(props: BillingProps) {
           </button>
         </div>
         <div class="b-card-body">
-          ${historyLoading
-            ? html`
-                <div
-                  class="loading-skeleton"
-                  style="height: 60px; margin-bottom: 12px;"
-                ></div>
-                <div
-                  class="loading-skeleton"
-                  style="height: 60px; margin-bottom: 12px;"
-                ></div>
-                <div class="loading-skeleton" style="height: 60px;"></div>
-              `
-            : depositHistory.length === 0
-              ? html` <div class="history-empty">Chưa có giao dịch nào</div> `
-              : html`
+          ${
+            historyLoading
+              ? html`
+                  <div class="loading-skeleton" style="height: 60px; margin-bottom: 12px"></div>
+                  <div class="loading-skeleton" style="height: 60px; margin-bottom: 12px"></div>
+                  <div class="loading-skeleton" style="height: 60px"></div>
+                `
+              : depositHistory.length === 0
+                ? html`
+                    <div class="history-empty">Chưa có giao dịch nào</div>
+                  `
+                : html`
                   <div class="history-list">
                     ${depositHistory.map(
                       (deposit) => html`
@@ -1852,9 +1875,7 @@ export function renderBilling(props: BillingProps) {
                             </div>
                             <div class="history-right">
                               <span
-                                class="history-status ${getStatusClass(
-                                  deposit.status,
-                                )}"
+                                class="history-status ${getStatusClass(deposit.status)}"
                                 >${getStatusLabel(deposit.status)}</span
                               >
                               <div class="history-tokens ${deposit.status === "pending" ? "tokens-pending" : deposit.status === "cancelled" || deposit.status === "expired" ? "tokens-error" : ""}">
@@ -1878,8 +1899,9 @@ export function renderBilling(props: BillingProps) {
                       `,
                     )}
                   </div>
-                  ${historyTotalPages > 1
-                    ? html`
+                  ${
+                    historyTotalPages > 1
+                      ? html`
                         <div class="pagination">
                           <div class="pagination-info">
                             Trang <span>${historyPage}</span> / <span>${historyTotalPages}</span>
@@ -1895,7 +1917,9 @@ export function renderBilling(props: BillingProps) {
                             </button>
                             ${getPageNumbers(historyPage, historyTotalPages).map((page) =>
                               page === "..."
-                                ? html`<span class="pagination-ellipsis">…</span>`
+                                ? html`
+                                    <span class="pagination-ellipsis">…</span>
+                                  `
                                 : html`
                                     <button
                                       class="pagination-btn ${page === historyPage ? "active" : ""}"
@@ -1916,8 +1940,10 @@ export function renderBilling(props: BillingProps) {
                           </div>
                         </div>
                       `
-                    : nothing}
-                `}
+                      : nothing
+                  }
+                `
+          }
         </div>
       </div>
 
@@ -1937,8 +1963,9 @@ export function renderBilling(props: BillingProps) {
           </button>
         </div>
         <div class="b-card-body">
-          ${apiKeys.length === 0
-            ? html`
+          ${
+            apiKeys.length === 0
+              ? html`
                 <div class="api-empty">
                   <div class="api-empty-icon">${icons.key}</div>
                   <div class="api-empty-title">Chưa có API key</div>
@@ -1947,7 +1974,7 @@ export function renderBilling(props: BillingProps) {
                   </div>
                 </div>
               `
-            : html`
+              : html`
                 <div class="api-key-list">
                   ${apiKeys.map(
                     (key) => html`
@@ -1980,7 +2007,8 @@ export function renderBilling(props: BillingProps) {
                     `,
                   )}
                 </div>
-              `}
+              `
+          }
         </div>
       </div>
     </div>
@@ -1996,8 +2024,7 @@ export function renderBilling(props: BillingProps) {
           type="text"
           placeholder="VD: Production, Development..."
           .value=${newKeyName}
-          @input=${(e: CustomEvent) =>
-            props.onNewKeyNameChange?.(e.detail.value)}
+          @input=${(e: CustomEvent) => props.onNewKeyNameChange?.(e.detail.value)}
         ></operis-input>
       </div>
       <div slot="footer">
@@ -2020,10 +2047,12 @@ export function renderBilling(props: BillingProps) {
     <operis-modal ?open=${showQrModal} @close=${() => props.onCloseQrModal?.()}>
       <div class="qr-payment">
         <div class="qr-payment-title">Chuyển khoản ngân hàng</div>
-        ${pendingOrder?.paymentInfo
-          ? html`
-              ${pendingOrder.paymentInfo.qrCodeUrl
-                ? html`
+        ${
+          pendingOrder?.paymentInfo
+            ? html`
+              ${
+                pendingOrder.paymentInfo.qrCodeUrl
+                  ? html`
                     <div class="qr-image-container">
                       <img
                         class="qr-image"
@@ -2032,7 +2061,8 @@ export function renderBilling(props: BillingProps) {
                       />
                     </div>
                   `
-                : nothing}
+                  : nothing
+              }
               <div class="qr-bank-info">
                 <div class="qr-bank-row">
                   <span class="qr-bank-label">Ngân hàng</span>
@@ -2070,17 +2100,16 @@ export function renderBilling(props: BillingProps) {
                 động trong 1-5 phút sau khi thanh toán thành công.
               </div>
             `
-          : html`
-              <div class="history-empty">Không có thông tin thanh toán</div>
-            `}
+            : html`
+                <div class="history-empty">Không có thông tin thanh toán</div>
+              `
+        }
         <button
           class="qr-check-btn"
           ?disabled=${checkingTransaction}
           @click=${() => props.onCheckTransaction?.()}
         >
-          ${checkingTransaction
-            ? "Đang kiểm tra..."
-            : "Kiểm tra kết quả giao dịch"}
+          ${checkingTransaction ? "Đang kiểm tra..." : "Kiểm tra kết quả giao dịch"}
         </button>
         <button class="qr-cancel-btn" @click=${() => props.onCancelPending?.()}>
           Hủy đơn nạp
@@ -2094,10 +2123,13 @@ export function renderBilling(props: BillingProps) {
       title="Chi tiết giao dịch"
       @close=${() => props.onCloseDetailModal?.()}
     >
-      ${detailLoading
-        ? html`<div class="detail-loading">Đang tải...</div>`
-        : selectedDeposit
+      ${
+        detailLoading
           ? html`
+              <div class="detail-loading">Đang tải...</div>
+            `
+          : selectedDeposit
+            ? html`
               <div class="detail-modal">
                 <div class="detail-header">
                   <span class="detail-order-code">${selectedDeposit.orderCode}</span>
@@ -2116,22 +2148,25 @@ export function renderBilling(props: BillingProps) {
                     <span class="detail-info-label">${icons.calendar} Ngày tạo</span>
                     <span class="detail-info-value">${formatDate(selectedDeposit.createdAt)}</span>
                   </div>
-                  ${selectedDeposit.completedAt
-                    ? html`
+                  ${
+                    selectedDeposit.completedAt
+                      ? html`
                         <div class="detail-info-row">
                           <span class="detail-info-label">${icons.check} Hoàn thành</span>
                           <span class="detail-info-value">${formatDate(selectedDeposit.completedAt)}</span>
                         </div>
                       `
-                    : nothing}
+                      : nothing
+                  }
                   <div class="detail-info-row">
                     <span class="detail-info-label">${icons.clock} Hết hạn</span>
                     <span class="detail-info-value">${formatDate(selectedDeposit.expiresAt)}</span>
                   </div>
                 </div>
 
-                ${selectedDeposit.paymentInfo?.bankName
-                  ? html`
+                ${
+                  selectedDeposit.paymentInfo?.bankName
+                    ? html`
                       <div class="detail-payment-section">
                         <div class="detail-payment-header">
                           ${icons.creditCard} Thông tin thanh toán
@@ -2156,14 +2191,18 @@ export function renderBilling(props: BillingProps) {
                         </div>
                       </div>
                     `
-                  : nothing}
+                    : nothing
+                }
 
                 <button class="detail-close-btn" @click=${() => props.onCloseDetailModal?.()}>
                   Đóng
                 </button>
               </div>
             `
-          : html`<div class="history-empty">Không có thông tin</div>`}
+            : html`
+                <div class="history-empty">Không có thông tin</div>
+              `
+      }
     </operis-modal>
   `;
 }

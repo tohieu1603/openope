@@ -24,7 +24,7 @@ type Credentials = {
 };
 
 function resolveCredentialsDir(): string {
-  return join(homedir(), ".openclaw", "credentials", "zalozcajs");
+  return join(homedir(), ".operis", "credentials", "zalozcajs");
 }
 
 /**
@@ -168,7 +168,14 @@ export async function getApiInstance(credentialsPath: string): Promise<ZcaJsApiI
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
   const existing = apiInstances.get(path);
-  if (existing) return existing;
+  if (existing) {
+    // Credentials file removed externally (e.g. operis-api disconnect) → tear down cached instance
+    if (!existsSync(path)) {
+      disconnectInstance(path);
+      return null;
+    }
+    return existing;
+  }
   return loginWithCredentials(path);
 }
 

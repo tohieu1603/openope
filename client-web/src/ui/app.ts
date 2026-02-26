@@ -113,6 +113,7 @@ import {
   deleteWorkflow,
   getWorkflowRuns,
   getWorkflowStatus,
+  seedDefaultWorkflows,
   type WorkflowStatus,
 } from "./workflow-api";
 import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
@@ -456,7 +457,7 @@ export class OperisApp extends LitElement {
 
       // Report cron usage to Operis BE (request_type: "cron") when gateway includes it
       if (evt.usage && (evt.usage.input || evt.usage.output)) {
-        reportCronUsage(evt.usage, evt.jobId);
+        reportCronUsage(evt.usage, evt.jobId, evt.model);
       }
     }
 
@@ -1278,7 +1279,13 @@ export class OperisApp extends LitElement {
     try {
       // Load both workflows and status in parallel
       const [workflows, status] = await Promise.all([listWorkflows(), getWorkflowStatus()]);
-      this.workflows = workflows;
+      // Auto-seed presets if no workflows exist (first run only)
+      if (workflows.length === 0) {
+        const seeded = await seedDefaultWorkflows();
+        this.workflows = seeded.length > 0 ? seeded : workflows;
+      } else {
+        this.workflows = workflows;
+      }
       this.workflowStatus = status;
     } catch (err) {
       if (!silent) {
