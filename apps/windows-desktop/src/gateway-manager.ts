@@ -35,9 +35,6 @@ export class GatewayManager {
   /** Gateway auth token — passed via env to ensure stability across config reloads */
   gatewayToken: string | null = null;
 
-  /** Custom state directory for edition-specific config (e.g. ~/.operis-byteplus) */
-  stateDir: string | null = null;
-
   get currentStatus(): GatewayStatus {
     return this.status;
   }
@@ -161,11 +158,6 @@ export class GatewayManager {
     if (this.gatewayToken) {
       env.OPENCLAW_GATEWAY_TOKEN = this.gatewayToken;
     }
-    // Pass custom state dir so gateway reads the correct config (e.g. BytePlus edition)
-    if (this.stateDir) {
-      env.OPENCLAW_STATE_DIR = this.stateDir;
-    }
-
     const child = spawn(process.execPath, [entryPath, "gateway"], {
       stdio: ["ignore", "pipe", "pipe"],
       env,

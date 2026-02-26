@@ -3,7 +3,7 @@
  *
  * Lifecycle:
  * 1. Single instance lock -> prevent duplicate app
- * 2. App ready -> detect edition -> auto-create config if needed -> start gateway -> load client-web
+ * 2. App ready -> auto-create config if needed -> apply preset -> start gateway -> load client-web
  * 3. User logs in via client-web -> auth profiles synced -> tunnel auto-provisioned
  * 4. System tray: status icon, context menu, minimize-to-tray
  * 5. On quit -> graceful shutdown (tunnel + gateway)
@@ -16,7 +16,7 @@ import { GatewayManager } from "./gateway-manager";
 import { TunnelManager } from "./tunnel-manager";
 import { TrayManager } from "./tray-manager";
 import { GATEWAY_PORT, IPC } from "./types";
-import { detectEdition, resolvePresetPath, resolveEditionStateDir, resolveEditionConfigPath } from "./edition";
+import { resolvePresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
 
 // Single instance lock - prevent multiple app instances
 const gotLock = app.requestSingleInstanceLock();
@@ -24,18 +24,8 @@ if (!gotLock) {
   app.quit();
 }
 
-/** Resolve path to bundled resources (works in both dev and packaged mode) */
-function resolveResourcePath(...segments: string[]): string {
-  const base = app.isPackaged
-    ? process.resourcesPath
-    : path.join(__dirname, "..", "..", "..");
-  return path.join(base, ...segments);
-}
-
-// Detect edition (default vs byteplus) based on bundled preset files
-const edition = detectEdition();
-const editionStateDir = resolveEditionStateDir(edition);
-const configFilePath = resolveEditionConfigPath(edition);
+const stateDir = resolveStateDir();
+const configFilePath = resolveConfigPath();
 
 /**
  * Sync gateway token from backend login to local config.
@@ -61,11 +51,6 @@ let mainWindow: BrowserWindow | null = null;
 const gateway = new GatewayManager();
 const tunnel = new TunnelManager();
 const tray = new TrayManager();
-
-// Wire edition state dir into gateway so it passes OPENCLAW_STATE_DIR to the child process
-if (edition !== "default") {
-  gateway.stateDir = editionStateDir;
-}
 
 /** Resolve app icon path (dev vs packaged) */
 function resolveIconPath(): string {
@@ -183,7 +168,7 @@ app.whenReady().then(async () => {
     },
   });
 
-  const onboardMgr = new OnboardManager(edition !== "default" ? editionStateDir : undefined);
+  const onboardMgr = new OnboardManager();
 
   // Provide gateway port to renderer
   ipcMain.handle(IPC.GET_GATEWAY_PORT, () => GATEWAY_PORT);
@@ -195,7 +180,7 @@ app.whenReady().then(async () => {
   // Auth-profiles sync: client-web pulls from operismb and sends via IPC
   ipcMain.handle("sync-auth-profiles", (_event, profiles: Record<string, unknown>) => {
     try {
-      const authPath = path.join(editionStateDir, "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(stateDir, "agents", "main", "agent", "auth-profiles.json");
       const dir = path.dirname(authPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -215,7 +200,7 @@ app.whenReady().then(async () => {
   // Clear auth-profiles on logout
   ipcMain.handle("clear-auth-profiles", () => {
     try {
-      const authPath = path.join(editionStateDir, "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(stateDir, "agents", "main", "agent", "auth-profiles.json");
       if (!fs.existsSync(authPath)) return true;
 
       let existing: Record<string, unknown> = {};
@@ -277,9 +262,9 @@ app.whenReady().then(async () => {
     }
   });
 
-  const presetPath = resolvePresetPath(edition);
+  const presetPath = resolvePresetPath();
 
-  // First run: auto-create config + apply edition preset + clean old logs
+  // First run: auto-create config + apply preset + clean old logs
   if (!onboardMgr.isConfigured()) {
     onboardMgr.createMinimalConfig();
     if (presetPath) {

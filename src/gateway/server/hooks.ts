@@ -18,6 +18,7 @@ export function createGatewayHooksRequestHandler(params: {
   bindHost: string;
   port: number;
   logHooks: SubsystemLogger;
+  onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
 }) {
   const { deps, getHooksConfig, bindHost, port, logHooks } = params;
 
@@ -111,5 +112,6 @@ export function createGatewayHooksRequestHandler(params: {
     logHooks,
     dispatchAgentHook,
     dispatchWakeHook,
+    onCredentialSync: params.onCredentialSync,
   });
 }

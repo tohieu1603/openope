@@ -1,9 +1,16 @@
 import type { OpenClawConfig, MarkdownTableMode, RuntimeEnv } from "openclaw/plugin-sdk";
+import { existsSync } from "node:fs";
 import { createReplyPrefixOptions, mergeAllowlist, summarizeMapping } from "openclaw/plugin-sdk";
 import type { ResolvedZalozcajsAccount, ZcaJsFriend, ZcaJsGroup, ZcaJsMessage } from "./types.js";
 import { getZalozcajsRuntime } from "./runtime.js";
 import { sendMessageZalozcajs } from "./send.js";
-import { getApiInstance, getAllFriends, getAllGroups, startListener } from "./zcajs-client.js";
+import {
+  getApiInstance,
+  getAllFriends,
+  getAllGroups,
+  startListener,
+  disconnectInstance,
+} from "./zcajs-client.js";
 
 export type ZalozcajsMonitorOptions = {
   account: ResolvedZalozcajsAccount;
@@ -487,8 +494,15 @@ export async function monitorZalozcajsProvider(
     runtime.log?.(`zalozcajs resolve failed; using config entries. ${String(err)}`);
   }
 
+  // Poll credentials file; auto-stop when removed (e.g. operis-api disconnect)
+  let credentialsWatcher: ReturnType<typeof setInterval> | null = null;
+
   const stop = () => {
     stopped = true;
+    if (credentialsWatcher) {
+      clearInterval(credentialsWatcher);
+      credentialsWatcher = null;
+    }
     if (restartTimer) {
       clearTimeout(restartTimer);
       restartTimer = null;
@@ -497,6 +511,7 @@ export async function monitorZalozcajsProvider(
       listenerHandle.stop();
       listenerHandle = null;
     }
+    disconnectInstance(account.credentialsPath);
     resolveRunning?.();
   };
 
@@ -549,10 +564,33 @@ export async function monitorZalozcajsProvider(
   // Create a promise that stays pending until abort or stop
   const runningPromise = new Promise<void>((resolve) => {
     resolveRunning = resolve;
-    abortSignal.addEventListener("abort", () => resolve(), { once: true });
+    abortSignal.addEventListener("abort", () => stop(), { once: true });
   });
 
   await startListenerLoop();
+
+  // Watch for credentials file changes (external disconnect/reconnect via operis-api)
+  let credentialsRemoved = false;
+  credentialsWatcher = setInterval(() => {
+    const exists = existsSync(account.credentialsPath);
+    if (!exists && !credentialsRemoved) {
+      // Credentials removed — tear down listener but stay alive to detect re-creation
+      credentialsRemoved = true;
+      runtime.log?.(`[${account.accountId}] credentials removed, stopping zalozcajs listener`);
+      if (listenerHandle) {
+        listenerHandle.stop();
+        listenerHandle = null;
+      }
+      disconnectInstance(account.credentialsPath);
+    } else if (exists && credentialsRemoved) {
+      // Credentials re-created (e.g. operis-api reconnect) — restart listener
+      credentialsRemoved = false;
+      runtime.log?.(`[${account.accountId}] credentials restored, restarting zalozcajs listener`);
+      if (!stopped && !abortSignal.aborted) {
+        void startListenerLoop();
+      }
+    }
+  }, 3_000);
 
   // Wait for the running promise to resolve (on abort/stop)
   await runningPromise;

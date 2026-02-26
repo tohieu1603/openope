@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { Zalo, ThreadType } from "zca-js";
 import type { ZcaJsFriend, ZcaJsGroup, ZcaJsMessage, ZcaJsUserInfo } from "./types.js";
 
@@ -17,11 +17,8 @@ export type ZcaJsApiInstance = {
   credentialsPath: string;
 };
 
-type Credentials = {
-  imei: string;
-  cookie: unknown;
-  userAgent: string;
-};
+// All credential fields returned by zca-js GotLoginInfo (imei, cookie, userAgent, zpw_enk, etc.)
+type Credentials = Record<string, unknown>;
 
 function resolveCredentialsDir(): string {
   return join(homedir(), ".operis", "credentials", "zalozcajs");
@@ -31,7 +28,7 @@ function resolveCredentialsDir(): string {
  * Resolve the full path for storing zca-js credentials
  */
 export function resolveCredentialsPath(accountId: string): string {
-  if (accountId && accountId.includes("/")) {
+  if (accountId && isAbsolute(accountId)) {
     return accountId;
   }
   return join(resolveCredentialsDir(), `${accountId || "default"}.json`);
@@ -56,10 +53,10 @@ async function loadCredentials(path: string): Promise<Credentials | null> {
 }
 
 export async function hasCredentials(credentialsPath: string): Promise<boolean> {
-  const path = credentialsPath.includes("/")
+  const resolved = isAbsolute(credentialsPath)
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
-  const creds = await loadCredentials(path);
+  const creds = await loadCredentials(resolved);
   return creds !== null;
 }
 
@@ -69,7 +66,7 @@ export async function hasCredentials(credentialsPath: string): Promise<boolean> 
 export async function loginWithCredentials(
   credentialsPath: string,
 ): Promise<ZcaJsApiInstance | null> {
-  const path = credentialsPath.includes("/")
+  const path = isAbsolute(credentialsPath)
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
 
@@ -126,15 +123,11 @@ export async function loginWithQR(accountId: string): Promise<ZcaJsApiInstance> 
         });
     }
 
-    // GotLoginInfo event: capture credentials
+    // GotLoginInfo event: capture ALL credential fields (imei, cookie, userAgent, zpw_enk, etc.)
     if (ev.data && typeof ev.data === "object") {
       const data = ev.data;
       if (data.imei && data.cookie && data.userAgent) {
-        capturedCreds = {
-          imei: String(data.imei),
-          cookie: data.cookie,
-          userAgent: String(data.userAgent),
-        };
+        capturedCreds = { ...data };
       }
     }
   });
@@ -149,7 +142,7 @@ export async function loginWithQR(accountId: string): Promise<ZcaJsApiInstance> 
 }
 
 export function disconnectInstance(credentialsPath: string): void {
-  const path = credentialsPath.includes("/")
+  const path = isAbsolute(credentialsPath)
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
   const instance = apiInstances.get(path);
@@ -164,7 +157,7 @@ export function disconnectInstance(credentialsPath: string): void {
 }
 
 export async function getApiInstance(credentialsPath: string): Promise<ZcaJsApiInstance | null> {
-  const path = credentialsPath.includes("/")
+  const path = isAbsolute(credentialsPath)
     ? credentialsPath
     : resolveCredentialsPath(credentialsPath);
   const existing = apiInstances.get(path);

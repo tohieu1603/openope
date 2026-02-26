@@ -54,6 +54,7 @@ type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
 type HookDispatchers = {
   dispatchWakeHook: (value: { text: string; mode: "now" | "next-heartbeat" }) => void;
+  onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
   dispatchAgentHook: (value: {
     message: string;
     name: string;
@@ -138,9 +139,19 @@ export function createHooksRequestHandler(
     bindHost: string;
     port: number;
     logHooks: SubsystemLogger;
+    /** Called after credentials are synced/removed so the channel can be started/stopped */
+    onCredentialSync?: (channel: string, accountId: string, action: "sync" | "remove") => void;
   } & HookDispatchers,
 ): HooksRequestHandler {
-  const { getHooksConfig, bindHost, port, logHooks, dispatchAgentHook, dispatchWakeHook } = opts;
+  const {
+    getHooksConfig,
+    bindHost,
+    port,
+    logHooks,
+    dispatchAgentHook,
+    dispatchWakeHook,
+    onCredentialSync,
+  } = opts;
   return async (req, res) => {
     const hooksConfig = getHooksConfig();
     if (!hooksConfig) {
@@ -163,6 +174,9 @@ export function createHooksRequestHandler(
 
     const token = extractHookToken(req);
     if (!token || token !== hooksConfig.token) {
+      logHooks.warn(
+        `hooks auth failed: received=${token ? token.slice(0, 8) + "..." : "(none)"} expected=${hooksConfig.token ? hooksConfig.token.slice(0, 8) + "..." : "(not set)"}`,
+      );
       res.statusCode = 401;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Unauthorized");
@@ -315,14 +329,18 @@ export function createHooksRequestHandler(
             unlinkSync(credPath);
           }
           logHooks.info(`sync-credentials: removed ${channel}/${accountId}`);
+          onCredentialSync?.(channel, accountId, "remove");
           sendJson(res, 200, { ok: true, action: "remove", channel, accountId });
         } else {
           mkdirSync(credDir, { recursive: true, mode: 0o700 });
           writeFileSync(credPath, JSON.stringify(credentials, null, 2), "utf-8");
           chmodSync(credPath, 0o600);
           logHooks.info(`sync-credentials: synced ${channel}/${accountId}`);
+          onCredentialSync?.(channel, accountId, "sync");
           sendJson(res, 200, { ok: true, action: "sync", channel, accountId });
         }
+        // Auto-start/stop channel after credential change
+        onCredentialSync?.(channel, accountId, action);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logHooks.warn(`sync-credentials: failed: ${msg}`);

@@ -310,6 +310,10 @@ export async function startGatewayServer(
   if (cfgAtStart.gateway?.tls?.enabled && !gatewayTls.enabled) {
     throw new Error(gatewayTls.error ?? "gateway tls: failed to enable");
   }
+  // Late-binding: channelManager is created after runtime state, so we forward via a mutable ref.
+  let credentialSyncHandler:
+    | ((channel: string, accountId: string, action: "sync" | "remove") => void)
+    | null = null;
   const {
     canvasHost,
     httpServer,
@@ -350,6 +354,8 @@ export async function startGatewayServer(
     log,
     logHooks,
     logPlugins,
+    onCredentialSync: (channel, accountId, action) =>
+      credentialSyncHandler?.(channel, accountId, action),
   });
   let bonjourStop: (() => Promise<void>) | null = null;
   const nodeRegistry = new NodeRegistry();
@@ -386,6 +392,19 @@ export async function startGatewayServer(
   });
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
+
+  // Wire credential sync to channel lifecycle: stop → start on sync, stop on remove.
+  credentialSyncHandler = (channel, accountId, action) => {
+    const chId = channel as ChannelId;
+    const acctId = accountId || undefined;
+    if (action === "sync") {
+      logChannels.info(`credential sync → restarting channel ${channel}/${accountId}`);
+      void stopChannel(chId, acctId).then(() => startChannel(chId, acctId));
+    } else if (action === "remove") {
+      logChannels.info(`credential sync → stopping channel ${channel}/${accountId}`);
+      void stopChannel(chId, acctId);
+    }
+  };
 
   const machineDisplayName = await getMachineDisplayName();
   const discovery = await startGatewayDiscovery({

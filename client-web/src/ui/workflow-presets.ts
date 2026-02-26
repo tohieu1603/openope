@@ -3,14 +3,7 @@ import type { WorkflowFormState } from "./workflow-types";
 
 export type WorkflowPreset = Omit<WorkflowFormState, "atDatetime"> & { atDatetime?: string };
 
-// Cross-platform preamble prepended to all workflow prompts
-const PLATFORM_PREAMBLE = `> **LƯU Ý HỆ THỐNG (áp dụng tự động):**
-> - Tự detect OS hiện tại (macOS / Linux / Windows)
-> - Đường dẫn Desktop: macOS/Linux → ~/Desktop, Windows → %USERPROFILE%\\Desktop
-> - Trình duyệt: dùng trình duyệt có sẵn trên hệ thống (Chrome, Chromium, Firefox, Edge...)
-> - Tạo thư mục output nếu chưa tồn tại
-> - Dùng path separator phù hợp OS (/ hoặc \\\\)
-`;
+// Cross-platform preamble removed — agent handles OS detection automatically
 
 // Common preset fields shared across all workflows
 const COMMON_FIELDS = {
@@ -42,8 +35,7 @@ export const WORKFLOW_PRESETS: WorkflowPreset[] = [
     name: "Test Excel",
     description: "Tạo và sửa file Excel — quản lý nhân sự",
     timeout: 600,
-    prompt: `${PLATFORM_PREAMBLE}
-# TEST EXCEL — Quản lý nhân sự
+    prompt: `# TEST EXCEL — Quản lý nhân sự
 
 Tạo file Excel "test_excel.xlsx" trong thư mục Desktop với 4 bước tuần tự:
 
@@ -83,8 +75,7 @@ Lưu file cuối cùng: Desktop/test_excel.xlsx`,
     name: "Test Word",
     description: "Tạo báo cáo nhân sự Word — format chuyên nghiệp",
     timeout: 600,
-    prompt: `${PLATFORM_PREAMBLE}
-# TEST WORD — Báo cáo nhân sự
+    prompt: `# TEST WORD — Báo cáo nhân sự
 
 Tạo file Word "test_word.docx" trong thư mục Desktop với 4 bước tuần tự:
 
@@ -128,8 +119,7 @@ Lưu file cuối cùng: Desktop/test_word.docx`,
     name: "Test Browser",
     description: "Mở trình duyệt, tìm kiếm Google, vào VnExpress",
     timeout: 600,
-    prompt: `${PLATFORM_PREAMBLE}
-# TEST BROWSER — Tìm kiếm & duyệt web
+    prompt: `# TEST BROWSER — Tìm kiếm & duyệt web
 
 Thực hiện 4 bước duyệt web (chờ 5 giây giữa mỗi bước):
 
@@ -171,8 +161,7 @@ Lưu file kết quả: Desktop/ket_qua_browser.txt`,
     name: "Báo Cáo Tổng Hợp",
     description: "Thu thập web → tổng hợp Excel → xuất Word",
     timeout: 900,
-    prompt: `${PLATFORM_PREAMBLE}
-# BÁO CÁO TỔNG HỢP — Browser + Excel + Word
+    prompt: `# BÁO CÁO TỔNG HỢP — Browser + Excel + Word
 
 Thu thập dữ liệu web, tổng hợp vào Excel, xuất báo cáo Word. 6 bước:
 
@@ -222,8 +211,7 @@ Kết quả: Desktop/bao_cao_tong_hop.xlsx, Desktop/bao_cao_tong_hop.docx, Deskt
     name: "Marketing Campaign — TEA HOUSE",
     description: "Kế hoạch grand opening thương hiệu trà sữa TEA HOUSE",
     timeout: 1800,
-    prompt: `${PLATFORM_PREAMBLE}
-# MARKETING CAMPAIGN — TEA HOUSE Grand Opening
+    prompt: `# MARKETING CAMPAIGN — TEA HOUSE Grand Opening
 Tông màu chủ đạo: Cam #E67E22 + Đen #2C3E50
 
 Lập kế hoạch marketing grand opening thương hiệu trà sữa TEA HOUSE. 6 bước:
@@ -301,8 +289,7 @@ Kết quả: Desktop/marketing_plan.xlsx, Desktop/ke_hoach_marketing.docx, Deskt
     name: "Stock Investment Analysis",
     description: "Phân tích TTCK VN, chọn 5 CP, lập danh mục 500 triệu VND",
     timeout: 1800,
-    prompt: `${PLATFORM_PREAMBLE}
-# STOCK INVESTMENT ANALYSIS — Phân tích TTCK Việt Nam
+    prompt: `# STOCK INVESTMENT ANALYSIS — Phân tích TTCK Việt Nam
 Tông màu: Xanh đậm #1A5276 + Vàng gold #F4D03F
 Thư mục kết quả: Desktop/Stock Analysis/ (tạo nếu chưa có)
 
