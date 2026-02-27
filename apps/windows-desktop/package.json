@@ -8,9 +8,11 @@
     "dev": "tsc -p tsconfig.json && electron dist-electron/main.js",
     "prebuild": "node scripts/download-cloudflared.mjs",
     "build:gateway": "cd ../.. && pnpm build",
+    "build:bundle-gateway": "node bundle-gateway.js",
     "build:electron": "tsc -p tsconfig.json",
+    "build:ui": "cd ../.. && pnpm ui:build",
     "build:installer": "electron-builder --win --config electron-builder.yml",
-    "build": "pnpm build:gateway && pnpm build:electron && pnpm build:installer"
+    "build": "pnpm build:gateway && pnpm build:ui && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer"
   },
   "devDependencies": {
     "electron": "^35.0.0",

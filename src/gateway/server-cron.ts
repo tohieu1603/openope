@@ -63,7 +63,7 @@ export function buildGatewayCronService(params: {
         deps: { ...params.deps, runtime: defaultRuntime },
       });
     },
-    runIsolatedAgentJob: async ({ job, message }) => {
+    runIsolatedAgentJob: async ({ job, message, onProgress, onActivity }) => {
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
       return await runCronIsolatedAgentTurn({
         cfg: runtimeConfig,
@@ -73,6 +73,8 @@ export function buildGatewayCronService(params: {
         agentId,
         sessionKey: `cron:${job.id}`,
         lane: "cron",
+        onProgress,
+        onActivity,
       });
     },
     log: getChildLogger({ module: "cron", storePath }),

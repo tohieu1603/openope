@@ -1,15 +1,38 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob, CronJobCreate, CronJobPatch, CronStoreFile } from "../types.js";
 
+export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
+
+/** Live activity item from agent execution (tool call or assistant text). */
+export type CronActivity = {
+  kind: "tool" | "thinking";
+  /** Unique id for tool calls (toolCallId); auto-generated for thinking. */
+  id: string;
+  /** Tool name (e.g. "read", "shell", "browser") — only for kind="tool". */
+  name?: string;
+  /** Phase of tool execution — only for kind="tool". */
+  phase?: "start" | "result";
+  /** Human-readable summary (e.g. file path, command snippet). */
+  detail?: string;
+  /** Whether the tool result was an error. */
+  isError?: boolean;
+};
+
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress" | "activity";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Progress milestone step (only for action: "progress"). */
+  step?: CronProgressStep;
+  /** Human-readable detail for the progress step. */
+  stepDetail?: string;
+  /** Live activity from agent run (only for action: "activity"). */
+  activity?: CronActivity;
   /** Token usage from isolated agent run (for analytics/billing). */
   usage?: {
     input: number;
@@ -37,7 +60,12 @@ export type CronServiceDeps = {
   enqueueSystemEvent: (text: string, opts?: { agentId?: string }) => void;
   requestHeartbeatNow: (opts?: { reason?: string }) => void;
   runHeartbeatOnce?: (opts?: { reason?: string }) => Promise<HeartbeatRunResult>;
-  runIsolatedAgentJob: (params: { job: CronJob; message: string }) => Promise<{
+  runIsolatedAgentJob: (params: {
+    job: CronJob;
+    message: string;
+    onProgress?: (step: CronProgressStep, detail?: string) => void;
+    onActivity?: (activity: CronActivity) => void;
+  }) => Promise<{
     status: "ok" | "error" | "skipped";
     summary?: string;
     /** Last non-empty agent text output (not truncated). */

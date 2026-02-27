@@ -3,7 +3,7 @@
  *
  * Lifecycle:
  * 1. Single instance lock -> prevent duplicate app
- * 2. App ready -> auto-create config if needed -> start gateway -> load client-web
+ * 2. App ready -> auto-create config if needed -> apply preset -> start gateway -> load client-web
  * 3. User logs in via client-web -> auth profiles synced -> tunnel auto-provisioned
  * 4. System tray: status icon, context menu, minimize-to-tray
  * 5. On quit -> graceful shutdown (tunnel + gateway)
@@ -16,6 +16,7 @@ import { GatewayManager } from "./gateway-manager";
 import { TunnelManager } from "./tunnel-manager";
 import { TrayManager } from "./tray-manager";
 import { GATEWAY_PORT, IPC } from "./types";
+import { resolvePresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
 
 // Single instance lock - prevent multiple app instances
 const gotLock = app.requestSingleInstanceLock();
@@ -23,20 +24,8 @@ if (!gotLock) {
   app.quit();
 }
 
-/** Resolve path to bundled resources (works in both dev and packaged mode) */
-function resolveResourcePath(...segments: string[]): string {
-  const base = app.isPackaged
-    ? process.resourcesPath
-    : path.join(__dirname, "..", "..", "..");
-  return path.join(base, ...segments);
-}
-
-/** Config file path: ~/.operis/operis.json */
-const configFilePath = path.join(
-  process.env.USERPROFILE || process.env.HOME || "",
-  ".operis",
-  "operis.json",
-);
+const stateDir = resolveStateDir();
+const configFilePath = resolveConfigPath();
 
 /**
  * Sync gateway token from backend login to local config.
@@ -76,7 +65,7 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: "Agent Operis",
+    title: app.getName(),
     icon: resolveIconPath(),
     show: false,
     webPreferences: {
@@ -99,26 +88,35 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  // Intercept /?token=xxx redirects that break under file:// protocol.
-  // The client-web app does window.location.href = "/?token=..." after login,
-  // which resolves to file:///C:/?token=... instead of the correct index.html.
-  // Also syncs the backend's gateway token to the local config so the gateway
-  // hot-reloads and accepts the correct token (only writes on first mismatch).
+  // Intercept ALL file:// navigations that break under file:// protocol.
+  // The client-web SPA uses history.pushState (e.g. /chat, /settings) which
+  // creates URLs like file:///C:/settings — these don't exist on disk.
+  // Also handles /?token=xxx redirects after login.
   win.webContents.on("will-navigate", (event, url) => {
     try {
       const parsed = new URL(url);
-      if (parsed.protocol === "file:" && parsed.searchParams.has("token")) {
+      if (parsed.protocol === "file:") {
         event.preventDefault();
         const token = parsed.searchParams.get("token");
         if (token) {
           if (syncGatewayTokenToConfig(token)) {
             gateway.gatewayToken = token;
           }
+          loadClientWeb(win, token);
+        } else {
+          loadClientWeb(win, gateway.gatewayToken);
         }
-        loadClientWeb(win, token);
       }
     } catch {
       // Ignore malformed URLs
+    }
+  });
+
+  // Catch failed loads when user presses Ctrl+R / View → Reload on a pushState
+  // route (e.g. file:///C:/settings → ERR_FILE_NOT_FOUND, errorCode -6).
+  win.webContents.on("did-fail-load", (_event, errorCode, _errorDesc, validatedURL) => {
+    if (errorCode === -6 && validatedURL.startsWith("file://")) {
+      loadClientWeb(win, gateway.gatewayToken);
     }
   });
 
@@ -182,8 +180,7 @@ app.whenReady().then(async () => {
   // Auth-profiles sync: client-web pulls from operismb and sends via IPC
   ipcMain.handle("sync-auth-profiles", (_event, profiles: Record<string, unknown>) => {
     try {
-      const home = process.env.USERPROFILE || process.env.HOME || "";
-      const authPath = path.join(home, ".operis", "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(stateDir, "agents", "main", "agent", "auth-profiles.json");
       const dir = path.dirname(authPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -203,8 +200,7 @@ app.whenReady().then(async () => {
   // Clear auth-profiles on logout
   ipcMain.handle("clear-auth-profiles", () => {
     try {
-      const home = process.env.USERPROFILE || process.env.HOME || "";
-      const authPath = path.join(home, ".operis", "agents", "main", "agent", "auth-profiles.json");
+      const authPath = path.join(stateDir, "agents", "main", "agent", "auth-profiles.json");
       if (!fs.existsSync(authPath)) return true;
 
       let existing: Record<string, unknown> = {};
@@ -266,12 +262,25 @@ app.whenReady().then(async () => {
     }
   });
 
-  // First run: auto-create config (no setup.html needed)
+  const presetPath = resolvePresetPath();
+
+  // First run: auto-create config + apply preset + clean old logs
   if (!onboardMgr.isConfigured()) {
     onboardMgr.createMinimalConfig();
+    if (presetPath) {
+      onboardMgr.applyPreset(presetPath);
+    }
+    // Clean old gateway logs on fresh install for easier debugging
+    for (const name of ["gateway.log", "gateway.log.old"]) {
+      const logFile = path.join(app.getPath("userData"), name);
+      try { fs.unlinkSync(logFile); } catch { /* not exist */ }
+    }
   }
 
-  // Always: ensure config + auth store, start gateway, load client-web
+  // Every startup: fill missing preset keys into existing config (non-destructive)
+  if (presetPath) {
+    onboardMgr.ensurePresetDefaults(presetPath);
+  }
   onboardMgr.ensureElectronConfig();
   onboardMgr.ensureAgentAuthStore();
   const gatewayToken = onboardMgr.readGatewayToken();
