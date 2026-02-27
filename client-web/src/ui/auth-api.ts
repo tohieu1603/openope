@@ -1,25 +1,9 @@
 /**
  * Auth API Service
- * Handles authentication with Operis API
+ * Handles authentication with Operis API via HttpOnly cookies
  */
 
-import apiClient, {
-  getAccessToken,
-  getRefreshToken,
-  setTokens,
-  clearTokens,
-  isAuthenticated,
-  getErrorMessage,
-} from "./api-client";
-
-// Re-export token functions for backward compatibility
-export {
-  getAccessToken,
-  getRefreshToken,
-  setTokens,
-  clearTokens,
-  isAuthenticated,
-};
+import apiClient, { getErrorMessage, refreshAccessToken } from "./api-client";
 
 // Types
 export interface AuthUser {
@@ -28,6 +12,7 @@ export interface AuthUser {
   name: string;
   role: string;
   token_balance: number;
+  free_token_balance: number;
   gateway_url?: string;
   gateway_token?: string;
 }
@@ -41,8 +26,6 @@ export interface TunnelInfo {
 
 export interface AuthResult {
   user: AuthUser;
-  accessToken: string;
-  refreshToken: string;
   expiresIn: string;
   tunnel?: TunnelInfo | null;
 }
@@ -69,7 +52,7 @@ export async function apiRequest<T>(
   }
 }
 
-// Gateway token storage
+// Gateway token storage (stays in localStorage — not auth tokens)
 const GATEWAY_TOKEN_KEY = "operis_gateway_token";
 const GATEWAY_URL_KEY = "operis_gateway_url";
 
@@ -97,61 +80,48 @@ export function clearGatewayConfig(): void {
 
 // Auth API functions
 export async function login(email: string, password: string): Promise<AuthResult> {
-  const response = await apiClient.post<AuthResult>("/auth/login", {
-    email,
-    password,
-  });
+  try {
+    const response = await apiClient.post<AuthResult>("/auth/login", {
+      email,
+      password,
+    });
 
-  // Store tokens and gateway config
-  setTokens(response.data.accessToken, response.data.refreshToken);
-  storeGatewayConfig(response.data.user);
-
-  return response.data;
-}
-
-export async function register(
-  email: string,
-  password: string,
-  name: string,
-): Promise<AuthResult> {
-  const response = await apiClient.post<AuthResult>("/auth/register", {
-    email,
-    password,
-    name,
-  });
-
-  // Store tokens and gateway config
-  setTokens(response.data.accessToken, response.data.refreshToken);
-  storeGatewayConfig(response.data.user);
-
-  return response.data;
-}
-
-export async function refreshTokens(): Promise<AuthResult> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    throw new Error("No refresh token available");
+    // Server sets HttpOnly cookies via Set-Cookie — no client-side token storage
+    storeGatewayConfig(response.data.user);
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
   }
+}
 
-  // Use axios directly to avoid interceptor loop
-  const { default: axios } = await import("axios");
-  const { API_CONFIG } = await import("../config");
+export async function register(email: string, password: string, name: string): Promise<AuthResult> {
+  try {
+    const response = await apiClient.post<AuthResult>("/auth/register", {
+      email,
+      password,
+      name,
+    });
 
-  const response = await axios.post<AuthResult>(`${API_CONFIG.baseUrl}/auth/refresh`, {
-    refreshToken,
-  });
+    // Server sets HttpOnly cookies via Set-Cookie — no client-side token storage
+    storeGatewayConfig(response.data.user);
+    return response.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
 
-  setTokens(response.data.accessToken, response.data.refreshToken);
-  return response.data;
+export async function refreshTokens(): Promise<void> {
+  // Server reads refresh cookie and sets new cookies via Set-Cookie
+  await refreshAccessToken();
 }
 
 export async function logout(): Promise<void> {
   try {
+    // Server clears HttpOnly cookies via Set-Cookie with Max-Age=0
     await apiClient.post("/auth/logout");
   } catch {
-    // Ignore logout errors - just clear tokens
+    // Ignore logout errors
   }
-  clearTokens();
   clearGatewayConfig();
 }
 
@@ -246,21 +216,21 @@ export async function provisionAndStartTunnel(tunnelToken?: string): Promise<voi
   }
 }
 
-// Try to restore session from stored tokens
+/**
+ * Restore session using HttpOnly cookies.
+ * Calls /auth/me — if cookie is valid, returns user.
+ * If 401, tries refresh then /auth/me again.
+ */
 export async function restoreSession(): Promise<AuthUser | null> {
-  const token = getAccessToken();
-  if (!token) return null;
-
   try {
     return await getMe();
   } catch {
-    // Token invalid, try to refresh
+    // Access cookie expired, try refresh
     try {
-      const result = await refreshTokens();
-      return result.user;
+      await refreshTokens();
+      return await getMe();
     } catch {
-      // Refresh failed, clear tokens
-      clearTokens();
+      // Refresh failed — no valid session
       return null;
     }
   }

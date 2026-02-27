@@ -265,7 +265,7 @@ PAYLOAD TYPES (payload.kind):
 
 DELIVERY (isolated-only, top-level):
   { "mode": "none|announce", "channel": "<optional>", "to": "<optional>", "bestEffort": <optional-bool> }
-  - Default for isolated agentTurn jobs (when delivery omitted): "announce"
+  - Default for isolated agentTurn jobs (when delivery omitted): "none" (silent; set mode:"announce" to send result to chat)
   - If the task needs to send to a specific chat/recipient, set delivery.channel/to here; do not call messaging tools inside the run.
 
 CRITICAL CONSTRAINTS:
@@ -325,7 +325,7 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
             }
           }
 
-          // [Fix Issue 3] Infer delivery target from session key for isolated jobs if not provided
+          // Default delivery to "none" for agentTurn jobs; only infer target when explicitly set to "announce"
           if (
             opts?.agentSessionKey &&
             job &&
@@ -334,21 +334,25 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
             (job as { payload?: { kind?: string } }).payload?.kind === "agentTurn"
           ) {
             const deliveryValue = (job as { delivery?: unknown }).delivery;
-            const delivery = isRecord(deliveryValue) ? deliveryValue : undefined;
-            const modeRaw = typeof delivery?.mode === "string" ? delivery.mode : "";
-            const mode = modeRaw.trim().toLowerCase();
-            const hasTarget =
-              (typeof delivery?.channel === "string" && delivery.channel.trim()) ||
-              (typeof delivery?.to === "string" && delivery.to.trim());
-            const shouldInfer =
-              (deliveryValue == null || delivery) && mode !== "none" && !hasTarget;
-            if (shouldInfer) {
-              const inferred = inferDeliveryFromSessionKey(opts.agentSessionKey);
-              if (inferred) {
-                (job as { delivery?: unknown }).delivery = {
-                  ...delivery,
-                  ...inferred,
-                } satisfies CronDelivery;
+            if (deliveryValue == null) {
+              // No delivery specified — default to none (silent)
+              (job as { delivery?: unknown }).delivery = { mode: "none" } satisfies CronDelivery;
+            } else {
+              // Delivery specified — infer target from session key if mode is announce but no target set
+              const delivery = isRecord(deliveryValue) ? deliveryValue : undefined;
+              const modeRaw = typeof delivery?.mode === "string" ? delivery.mode : "";
+              const mode = modeRaw.trim().toLowerCase();
+              const hasTarget =
+                (typeof delivery?.channel === "string" && delivery.channel.trim()) ||
+                (typeof delivery?.to === "string" && delivery.to.trim());
+              if (mode === "announce" && !hasTarget) {
+                const inferred = inferDeliveryFromSessionKey(opts.agentSessionKey);
+                if (inferred) {
+                  (job as { delivery?: unknown }).delivery = {
+                    ...delivery,
+                    ...inferred,
+                  } satisfies CronDelivery;
+                }
               }
             }
           }

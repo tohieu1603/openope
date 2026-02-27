@@ -1,6 +1,19 @@
 import type { IconName } from "./icons";
 
-export type Tab = "chat" | "billing" | "logs" | "workflow" | "docs" | "channels" | "settings" | "login" | "agents" | "skills" | "nodes" | "analytics";
+export type Tab =
+  | "chat"
+  | "billing"
+  | "logs"
+  | "workflow"
+  | "docs"
+  | "channels"
+  | "settings"
+  | "login"
+  | "agents"
+  | "skills"
+  | "nodes"
+  | "analytics"
+  | "report";
 
 export const NAV_ITEMS: Array<{
   tab: Tab;
@@ -49,6 +62,13 @@ export const NAV_ITEMS: Array<{
     label: "Docs",
     icon: "book",
     description: "Documentation and guides",
+    section: "main",
+  },
+  {
+    tab: "report",
+    label: "Report",
+    icon: "flag",
+    description: "Báo cáo lỗi và phản hồi",
     section: "main",
   },
   // Agent section
@@ -103,11 +123,10 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   skills: "/skills",
   nodes: "/nodes",
+  report: "/report",
 };
 
-const PATH_TO_TAB = new Map(
-  Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab])
-);
+const PATH_TO_TAB = new Map(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab]));
 
 export function normalizeBasePath(basePath: string): string {
   if (!basePath) return "";
