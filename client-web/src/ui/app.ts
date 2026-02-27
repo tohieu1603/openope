@@ -15,6 +15,7 @@ import type {
   CronJob,
   CronStatus,
 } from "./agent-types";
+import type { ReportFormState } from "./views/report";
 import type { Workflow, WorkflowFormState } from "./workflow-types";
 import {
   getDailyUsage,
@@ -77,6 +78,7 @@ import {
 import { t } from "./i18n";
 import { icons } from "./icons";
 import { NAV_ITEMS, pathForTab, tabFromPath, type Tab } from "./navigation";
+import { createReport, getMyReports, getAllReports, type FeedbackReport } from "./report-api";
 import { loadSettings, saveSettings, type ClientSettings } from "./storage";
 import {
   resolveTheme,
@@ -102,6 +104,7 @@ import { renderDocs } from "./views/docs";
 import { renderLogin } from "./views/login";
 import { renderLogs, type LogEntry } from "./views/logs";
 import { renderNodes } from "./views/nodes";
+import { renderReportView } from "./views/report";
 import { renderSettings } from "./views/settings";
 import { renderSkills } from "./views/skills";
 import { renderWorkflow } from "./views/workflow";
@@ -116,13 +119,13 @@ import {
   seedDefaultWorkflows,
   type WorkflowStatus,
 } from "./workflow-api";
-import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 // Register custom components
 import "./components/operis-input";
 import "./components/operis-select";
 import "./components/operis-modal";
 import "./components/operis-datetime-picker";
 import "./components/operis-confirm";
+import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
 import { getZaloStatus } from "./zalo-api";
 
 // Get page title
@@ -140,6 +143,7 @@ function titleForTab(tab: Tab): string {
     agents: "Agents",
     skills: "Skills",
     nodes: "Nodes",
+    report: "Báo Cáo",
   };
   return titles[tab] ?? tab;
 }
@@ -159,6 +163,7 @@ function subtitleForTab(tab: Tab): string {
     agents: "Quản lý agents và workspace",
     skills: "Quản lý skills và cài đặt",
     nodes: "Thiết bị và node kết nối",
+    report: "Báo cáo lỗi và phản hồi",
   };
   return subtitles[tab] ?? "";
 }
@@ -368,6 +373,13 @@ export class OperisApp extends LitElement {
   @state() analyticsPeriod: "1d" | "7d" | "30d" | "90d" | "custom" = "30d";
   @state() analyticsRangeStart = "";
   @state() analyticsRangeEnd = "";
+
+  // Report state
+  @state() reports: FeedbackReport[] = [];
+  @state() reportLoading = false;
+  @state() reportError: string | null = null;
+  @state() reportForm: ReportFormState = { type: "bug", subject: "", content: "" };
+  @state() reportSubmitting = false;
 
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
@@ -711,6 +723,8 @@ export class OperisApp extends LitElement {
       this.loadBillingData();
     } else if (tab === "logs") {
       this.loadLogs();
+    } else if (tab === "report") {
+      this.loadReports();
     }
   }
 
@@ -2579,6 +2593,39 @@ export class OperisApp extends LitElement {
     if (start && end) this.loadAnalytics();
   }
 
+  // ── Report handlers ──────────────────────────────────────────────────
+
+  private async loadReports() {
+    this.reportLoading = true;
+    this.reportError = null;
+    try {
+      const isAdmin = this.currentUser?.role === "admin";
+      const result = isAdmin ? await getAllReports() : await getMyReports();
+      this.reports = result.reports;
+    } catch (err) {
+      this.reportError = err instanceof Error ? err.message : "Không thể tải báo cáo";
+    } finally {
+      this.reportLoading = false;
+    }
+  }
+
+  private async handleReportSubmit() {
+    const { type, subject, content } = this.reportForm;
+    if (!subject.trim() || !content.trim()) return;
+
+    this.reportSubmitting = true;
+    try {
+      await createReport(type, subject, content);
+      showToast("Đã gửi báo cáo thành công", "success");
+      this.reportForm = { type: "bug", subject: "", content: "" };
+      await this.loadReports();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Gửi báo cáo thất bại", "error");
+    } finally {
+      this.reportSubmitting = false;
+    }
+  }
+
   private handleThemeClick(mode: ThemeMode, event: MouseEvent) {
     this.setTheme(mode, {
       pointerClientX: event.clientX,
@@ -2653,6 +2700,7 @@ export class OperisApp extends LitElement {
       agents: "Agents",
       skills: "Skills",
       nodes: "Nodes",
+      report: "Báo cáo",
     };
     return labels[tab] ?? tab;
   }
@@ -2787,6 +2835,7 @@ export class OperisApp extends LitElement {
       case "billing":
         return renderBilling({
           creditBalance: this.currentUser?.token_balance ?? 0,
+          freeTokenBalance: this.currentUser?.free_token_balance ?? 0,
           // Payment mode
           paymentMode: this.billingPaymentMode,
           onPaymentModeChange: (mode) => {
@@ -3090,6 +3139,17 @@ export class OperisApp extends LitElement {
           onExecApprovalsRemove: (path: Array<string | number>) =>
             this.handleExecApprovalsRemove(path),
           onSaveExecApprovals: () => this.handleSaveExecApprovals(),
+        });
+      case "report":
+        return renderReportView({
+          reports: this.reports,
+          loading: this.reportLoading,
+          error: this.reportError,
+          form: this.reportForm,
+          submitting: this.reportSubmitting,
+          onFormChange: (patch) => (this.reportForm = { ...this.reportForm, ...patch }),
+          onSubmit: () => this.handleReportSubmit(),
+          onRefresh: () => this.loadReports(),
         });
       default:
         return nothing;

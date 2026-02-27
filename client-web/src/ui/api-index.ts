@@ -114,3 +114,14 @@ export {
   type WorkflowRun,
   type WorkflowStatus,
 } from "./workflow-api";
+
+// Reports / Feedback
+export {
+  createReport,
+  getMyReports,
+  getAllReports,
+  type FeedbackReport,
+  type ReportType,
+  type ReportStatus,
+  type ReportsResponse,
+} from "./report-api";

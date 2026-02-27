@@ -7,6 +7,7 @@ export type PaymentMode = "tier" | "amount";
 export interface BillingProps {
   // Balance
   creditBalance?: number;
+  freeTokenBalance?: number;
   // Payment mode: select tier or enter custom amount
   paymentMode?: PaymentMode;
   onPaymentModeChange?: (mode: PaymentMode) => void;
@@ -143,6 +144,7 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 
 export function renderBilling(props: BillingProps) {
   const creditBalance = props.creditBalance ?? 0;
+  const freeTokenBalance = props.freeTokenBalance ?? 0;
   const paymentMode = props.paymentMode ?? "tier";
   const pricingTiers = props.pricingTiers ?? [];
   const pricingLoading = props.pricingLoading ?? false;
@@ -239,6 +241,40 @@ export function renderBilling(props: BillingProps) {
         margin-top: 16px;
         padding-top: 16px;
         border-top: 1px solid var(--border);
+      }
+      .balance-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 4px;
+      }
+      .balance-section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .balance-section:not(:first-child) {
+        padding-left: 16px;
+        border-left: 1px solid var(--border);
+      }
+      .balance-section .balance-value {
+        font-size: 28px;
+      }
+      .balance-free-note {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--accent);
+        margin-top: 4px;
+      }
+      .balance-free-note svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        flex-shrink: 0;
       }
       .balance-note svg {
         width: 16px;
@@ -1454,14 +1490,29 @@ export function renderBilling(props: BillingProps) {
             <span class="b-card-header-icon">${icons.creditCard}</span>
           </div>
           <div class="b-card-body">
-            <div class="balance-amount">
-              <span class="balance-value">${formatNumber(creditBalance)}</span>
-              <span class="balance-label">tokens</span>
+            <div class="balance-grid">
+              <div class="balance-section">
+                <div class="balance-amount">
+                  <span class="balance-value">${formatNumber(creditBalance)}</span>
+                  <span class="balance-label">tokens</span>
+                </div>
+                <div class="balance-label">Token trả phí</div>
+              </div>
+              <div class="balance-section">
+                <div class="balance-amount">
+                  <span class="balance-value">${formatNumber(freeTokenBalance)}</span>
+                  <span class="balance-label">tokens</span>
+                </div>
+                <div class="balance-label">Token miễn phí</div>
+                <div class="balance-free-note">
+                  ${icons.clock}
+                  <span>Reset sau mỗi 5 giờ</span>
+                </div>
+              </div>
             </div>
-            <div class="balance-label">Số dư hiện tại</div>
             <div class="balance-note">
               ${icons.clock}
-              <span>Tokens không hết hạn và có thể dùng bất cứ lúc nào</span>
+              <span>Token trả phí không hết hạn. Token miễn phí tự động reset sau mỗi 5 giờ.</span>
             </div>
             <div class="rate-limit">
               <div class="rate-limit-title">Giới Hạn Tốc Độ</div>

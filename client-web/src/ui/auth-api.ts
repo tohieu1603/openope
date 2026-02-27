@@ -12,6 +12,7 @@ export interface AuthUser {
   name: string;
   role: string;
   token_balance: number;
+  free_token_balance: number;
   gateway_url?: string;
   gateway_token?: string;
 }
