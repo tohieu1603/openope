@@ -10,9 +10,6 @@ export {
   refreshTokens,
   getMe,
   restoreSession,
-  getAccessToken,
-  getRefreshToken,
-  isAuthenticated,
   apiRequest,
   type AuthUser,
   type AuthResult,
@@ -37,12 +34,7 @@ export {
 } from "./chat-api";
 
 // User Profile
-export {
-  getUserProfile,
-  updateUserProfile,
-  changePassword,
-  type UserProfile,
-} from "./user-api";
+export { getUserProfile, updateUserProfile, changePassword, type UserProfile } from "./user-api";
 
 // Tokens
 export {

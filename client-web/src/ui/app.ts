@@ -386,6 +386,10 @@ export class OperisApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // Clean up legacy localStorage tokens (now using HttpOnly cookies)
+    localStorage.removeItem("operis_accessToken");
+    localStorage.removeItem("operis_refreshToken");
+
     // Initialize theme
     this.themeResolved = resolveTheme(this.theme);
     applyTheme(this.themeResolved);
@@ -471,7 +475,7 @@ export class OperisApp extends LitElement {
   }
 
   private handleToolEvent(evt: ToolEvent) {
-    console.log("[app] toolEvent", evt.data?.phase, evt.data?.name, "sending=" + this.chatSending);
+    console.log("[app] toolEvent", evt.data?.phase, evt.data?.name);
     if (!this.chatSending) return;
     const { phase, toolCallId, name, isError, args } = evt.data;
     if (!toolCallId) return;
@@ -947,6 +951,7 @@ export class OperisApp extends LitElement {
     }
     clearLocalAuthProfiles();
     this.resetToLoggedOut();
+    showToast("Đã đăng xuất", "success");
   }
 
   private handleImageSelect(files: FileList) {
@@ -1634,6 +1639,7 @@ export class OperisApp extends LitElement {
     this.billingApiKeys = [...this.billingApiKeys, newKey];
     this.billingNewKeyName = "";
     this.billingShowCreateKeyModal = false;
+    showToast("Đã tạo API key", "success");
   }
 
   private handleBillingCopyKey(key: string) {
@@ -1651,6 +1657,7 @@ export class OperisApp extends LitElement {
     });
     if (confirmed) {
       this.billingApiKeys = this.billingApiKeys.filter((k) => k.id !== id);
+      showToast("Đã xóa API key", "success");
     }
   }
 
@@ -1679,7 +1686,7 @@ export class OperisApp extends LitElement {
     this.channelsError = null;
     try {
       const result = await connectChannel(channelId);
-      console.log("[channels] connect result:", channelId, result);
+      console.log("[channels] connect result:", channelId);
 
       // Zalo: start QR polling flow
       if (channelId === "zalo" && result.sessionToken) {
@@ -1690,9 +1697,11 @@ export class OperisApp extends LitElement {
       }
 
       await this.loadChannels();
+      showToast("Đã kết nối kênh", "success");
     } catch (err) {
       console.error("[channels] connect error:", err);
       this.channelsError = err instanceof Error ? err.message : "Không thể kết nối kênh";
+      showToast(err instanceof Error ? err.message : "Không thể kết nối kênh", "error");
     } finally {
       if (this.zaloQrStatus === null) {
         this.channelsConnecting = null;
@@ -1748,8 +1757,10 @@ export class OperisApp extends LitElement {
     try {
       await disconnectChannel(channelId);
       await this.loadChannels();
+      showToast("Đã ngắt kết nối kênh", "success");
     } catch (err) {
       this.channelsError = err instanceof Error ? err.message : "Không thể ngắt kết nối kênh";
+      showToast(err instanceof Error ? err.message : "Không thể ngắt kết nối kênh", "error");
     } finally {
       this.channelsConnecting = null;
     }
@@ -1791,8 +1802,10 @@ export class OperisApp extends LitElement {
       this.settingsEditingName = false;
       this.settingsSuccess = "Đã cập nhật thành công";
       setTimeout(() => (this.settingsSuccess = null), 3000);
+      showToast("Đã cập nhật tên", "success");
     } catch (err) {
       this.settingsError = err instanceof Error ? err.message : "Không thể cập nhật hồ sơ";
+      showToast(err instanceof Error ? err.message : "Không thể cập nhật hồ sơ", "error");
     } finally {
       this.settingsSaving = false;
     }
@@ -1807,8 +1820,10 @@ export class OperisApp extends LitElement {
       this.settingsShowPasswordForm = false;
       this.settingsSuccess = "Đổi mật khẩu thành công";
       setTimeout(() => (this.settingsSuccess = null), 3000);
+      showToast("Đổi mật khẩu thành công", "success");
     } catch (err) {
       this.settingsError = err instanceof Error ? err.message : "Không thể đổi mật khẩu";
+      showToast(err instanceof Error ? err.message : "Không thể đổi mật khẩu", "error");
     } finally {
       this.settingsSaving = false;
     }

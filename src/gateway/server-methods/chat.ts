@@ -524,7 +524,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           runId: clientRunId,
           abortSignal: abortController.signal,
           images: parsedImages.length > 0 ? parsedImages : undefined,
-          disableBlockStreaming: true,
+          disableBlockStreaming: false,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
@@ -540,12 +540,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       })
         .then(() => {
+          const combinedReply = finalReplyParts
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .join("\n\n")
+            .trim();
           if (!agentRunStarted) {
-            const combinedReply = finalReplyParts
-              .map((part) => part.trim())
-              .filter(Boolean)
-              .join("\n\n")
-              .trim();
             let message: Record<string, unknown> | undefined;
             if (combinedReply) {
               const { storePath: latestStorePath, entry: latestEntry } = loadSessionEntry(
@@ -580,6 +580,20 @@ export const chatHandlers: GatewayRequestHandlers = {
               runId: clientRunId,
               sessionKey: p.sessionKey,
               message,
+            });
+          } else if (combinedReply) {
+            // Agent path: the agent event handler may have already broadcast a
+            // final with empty text (when no assistant stream events were emitted).
+            // Broadcast a supplementary final so the client gets the actual text.
+            broadcastChatFinal({
+              context,
+              runId: clientRunId,
+              sessionKey: p.sessionKey,
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: combinedReply }],
+                timestamp: Date.now(),
+              },
             });
           }
           context.dedupe.set(`chat:${clientRunId}`, {

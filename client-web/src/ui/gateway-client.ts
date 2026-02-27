@@ -501,7 +501,7 @@ export function getGatewayClient(): GatewayClient {
         // Handle agent tool events
         if (evt.event === "agent" && evt.payload) {
           const p = evt.payload as { stream?: string };
-          console.log("[gateway] agent event stream=" + p.stream, evt.payload);
+          console.log("[gateway] agent event stream=" + p.stream);
           if (p.stream === "tool") {
             notifyToolListeners(evt.payload as ToolEvent);
           }

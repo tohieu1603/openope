@@ -4,12 +4,7 @@
  */
 
 import { API_CONFIG } from "../config";
-import apiClient, {
-  getAccessToken,
-  getRefreshToken,
-  getErrorMessage,
-  refreshAccessToken,
-} from "./api-client";
+import apiClient, { getErrorMessage, refreshAccessToken } from "./api-client";
 
 // Detect if text looks like an HTML error page
 function isHtmlErrorPage(text: string): boolean {
@@ -120,14 +115,12 @@ export async function sendMessage(
 ): Promise<ChatResult> {
   const url = `${API_CONFIG.baseUrl}/chat/stream`;
 
-  // Helper to make the streaming request
-  async function doStreamRequest(token: string | null): Promise<Response> {
+  // Helper to make the streaming request — cookies sent automatically
+  async function doStreamRequest(): Promise<Response> {
     return fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         message,
         conversationId,
@@ -138,14 +131,15 @@ export async function sendMessage(
     });
   }
 
-  let response = await doStreamRequest(getAccessToken());
+  let response = await doStreamRequest();
 
-  // Handle 401 - use shared refresh lock (no race condition)
-  if (response.status === 401 && getRefreshToken()) {
+  // Handle 401 — refresh cookie and retry
+  if (response.status === 401) {
     try {
       await refreshAccessToken();
-      response = await doStreamRequest(getAccessToken());
+      response = await doStreamRequest();
     } catch {
+      // refreshAccessToken already dispatched session-expired event
       throw new Error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
     }
   }

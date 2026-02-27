@@ -1,74 +1,36 @@
 /**
- * Axios API Client with Auth Interceptors
- * Handles automatic token refresh on 401 errors
+ * Axios API Client with HttpOnly Cookie Auth
+ * Cookies are sent automatically via withCredentials — no localStorage token storage.
  */
 
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { API_CONFIG } from "../config";
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = "operis_accessToken";
-const REFRESH_TOKEN_KEY = "operis_refreshToken";
-
-// Token management functions
-export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
-}
-
-export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
-}
-
-export function setTokens(accessToken: string, refreshToken: string): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-}
-
-export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
-
-export function isAuthenticated(): boolean {
-  return !!getAccessToken();
-}
-
-// Create axios instance
+// Create axios instance — cookies sent automatically via withCredentials
 const apiClient = axios.create({
   baseURL: API_CONFIG.baseUrl,
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
 });
 
 // Track refresh state — single lock shared by axios interceptor + SSE fetch
-let refreshPromise: Promise<string> | null = null;
+let refreshPromise: Promise<void> | null = null;
 
 /**
  * Shared token refresh — ensures only ONE refresh call runs at a time.
- * All callers (axios interceptor, SSE fetch, etc.) share the same promise.
- * Returns the new access token on success.
+ * Server reads refresh cookie automatically and sets new cookies via Set-Cookie.
  */
-export async function refreshAccessToken(): Promise<string> {
-  // If already refreshing, piggyback on the existing promise
+export async function refreshAccessToken(): Promise<void> {
   if (refreshPromise) return refreshPromise;
 
-  const currentRefreshToken = getRefreshToken();
-  if (!currentRefreshToken) {
-    clearTokens();
-    window.dispatchEvent(new CustomEvent("auth:session-expired"));
-    throw new Error("No refresh token");
-  }
-
   refreshPromise = axios
-    .post(`${API_CONFIG.baseUrl}/auth/refresh`, { refreshToken: currentRefreshToken })
-    .then((response) => {
-      const { accessToken, refreshToken: newRefreshToken } = response.data;
-      setTokens(accessToken, newRefreshToken);
-      return accessToken as string;
+    .post(`${API_CONFIG.baseUrl}/auth/refresh`, {}, { withCredentials: true })
+    .then(() => {
+      // Server set new HttpOnly cookies — nothing to store client-side
     })
     .catch((error) => {
-      clearTokens();
       window.dispatchEvent(new CustomEvent("auth:session-expired"));
       throw error;
     })
@@ -79,32 +41,25 @@ export async function refreshAccessToken(): Promise<string> {
   return refreshPromise;
 }
 
-// Request interceptor - add auth token
-apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = getAccessToken();
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
-
-// Response interceptor - handle 401 via shared refreshAccessToken()
+// Response interceptor — handle 401 via shared refreshAccessToken()
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Skip refresh for auth endpoints (login/register already return proper errors)
+    const url = originalRequest?.url || "";
+    const isAuthEndpoint =
+      url.includes("/auth/login") ||
+      url.includes("/auth/register") ||
+      url.includes("/auth/refresh");
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       try {
-        const newAccessToken = await refreshAccessToken();
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-        }
+        await refreshAccessToken();
+        // Retry original request — cookie is now refreshed
         return apiClient(originalRequest);
       } catch {
         return Promise.reject(error);
