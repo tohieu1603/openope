@@ -951,7 +951,8 @@ export function renderSettings(props: SettingsProps) {
           </div>
         </div>
 
-        <!-- Danger Zone -->
+        <!-- Danger Zone — hidden, not yet in use -->
+        ${false ? html`
         <div class="st-card" style="border-color: rgba(239, 68, 68, 0.3);">
           <div class="st-card-header" style="background: rgba(239, 68, 68, 0.05);">
             <div class="st-card-title" style="color: #ef4444;">
@@ -981,6 +982,7 @@ export function renderSettings(props: SettingsProps) {
             </div>
           </div>
         </div>
+        ` : nothing}
       `
       }
 

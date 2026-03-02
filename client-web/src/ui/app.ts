@@ -256,6 +256,7 @@ export class OperisApp extends LitElement {
   @state() billingCustomAmount = "";
   @state() billingAutoTopUp = false;
   @state() billingPricingTiers: PricingTier[] = [];
+  @state() billingPricePerMillion = 200000;
   @state() billingPricingLoading = false;
   @state() billingPendingOrder: DepositOrder | null = null;
   @state() billingDepositHistory: DepositOrder[] = [];
@@ -1563,6 +1564,7 @@ export class OperisApp extends LitElement {
     try {
       const pricingResponse = await getPricing();
       this.billingPricingTiers = pricingResponse.tiers;
+      this.billingPricePerMillion = pricingResponse.pricePerMillion;
       // Select popular tier by default
       const popularIndex = pricingResponse.tiers.findIndex((t) => t.popular);
       if (popularIndex >= 0) this.billingSelectedPackage = popularIndex;
@@ -2952,6 +2954,7 @@ export class OperisApp extends LitElement {
             this.requestUpdate();
           },
           // Custom amount
+          pricePerMillion: this.billingPricePerMillion,
           customAmount: this.billingCustomAmount,
           onCustomAmountChange: (v) => {
             this.billingCustomAmount = v;

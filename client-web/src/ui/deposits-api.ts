@@ -22,9 +22,11 @@ export interface PricingTier {
   id: string;
   name: string;
   price: number; // VND
-  tokens: number;
+  tokens: number; // -1 = unlimited, 0 = contact
   bonus: number;
   popular?: boolean;
+  unlimited?: boolean; // tokens === -1
+  contactOnly?: boolean; // tokens === 0 && price === 0
 }
 
 // Backend response format
@@ -142,6 +144,8 @@ export async function getPricing(): Promise<PricingResponse> {
       tokens: pkg.tokens,
       bonus: pkg.bonus ?? 0,
       popular: pkg.popular,
+      unlimited: pkg.tokens === -1,
+      contactOnly: pkg.tokens === 0 && pkg.priceVnd === 0,
     })),
     currency: response.currency,
     pricePerMillion: response.pricePerMillion,

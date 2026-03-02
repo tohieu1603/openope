@@ -20,6 +20,8 @@ export interface BillingProps {
   // Custom amount
   customAmount?: string;
   onCustomAmountChange?: (value: string) => void;
+  // Pricing rate for token estimation
+  pricePerMillion?: number; // VND per 1M tokens (e.g. 200000)
   // Buy Tokens / QR Payment
   onBuyTokens?: () => void;
   buyLoading?: boolean;
@@ -150,7 +152,9 @@ export function renderBilling(props: BillingProps) {
   const pricingLoading = props.pricingLoading ?? false;
   const selectedPackage = props.selectedPackage ?? 0;
   const customAmount = props.customAmount ?? "";
+  const pricePerMillion = props.pricePerMillion ?? 200000;
   const autoTopUp = props.autoTopUp ?? false;
+  // API Keys — hidden, not yet in use
   const apiKeys = props.apiKeys ?? [];
   const showCreateKeyModal = props.showCreateKeyModal ?? false;
   const newKeyName = props.newKeyName ?? "";
@@ -1731,10 +1735,14 @@ export function renderBilling(props: BillingProps) {
                                         }
                                         <div class="package-name">${tier.name}</div>
                                         <div class="package-price">
-                                          ${formatVND(tier.price)}
+                                          ${tier.contactOnly ? "Liên hệ" : formatVND(tier.price)}
                                         </div>
                                         <div class="package-tokens">
-                                          ${formatNumber(tier.tokens)} tokens
+                                          ${tier.unlimited
+                                            ? "Không giới hạn"
+                                            : tier.contactOnly
+                                              ? "Tư vấn riêng"
+                                              : `${formatNumber(tier.tokens)} tokens`}
                                         </div>
                                         ${
                                           tier.bonus > 0
@@ -1750,7 +1758,16 @@ export function renderBilling(props: BillingProps) {
                               `
                         }
                         ${
-                          selectedTier
+                          selectedTier && selectedTier.contactOnly
+                            ? html`
+                              <div class="order-summary">
+                                <div class="order-summary-title">Gói Doanh Nghiệp</div>
+                                <div class="order-summary-row">
+                                  <span class="order-summary-label">Vui lòng liên hệ quản trị viên để được tư vấn gói phù hợp với nhu cầu doanh nghiệp của bạn.</span>
+                                </div>
+                              </div>
+                            `
+                          : selectedTier
                             ? html`
                               <div class="order-summary">
                                 <div class="order-summary-title">
@@ -1761,10 +1778,11 @@ export function renderBilling(props: BillingProps) {
                                     >Bạn sẽ nhận được</span
                                   >
                                   <span class="order-summary-tokens"
-                                    >${formatNumber(
-                                      selectedTier.tokens + (selectedTier.bonus ?? 0),
-                                    )}
-                                    tokens</span
+                                    >${selectedTier.unlimited
+                                      ? "Không giới hạn tokens"
+                                      : `${formatNumber(
+                                          selectedTier.tokens + (selectedTier.bonus ?? 0),
+                                        )} tokens`}</span
                                   >
                                 </div>
                                 <div class="order-summary-row">
@@ -1784,19 +1802,17 @@ export function renderBilling(props: BillingProps) {
                                   </div>
                                 </div>
                               </div>
-                              <button
-                                class="buy-btn"
-                                ?disabled=${buyLoading}
-                                @click=${() => props.onBuyTokens?.()}
-                              >
-                                ${
-                                  buyLoading
-                                    ? html`
-                                        <span>Đang xử lý...</span>
-                                      `
-                                    : html`${icons.qrCode} Mua Tokens`
-                                }
-                              </button>
+                              ${selectedTier.contactOnly
+                                ? nothing
+                                : html`<button
+                                    class="buy-btn"
+                                    ?disabled=${buyLoading}
+                                    @click=${() => props.onBuyTokens?.()}
+                                  >
+                                    ${buyLoading
+                                      ? html`<span>Đang xử lý...</span>`
+                                      : html`${icons.qrCode} Mua Tokens`}
+                                  </button>`}
                             `
                             : nothing
                         }
@@ -1815,50 +1831,61 @@ export function renderBilling(props: BillingProps) {
                             props.onCustomAmountChange?.(raw);
                           }}
                         />
-                        ${
-                          customAmount
-                            ? html`<div class="custom-amount-hint">${formatVND(Number(customAmount))}</div>`
-                            : html`
-                                <div class="custom-amount-hint">Nhập số tiền bạn muốn nạp</div>
-                              `
-                        }
+                        ${(() => {
+                          const vnd = Number(customAmount);
+                          const estimatedTokens = vnd > 0 ? Math.floor((vnd / pricePerMillion) * 1000000) : 0;
+                          const minVnd = Math.ceil((100000 / 1000000) * pricePerMillion);
+                          const belowMinimum = vnd > 0 && estimatedTokens < 100000;
+                          return html`
+                            ${customAmount
+                              ? html`<div class="custom-amount-hint">
+                                  ${formatVND(vnd)} → ${formatNumber(estimatedTokens)} tokens
+                                  ${belowMinimum
+                                    ? html`<span style="color: var(--danger, #dc2626); font-weight: 500;">
+                                        (tối thiểu 100.000 tokens = ${formatVND(minVnd)})
+                                      </span>`
+                                    : nothing}
+                                </div>`
+                              : html`<div class="custom-amount-hint">
+                                  Tối thiểu 100.000 tokens (${formatVND(Math.ceil((100000 / 1000000) * pricePerMillion))})
+                                </div>`}
 
-                        ${
-                          Number(customAmount) > 0
-                            ? html`
-                              <div class="order-summary">
-                                <div class="order-summary-title">Tóm tắt đơn hàng</div>
-                                <div class="order-summary-row">
-                                  <span class="order-summary-label">Số tiền</span>
-                                  <span class="order-summary-tokens">${formatVND(Number(customAmount))}</span>
-                                </div>
-                                <div class="order-summary-row">
-                                  <span class="order-summary-label">Phương thức thanh toán</span>
-                                  <div class="payment-method-badge">
-                                    ${icons.qrCode}
-                                    <div class="payment-method-info">
-                                      <span class="payment-method-name">QR Ngân hàng</span>
-                                      <span class="payment-method-desc">Quét mã QR để chuyển khoản</span>
+                            ${vnd > 0 && !belowMinimum
+                              ? html`
+                                <div class="order-summary">
+                                  <div class="order-summary-title">Tóm tắt đơn hàng</div>
+                                  <div class="order-summary-row">
+                                    <span class="order-summary-label">Số tiền</span>
+                                    <span class="order-summary-tokens">${formatVND(vnd)}</span>
+                                  </div>
+                                  <div class="order-summary-row">
+                                    <span class="order-summary-label">Bạn sẽ nhận được</span>
+                                    <span class="order-summary-tokens">${formatNumber(estimatedTokens)} tokens</span>
+                                  </div>
+                                  <div class="order-summary-row">
+                                    <span class="order-summary-label">Phương thức thanh toán</span>
+                                    <div class="payment-method-badge">
+                                      ${icons.qrCode}
+                                      <div class="payment-method-info">
+                                        <span class="payment-method-name">QR Ngân hàng</span>
+                                        <span class="payment-method-desc">Quét mã QR để chuyển khoản</span>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                              <button
-                                class="buy-btn"
-                                ?disabled=${buyLoading}
-                                @click=${() => props.onBuyTokens?.()}
-                              >
-                                ${
-                                  buyLoading
-                                    ? html`
-                                        <span>Đang xử lý...</span>
-                                      `
-                                    : html`${icons.qrCode} Mua Tokens`
-                                }
-                              </button>
-                            `
-                            : nothing
-                        }
+                                <button
+                                  class="buy-btn"
+                                  ?disabled=${buyLoading}
+                                  @click=${() => props.onBuyTokens?.()}
+                                >
+                                  ${buyLoading
+                                    ? html`<span>Đang xử lý...</span>`
+                                    : html`${icons.qrCode} Mua Tokens`}
+                                </button>
+                              `
+                              : nothing}
+                          `;
+                        })()}
                       `
                   }
                 `
@@ -1998,6 +2025,7 @@ export function renderBilling(props: BillingProps) {
         </div>
       </div>
 
+      ${false ? html`
       <div class="b-card">
         <div class="b-card-header">
           <div>
@@ -2062,8 +2090,10 @@ export function renderBilling(props: BillingProps) {
           }
         </div>
       </div>
+      ` : nothing}
     </div>
 
+    ${false ? html`
     <operis-modal
       ?open=${showCreateKeyModal}
       title="Tạo API Key"
@@ -2094,6 +2124,7 @@ export function renderBilling(props: BillingProps) {
         </button>
       </div>
     </operis-modal>
+    ` : nothing}
 
     <operis-modal ?open=${showQrModal} @close=${() => props.onCloseQrModal?.()}>
       <div class="qr-payment">
