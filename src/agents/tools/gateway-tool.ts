@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
-import { loadConfig, resolveConfigSnapshotHash } from "../../config/io.js";
+import { loadConfig } from "../../config/io.js";
 import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
 import {
   formatDoctorNonInteractiveHint,
@@ -13,19 +13,6 @@ import { type AnyAgentTool, jsonResult, readStringParam } from "./common.js";
 import { callGatewayTool } from "./gateway.js";
 
 const DEFAULT_UPDATE_TIMEOUT_MS = 20 * 60_000;
-
-function resolveBaseHashFromSnapshot(snapshot: unknown): string | undefined {
-  if (!snapshot || typeof snapshot !== "object") {
-    return undefined;
-  }
-  const hashValue = (snapshot as { hash?: unknown }).hash;
-  const rawValue = (snapshot as { raw?: unknown }).raw;
-  const hash = resolveConfigSnapshotHash({
-    hash: typeof hashValue === "string" ? hashValue : undefined,
-    raw: typeof rawValue === "string" ? rawValue : undefined,
-  });
-  return hash ?? undefined;
-}
 
 const GATEWAY_ACTIONS = [
   "restart",
@@ -164,65 +151,15 @@ export function createGatewayTool(opts?: {
           : undefined;
       const gatewayOpts = { gatewayUrl, gatewayToken, timeoutMs };
 
-      if (action === "config.get") {
-        const result = await callGatewayTool("config.get", gatewayOpts, {});
-        return jsonResult({ ok: true, result });
-      }
-      if (action === "config.schema") {
-        const result = await callGatewayTool("config.schema", gatewayOpts, {});
-        return jsonResult({ ok: true, result });
-      }
-      if (action === "config.apply") {
-        const raw = readStringParam(params, "raw", { required: true });
-        let baseHash = readStringParam(params, "baseHash");
-        if (!baseHash) {
-          const snapshot = await callGatewayTool("config.get", gatewayOpts, {});
-          baseHash = resolveBaseHashFromSnapshot(snapshot);
-        }
-        const sessionKey =
-          typeof params.sessionKey === "string" && params.sessionKey.trim()
-            ? params.sessionKey.trim()
-            : opts?.agentSessionKey?.trim() || undefined;
-        const note =
-          typeof params.note === "string" && params.note.trim() ? params.note.trim() : undefined;
-        const restartDelayMs =
-          typeof params.restartDelayMs === "number" && Number.isFinite(params.restartDelayMs)
-            ? Math.floor(params.restartDelayMs)
-            : undefined;
-        const result = await callGatewayTool("config.apply", gatewayOpts, {
-          raw,
-          baseHash,
-          sessionKey,
-          note,
-          restartDelayMs,
-        });
-        return jsonResult({ ok: true, result });
-      }
-      if (action === "config.patch") {
-        const raw = readStringParam(params, "raw", { required: true });
-        let baseHash = readStringParam(params, "baseHash");
-        if (!baseHash) {
-          const snapshot = await callGatewayTool("config.get", gatewayOpts, {});
-          baseHash = resolveBaseHashFromSnapshot(snapshot);
-        }
-        const sessionKey =
-          typeof params.sessionKey === "string" && params.sessionKey.trim()
-            ? params.sessionKey.trim()
-            : opts?.agentSessionKey?.trim() || undefined;
-        const note =
-          typeof params.note === "string" && params.note.trim() ? params.note.trim() : undefined;
-        const restartDelayMs =
-          typeof params.restartDelayMs === "number" && Number.isFinite(params.restartDelayMs)
-            ? Math.floor(params.restartDelayMs)
-            : undefined;
-        const result = await callGatewayTool("config.patch", gatewayOpts, {
-          raw,
-          baseHash,
-          sessionKey,
-          note,
-          restartDelayMs,
-        });
-        return jsonResult({ ok: true, result });
+      if (
+        action === "config.get" ||
+        action === "config.schema" ||
+        action === "config.apply" ||
+        action === "config.patch"
+      ) {
+        throw new Error(
+          `${action} is disabled — config directory is protected. Use the UI settings or CLI to view or modify config.`,
+        );
       }
       if (action === "update.run") {
         const sessionKey =
