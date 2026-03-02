@@ -296,6 +296,17 @@ export class OperisApp extends LitElement {
   @state() settingsEditingName = false;
   @state() settingsNameValue = "";
   @state() settingsShowPasswordForm = false;
+  // Data dir state
+  @state() settingsUserDataDir = "";
+  @state() settingsNewDataDir = "";
+  @state() settingsConfigHash = "";
+  @state() settingsDataDirSaving = false;
+  @state() settingsDataDirResult: {
+    migrated?: string[];
+    skipped?: string[];
+    warnings?: string[];
+    restartScheduled?: boolean;
+  } | null = null;
 
   // Agents state
   @state() agentsLoading = false;
@@ -810,6 +821,7 @@ export class OperisApp extends LitElement {
     } else if (tab === "settings") {
       this.loadUserProfile();
       this.loadChannels();
+      this.loadSettingsConfig();
     } else if (tab === "agents") {
       this.loadAgents();
     } else if (tab === "skills") {
@@ -1943,6 +1955,66 @@ export class OperisApp extends LitElement {
       showToast(err instanceof Error ? err.message : "Không thể đổi mật khẩu", "error");
     } finally {
       this.settingsSaving = false;
+    }
+  }
+
+  // Data dir handlers
+  private async loadSettingsConfig() {
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<{
+        config?: { userDataDir?: string };
+        hash?: string;
+      }>("config.get", {});
+      this.settingsUserDataDir = res?.config?.userDataDir || "";
+      this.settingsNewDataDir = res?.config?.userDataDir || "";
+      this.settingsConfigHash = res?.hash || "";
+    } catch (err) {
+      console.error("[settings] Failed to load config:", err);
+    }
+  }
+
+  private async handleChangeDataDir() {
+    const newPath = this.settingsNewDataDir.trim();
+    if (!newPath) return;
+    this.settingsDataDirSaving = true;
+    this.settingsDataDirResult = null;
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<{
+        userDataDir: string;
+        migrated: string[];
+        skipped: string[];
+        warnings: string[];
+        restartScheduled: boolean;
+        restartDelayMs: number;
+      }>("config.userDataDir.set", {
+        path: newPath,
+        baseHash: this.settingsConfigHash,
+      });
+      this.settingsUserDataDir = res.userDataDir;
+      this.settingsDataDirResult = {
+        migrated: res.migrated,
+        skipped: res.skipped,
+        warnings: res.warnings,
+        restartScheduled: res.restartScheduled,
+      };
+      if (res.restartScheduled) {
+        showToast(`Đã cập nhật. Gateway khởi động lại trong ${res.restartDelayMs / 1000}s`, "success");
+      } else {
+        showToast("Đã cập nhật thư mục lưu trữ", "success");
+      }
+      await this.loadSettingsConfig();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Không thể cập nhật";
+      if (msg.includes("config changed since last load")) {
+        await this.loadSettingsConfig();
+        showToast("Config đã thay đổi, vui lòng thử lại", "error");
+      } else {
+        showToast(msg, "error");
+      }
+    } finally {
+      this.settingsDataDirSaving = false;
     }
   }
 
@@ -3129,6 +3201,13 @@ export class OperisApp extends LitElement {
           onTogglePasswordForm: () =>
             (this.settingsShowPasswordForm = !this.settingsShowPasswordForm),
           onChangePassword: (current, newPwd) => this.handleChangePassword(current, newPwd),
+          // Data dir
+          userDataDir: this.settingsUserDataDir,
+          newDataDir: this.settingsNewDataDir,
+          dataDirSaving: this.settingsDataDirSaving,
+          dataDirResult: this.settingsDataDirResult,
+          onNewDataDirChange: (v: string) => { this.settingsNewDataDir = v; },
+          onSaveDataDir: () => this.handleChangeDataDir(),
           // Navigation
           onNavigate: (tab) => this.setTab(tab as Tab),
         });

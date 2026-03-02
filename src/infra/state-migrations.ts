@@ -903,3 +903,135 @@ export async function autoMigrateLegacyState(params: {
     warnings,
   };
 }
+
+// ─── User Data Directory Migration ───────────────────────────────────────────
+
+export type UserDataMigrationResult = {
+  migrated: string[];
+  skipped: string[];
+  warnings: string[];
+};
+
+const USER_DATA_DIRS = ["workspace", "skills", "cron"] as const;
+
+let userDataMigrationDone = false;
+
+/** Reset migration guard (for tests or re-triggering via API). */
+export function resetUserDataMigration(): void {
+  userDataMigrationDone = false;
+}
+
+/**
+ * Migrate user-facing dirs from STATE_DIR to userDataDir.
+ * Only moves dirs that exist at old location and don't conflict at new location.
+ * Creates junction/symlink at old location so existing references still work.
+ */
+export function migrateUserDataDirs(params: {
+  stateDir: string;
+  userDataDir: string;
+}): UserDataMigrationResult {
+  if (userDataMigrationDone) return { migrated: [], skipped: [], warnings: [] };
+  userDataMigrationDone = true;
+
+  const { stateDir, userDataDir } = params;
+  const result: UserDataMigrationResult = { migrated: [], skipped: [], warnings: [] };
+
+  if (path.resolve(stateDir) === path.resolve(userDataDir)) {
+    return result;
+  }
+
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  for (const dirName of USER_DATA_DIRS) {
+    const oldDir = path.join(stateDir, dirName);
+    const newDir = path.join(userDataDir, dirName);
+
+    if (!fs.existsSync(oldDir)) {
+      result.skipped.push(`${dirName}: source not found`);
+      continue;
+    }
+
+    // Skip if source is already a symlink pointing to target
+    try {
+      const stat = fs.lstatSync(oldDir);
+      if (stat.isSymbolicLink()) {
+        const target = path.resolve(path.dirname(oldDir), fs.readlinkSync(oldDir));
+        if (target === path.resolve(newDir)) {
+          result.skipped.push(`${dirName}: already migrated`);
+          continue;
+        }
+      }
+    } catch { /* proceed */ }
+
+    // Skip if target exists and has content
+    if (fs.existsSync(newDir)) {
+      try {
+        const entries = fs.readdirSync(newDir);
+        if (entries.length > 0) {
+          result.warnings.push(`${dirName}: target already has content at ${newDir}, skipping`);
+          result.skipped.push(dirName);
+          continue;
+        }
+        fs.rmdirSync(newDir);
+      } catch { /* proceed with rename, it will fail if dir not empty */ }
+    }
+
+    const moveResult = moveDirWithSymlink(oldDir, newDir);
+    if (moveResult.ok) {
+      result.migrated.push(dirName);
+    } else {
+      result.warnings.push(`${dirName}: ${moveResult.error}`);
+    }
+  }
+
+  return result;
+}
+
+/** Move dir from→to, create symlink/junction at from. Rollback on failure. */
+function moveDirWithSymlink(from: string, to: string): { ok: boolean; error?: string } {
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+
+  let moved = false;
+  try {
+    fs.renameSync(from, to);
+    moved = true;
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === "EXDEV") {
+      try {
+        fs.cpSync(from, to, { recursive: true, preserveTimestamps: true });
+        fs.rmSync(from, { recursive: true, force: true });
+        moved = true;
+      } catch (cpErr) {
+        // Clean up partial copy at target
+        try { fs.rmSync(to, { recursive: true, force: true }); } catch { /* best effort */ }
+        return { ok: false, error: `cross-FS copy failed: ${cpErr}` };
+      }
+    } else {
+      return { ok: false, error: `rename failed: ${err}` };
+    }
+  }
+
+  if (!moved) return { ok: false, error: "move failed" };
+
+  // Create symlink at old location (Windows: junction)
+  try {
+    fs.symlinkSync(to, from, process.platform === "win32" ? "junction" : "dir");
+  } catch (symlinkErr) {
+    // Rollback: move data back (handle cross-FS with cpSync fallback)
+    try {
+      fs.renameSync(to, from);
+      return { ok: false, error: `symlink failed, rolled back: ${symlinkErr}` };
+    } catch {
+      try {
+        fs.cpSync(to, from, { recursive: true, preserveTimestamps: true });
+        fs.rmSync(to, { recursive: true, force: true });
+        return { ok: false, error: `symlink failed, rolled back via copy: ${symlinkErr}` };
+      } catch (rollbackErr) {
+        return { ok: false, error: `symlink failed and rollback failed (data at ${to}): ${rollbackErr}` };
+      }
+    }
+  }
+
+  return { ok: true };
+}
