@@ -76,7 +76,7 @@ export class OnboardManager {
       },
       hooks: { enabled: true, token: hooksToken },
       auth: { profiles: {} },
-      browser: { defaultProfile: "openclaw" },
+      browser: { defaultProfile: "operis", noSandbox: true },
       plugins: {
         entries: {
           zalozcajs: { enabled: true },
@@ -231,10 +231,10 @@ export class OnboardManager {
         modified = true;
       }
 
-      // Use independent openclaw browser (agent launches its own Chrome via CDP)
+      // Use independent operis browser profile (agent launches its own Chrome via CDP)
       config.browser ??= {};
-      if (config.browser.defaultProfile !== "openclaw") {
-        config.browser.defaultProfile = "openclaw";
+      if (config.browser.defaultProfile !== "operis") {
+        config.browser.defaultProfile = "operis";
         modified = true;
       }
 
