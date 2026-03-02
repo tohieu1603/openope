@@ -22,6 +22,24 @@ export class OnboardManager {
     return path.join(this.stateDir, "operis.json");
   }
 
+  /** Path to installer seed file (written by NSIS during install) */
+  private get seedFilePath(): string {
+    return path.join(this.stateDir, "installer-seed.json");
+  }
+
+  /** Read and consume installer seed file (userDataDir from NSIS). */
+  private consumeInstallerSeed(): { userDataDir?: string } {
+    try {
+      if (!fs.existsSync(this.seedFilePath)) return {};
+      const raw = fs.readFileSync(this.seedFilePath, "utf-8");
+      const seed = JSON.parse(raw);
+      fs.unlinkSync(this.seedFilePath);
+      return { userDataDir: typeof seed.userDataDir === "string" ? seed.userDataDir : undefined };
+    } catch {
+      return {};
+    }
+  }
+
   /** Check if Operis config already exists. */
   isConfigured(): boolean {
     return fs.existsSync(this.configFilePath);
@@ -37,6 +55,9 @@ export class OnboardManager {
       fs.mkdirSync(this.stateDir, { recursive: true });
     }
 
+    // Read installer seed (userDataDir from NSIS)
+    const seed = this.consumeInstallerSeed();
+
     const randomHex = (bytes: number) =>
       Array.from({ length: bytes }, () =>
         Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
@@ -44,7 +65,7 @@ export class OnboardManager {
     const gatewayToken = randomHex(24);
     const hooksToken = randomHex(24);
 
-    const config = {
+    const config: Record<string, unknown> = {
       gateway: {
         mode: "local",
         auth: { mode: "token", token: gatewayToken },
@@ -65,6 +86,11 @@ export class OnboardManager {
         zalozcajs: { enabled: true, dmPolicy: "open" },
       },
     };
+
+    // Include userDataDir from installer seed
+    if (seed.userDataDir) {
+      config.userDataDir = seed.userDataDir;
+    }
 
     fs.writeFileSync(this.configFilePath, JSON.stringify(config, null, 2), "utf-8");
   }
@@ -159,6 +185,13 @@ export class OnboardManager {
       const raw = fs.readFileSync(this.configFilePath, "utf-8");
       const config = JSON.parse(raw);
       let modified = false;
+
+      // Consume installer seed if present (upgrade/reinstall)
+      const seed = this.consumeInstallerSeed();
+      if (seed.userDataDir && !config.userDataDir) {
+        config.userDataDir = seed.userDataDir;
+        modified = true;
+      }
 
       // Enable chatCompletions endpoint
       config.gateway ??= {};

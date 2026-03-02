@@ -36,6 +36,18 @@ export interface SettingsProps {
   showPasswordForm: boolean;
   onTogglePasswordForm: () => void;
   onChangePassword: (current: string, newPassword: string) => void;
+  // Data storage
+  userDataDir: string;
+  newDataDir: string;
+  dataDirSaving: boolean;
+  dataDirResult: {
+    migrated?: string[];
+    skipped?: string[];
+    warnings?: string[];
+    restartScheduled?: boolean;
+  } | null;
+  onNewDataDirChange: (value: string) => void;
+  onSaveDataDir: () => void;
   // Navigation
   onNavigate: (tab: Tab) => void;
 }
@@ -139,6 +151,12 @@ export function renderSettings(props: SettingsProps) {
     showPasswordForm,
     onTogglePasswordForm,
     onChangePassword,
+    userDataDir,
+    newDataDir,
+    dataDirSaving,
+    dataDirResult,
+    onNewDataDirChange,
+    onSaveDataDir,
     onNavigate,
   } = props;
 
@@ -695,6 +713,49 @@ export function renderSettings(props: SettingsProps) {
       }
       .st-toggle.active::after { transform: translateX(20px); }
 
+      /* Data dir */
+      .st-datadir-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 12px;
+      }
+      .st-datadir-input {
+        flex: 1;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-family: monospace;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
+        color: var(--text);
+        box-sizing: border-box;
+      }
+      .st-datadir-input:focus { outline: none; border-color: var(--accent); }
+      .st-current-path {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .st-current-path code {
+        background: var(--bg-muted);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .st-migration-result {
+        margin-top: 12px;
+        padding: 12px 16px;
+        border-radius: var(--radius-lg);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .st-result-success { color: #16a34a; margin: 4px 0; }
+      .st-result-info { color: var(--muted); margin: 4px 0; }
+      .st-result-warning { color: #d97706; margin: 4px 0; }
+      .st-result-restart { color: var(--accent); font-weight: 500; margin-top: 8px; }
+
       /* Responsive */
       @media (max-width: 640px) {
         .st-hero { flex-direction: column; text-align: center; padding: 24px; }
@@ -800,6 +861,55 @@ export function renderSettings(props: SettingsProps) {
                 </div>
               `
               }
+            </div>
+          </div>
+
+          <!-- Data Storage Card -->
+          <div class="st-card">
+            <div class="st-card-header">
+              <div class="st-card-title">${icons.folder} Thư mục lưu trữ</div>
+            </div>
+            <div class="st-card-body">
+              <div class="st-item-desc">Thư mục chứa workspace, skills và cron. Thay đổi sẽ di chuyển dữ liệu sang vị trí mới.</div>
+              <div class="st-datadir-row">
+                <input
+                  type="text"
+                  class="st-datadir-input"
+                  .value=${newDataDir}
+                  @input=${(e: InputEvent) => onNewDataDirChange((e.target as HTMLInputElement).value)}
+                  placeholder="C:\\Users\\...\\Desktop\\OperisAgent"
+                  ?disabled=${dataDirSaving}
+                />
+                <button
+                  class="st-btn primary"
+                  ?disabled=${!newDataDir.trim() || newDataDir.trim() === userDataDir || dataDirSaving}
+                  @click=${onSaveDataDir}
+                >
+                  ${dataDirSaving ? "Đang lưu..." : "Lưu"}
+                </button>
+              </div>
+              <div class="st-current-path">
+                ${userDataDir
+                  ? html`Hiện tại: <code>${userDataDir}</code>`
+                  : html`Mặc định: <code>~/.operis/</code>`
+                }
+              </div>
+              ${dataDirResult ? html`
+                <div class="st-migration-result">
+                  ${dataDirResult.migrated?.length
+                    ? html`<div class="st-result-success">Di chuyển thành công: ${dataDirResult.migrated.join(", ")}</div>`
+                    : nothing}
+                  ${dataDirResult.skipped?.length
+                    ? html`<div class="st-result-info">Bỏ qua: ${dataDirResult.skipped.join(", ")}</div>`
+                    : nothing}
+                  ${dataDirResult.warnings?.length
+                    ? dataDirResult.warnings.map(w => html`<div class="st-result-warning">${w}</div>`)
+                    : nothing}
+                  ${dataDirResult.restartScheduled
+                    ? html`<div class="st-result-restart">Gateway sẽ khởi động lại...</div>`
+                    : nothing}
+                </div>
+              ` : nothing}
             </div>
           </div>
 

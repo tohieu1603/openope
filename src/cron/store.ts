@@ -3,12 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CronStoreFile } from "./types.js";
+import { resolveUserDataDir } from "../config/paths.js";
 import { CONFIG_DIR } from "../utils.js";
 
 export const DEFAULT_CRON_DIR = path.join(CONFIG_DIR, "cron");
 export const DEFAULT_CRON_STORE_PATH = path.join(DEFAULT_CRON_DIR, "jobs.json");
 
-export function resolveCronStorePath(storePath?: string) {
+/** Config-aware cron dir resolution. Uses userDataDir/cron when configured. */
+export function resolveDefaultCronDir(cfg?: { userDataDir?: string }): string {
+  const userDataDir = resolveUserDataDir(cfg ?? {});
+  if (userDataDir) return path.join(userDataDir, "cron");
+  return DEFAULT_CRON_DIR;
+}
+
+export function resolveCronStorePath(storePath?: string, cfg?: { userDataDir?: string }) {
   if (storePath?.trim()) {
     const raw = storePath.trim();
     if (raw.startsWith("~")) {
@@ -16,7 +24,8 @@ export function resolveCronStorePath(storePath?: string) {
     }
     return path.resolve(raw);
   }
-  return DEFAULT_CRON_STORE_PATH;
+  const cronDir = resolveDefaultCronDir(cfg);
+  return path.join(cronDir, "jobs.json");
 }
 
 export async function loadCronStore(storePath: string): Promise<CronStoreFile> {

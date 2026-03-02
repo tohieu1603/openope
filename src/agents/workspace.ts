@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { resolveStateDir, resolveUserDataDir } from "../config/paths.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
@@ -9,12 +10,19 @@ import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
 export function resolveDefaultAgentWorkspaceDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = os.homedir,
+  cfg?: { userDataDir?: string },
 ): string {
+  const stateDir = resolveStateDir(env, homedir);
+  const userDataDir = resolveUserDataDir(cfg ?? {});
   const profile = env.OPENCLAW_PROFILE?.trim();
   if (profile && profile.toLowerCase() !== "default") {
-    return path.join(homedir(), ".operis", `workspace-${profile}`);
+    const base = userDataDir ?? stateDir;
+    return path.join(base, `workspace-${profile}`);
   }
-  return path.join(homedir(), ".operis", "workspace");
+  if (userDataDir) {
+    return path.join(userDataDir, "workspace");
+  }
+  return path.join(stateDir, "workspace");
 }
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();

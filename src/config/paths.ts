@@ -88,6 +88,18 @@ function resolveUserPath(input: string): string {
 export const STATE_DIR = resolveStateDir();
 
 /**
+ * Resolve user data dir from config. Returns null if not configured.
+ * User data dir contains: workspace/, skills/, cron/
+ */
+export function resolveUserDataDir(
+  cfg: { userDataDir?: string },
+): string | null {
+  const dir = cfg.userDataDir?.trim();
+  if (!dir) return null;
+  return resolveUserPath(dir);
+}
+
+/**
  * Config file path (JSON5).
  * Can be overridden via OPENCLAW_CONFIG_PATH.
  * Default: ~/.openclaw/openclaw.json (or $OPENCLAW_STATE_DIR/openclaw.json)

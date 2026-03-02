@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import type { CanvasHostServer } from "../canvas-host/server.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
@@ -19,7 +20,9 @@ import {
   writeConfigFile,
 } from "../config/config.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
+import { resolveUserDataDir, STATE_DIR } from "../config/paths.js";
 import { clearAgentRunContext, onAgentEvent } from "../infra/agent-events.js";
+import { migrateUserDataDirs } from "../infra/state-migrations.js";
 import {
   ensureControlUiAssetsBuilt,
   resolveControlUiRootOverrideSync,
@@ -218,6 +221,19 @@ export async function startGatewayServer(
   }
 
   const cfgAtStart = loadConfig();
+
+  // Migrate user data dirs (workspace, skills, cron) to userDataDir if configured
+  const userDataDir = resolveUserDataDir(cfgAtStart);
+  if (userDataDir) {
+    const migration = migrateUserDataDirs({ stateDir: STATE_DIR, userDataDir });
+    if (migration.migrated.length) log.info(`Migrated to ${userDataDir}: ${migration.migrated.join(", ")}`);
+    if (migration.warnings.length) log.warn(`Migration warnings: ${migration.warnings.join("; ")}`);
+    // Ensure target dirs exist (fresh install or nothing to migrate)
+    for (const sub of ["workspace", "skills", "cron"]) {
+      fs.mkdirSync(path.join(userDataDir, sub), { recursive: true });
+    }
+  }
+
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();
