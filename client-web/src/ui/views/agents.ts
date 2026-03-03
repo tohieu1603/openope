@@ -1051,11 +1051,11 @@ export function renderAgents(props: AgentsProps) {
       <section class="card agents-sidebar">
         <div class="row" style="justify-content: space-between;">
           <div>
-            <div class="card-title">Agents</div>
-            <div class="card-sub">${agents.length} configured.</div>
+            <div class="card-title">Nhân viên</div>
+            <div class="card-sub">${agents.length} nhân viên</div>
           </div>
           <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-            ${props.loading ? "Loading…" : "Refresh"}
+            ${props.loading ? "Đang tải…" : "Làm mới"}
           </button>
         </div>
         ${props.error
@@ -1063,7 +1063,7 @@ export function renderAgents(props: AgentsProps) {
           : nothing}
         <div class="agent-list" style="margin-top: 12px;">
           ${agents.length === 0
-            ? html`<div class="muted">No agents found.</div>`
+            ? html`<div class="muted">Chưa có nhân viên nào.</div>`
             : agents.map((agent) => {
                 const badge = agentBadgeText(agent.id, defaultId);
                 const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
@@ -1090,8 +1090,8 @@ export function renderAgents(props: AgentsProps) {
         ${!selectedAgent
           ? html`
               <div class="card">
-                <div class="card-title">Select an agent</div>
-                <div class="card-sub">Pick an agent to inspect its workspace and tools.</div>
+                <div class="card-title">Chọn nhân viên</div>
+                <div class="card-sub">Chọn nhân viên để xem định nghĩa và công cụ.</div>
               </div>
             `
           : html`
@@ -1172,7 +1172,7 @@ function renderAgentHeader(
 ) {
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
-  const subtitle = agent.identity?.theme?.trim() || "Agent workspace and routing.";
+  const subtitle = agent.identity?.theme?.trim() || "Nhân viên AI";
   const emoji = resolveAgentEmoji(agent, agentIdentity);
   return html`
     <section class="card agent-header">
@@ -1193,12 +1193,8 @@ function renderAgentHeader(
 
 function renderAgentTabs(active: AgentsPanel, onSelect: (panel: AgentsPanel) => void) {
   const tabs: Array<{ id: AgentsPanel; label: string }> = [
-    { id: "overview", label: "Overview" },
-    { id: "files", label: "Files" },
-    { id: "tools", label: "Tools" },
-    { id: "skills", label: "Skills" },
-    { id: "channels", label: "Channels" },
-    { id: "cron", label: "Workflow" },
+    { id: "files", label: "Định nghĩa" },
+    { id: "tools", label: "Công cụ" },
   ];
   return html`
     <div class="agent-tabs">
@@ -1496,27 +1492,26 @@ function renderAgentFiles(params: {
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">Core Files</div>
-          <div class="card-sub">Bootstrap persona, identity, and tool guidance.</div>
+          <div class="card-title">Tệp định nghĩa</div>
+          <div class="card-sub">Tệp định nghĩa agent trong workspace.</div>
         </div>
         <button class="btn btn--sm" ?disabled=${params.agentFilesLoading}
           @click=${() => params.onLoadFiles(params.agentId)}>
-          ${params.agentFilesLoading ? "Loading…" : "Refresh"}</button>
+          ${params.agentFilesLoading ? "Đang tải…" : "Làm mới"}</button>
       </div>
-      ${list ? html`<div class="muted mono" style="margin-top: 8px;">Workspace: ${list.workspace}</div>` : nothing}
       ${params.agentFilesError ? html`<div class="callout danger" style="margin-top: 12px;">${params.agentFilesError}</div>` : nothing}
       ${!list
-        ? html`<div class="callout info" style="margin-top: 12px">Load the agent workspace files to edit core instructions.</div>`
+        ? html`<div class="callout info" style="margin-top: 12px">Tải tệp workspace để chỉnh sửa.</div>`
         : html`
           <div class="agent-files-grid" style="margin-top: 16px;">
             <div class="agent-files-list">
               ${files.length === 0
-                ? html`<div class="muted">No files found.</div>`
+                ? html`<div class="muted">Không tìm thấy tệp nào.</div>`
                 : files.map((file) => renderAgentFileRow(file, active, () => params.onSelectFile(file.name)))}
             </div>
             <div class="agent-files-editor">
               ${!activeEntry
-                ? html`<div class="muted">Select a file to edit.</div>`
+                ? html`<div class="muted">Chọn tệp để chỉnh sửa.</div>`
                 : html`
                   <div class="agent-file-header">
                     <div>
@@ -1525,15 +1520,15 @@ function renderAgentFiles(params: {
                     </div>
                     <div class="agent-file-actions">
                       <button class="btn btn--sm" ?disabled=${!isDirty}
-                        @click=${() => params.onFileReset(activeEntry.name)}>Reset</button>
+                        @click=${() => params.onFileReset(activeEntry.name)}>Hoàn tác</button>
                       <button class="btn btn--sm primary" ?disabled=${params.agentFileSaving || !isDirty}
                         @click=${() => params.onFileSave(activeEntry.name)}>
-                        ${params.agentFileSaving ? "Saving…" : "Save"}</button>
+                        ${params.agentFileSaving ? "Đang lưu…" : "Lưu"}</button>
                     </div>
                   </div>
-                  ${activeEntry.missing ? html`<div class="callout info" style="margin-top: 10px">This file is missing. Saving will create it in the agent workspace.</div>` : nothing}
+                  ${activeEntry.missing ? html`<div class="callout info" style="margin-top: 10px">Tệp chưa tồn tại. Lưu sẽ tạo tệp mới trong workspace.</div>` : nothing}
                   <label class="field" style="margin-top: 12px;">
-                    <span>Content</span>
+                    <span>Nội dung</span>
                     <textarea .value=${draft}
                       @input=${(e: Event) => params.onFileDraftChange(activeEntry.name, (e.target as HTMLTextAreaElement).value)}></textarea>
                   </label>
@@ -1616,34 +1611,34 @@ function renderAgentTools(params: {
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">Tool Access</div>
-          <div class="card-sub">Profile + per-tool overrides for this agent. <span class="mono">${enabledCount}/${toolIds.length}</span> enabled.</div>
+          <div class="card-title">Công cụ</div>
+          <div class="card-sub">Quyền truy cập công cụ. <span class="mono">${enabledCount}/${toolIds.length}</span> đang bật.</div>
         </div>
         <div class="row" style="gap: 8px;">
-          <button class="btn btn--sm" ?disabled=${!editable} @click=${() => updateAll(true)}>Enable All</button>
-          <button class="btn btn--sm" ?disabled=${!editable} @click=${() => updateAll(false)}>Disable All</button>
-          <button class="btn btn--sm" ?disabled=${params.configLoading} @click=${params.onConfigReload}>Reload Config</button>
+          <button class="btn btn--sm" ?disabled=${!editable} @click=${() => updateAll(true)}>Bật tất cả</button>
+          <button class="btn btn--sm" ?disabled=${!editable} @click=${() => updateAll(false)}>Tắt tất cả</button>
+          <button class="btn btn--sm" ?disabled=${params.configLoading} @click=${params.onConfigReload}>Tải lại</button>
           <button class="btn btn--sm primary" ?disabled=${params.configSaving || !params.configDirty} @click=${params.onConfigSave}>
-            ${params.configSaving ? "Saving…" : "Save"}</button>
+            ${params.configSaving ? "Đang lưu…" : "Lưu"}</button>
         </div>
       </div>
-      ${!params.configForm ? html`<div class="callout info" style="margin-top: 12px">Load the gateway config to adjust tool profiles.</div>` : nothing}
-      ${hasAgentAllow ? html`<div class="callout info" style="margin-top: 12px">This agent is using an explicit allowlist in config. Tool overrides are managed in the Config tab.</div>` : nothing}
-      ${hasGlobalAllow ? html`<div class="callout info" style="margin-top: 12px">Global tools.allow is set. Agent overrides cannot enable tools that are globally blocked.</div>` : nothing}
+      ${!params.configForm ? html`<div class="callout info" style="margin-top: 12px">Tải cấu hình gateway để điều chỉnh công cụ.</div>` : nothing}
+      ${hasAgentAllow ? html`<div class="callout info" style="margin-top: 12px">Nhân viên đang dùng allowlist riêng. Quản lý trong cấu hình.</div>` : nothing}
+      ${hasGlobalAllow ? html`<div class="callout info" style="margin-top: 12px">tools.allow toàn cục đang bật. Không thể ghi đè công cụ bị chặn.</div>` : nothing}
       <div class="agent-tools-meta" style="margin-top: 16px;">
         <div class="agent-kv"><div class="label">Profile</div><div class="mono">${profile}</div></div>
         <div class="agent-kv"><div class="label">Source</div><div>${profileSource}</div></div>
         ${params.configDirty ? html`<div class="agent-kv"><div class="label">Status</div><div class="mono">unsaved</div></div>` : nothing}
       </div>
       <div class="agent-tools-presets" style="margin-top: 16px;">
-        <div class="label">Quick Presets</div>
+        <div class="label">Cài đặt nhanh</div>
         <div class="agent-tools-buttons">
           ${PROFILE_OPTIONS.map((option) => html`
             <button class="btn btn--sm ${profile === option.id ? "active" : ""}" ?disabled=${!editable}
               @click=${() => params.onProfileChange(params.agentId, option.id, true)}>${option.label}</button>
           `)}
           <button class="btn btn--sm" ?disabled=${!editable}
-            @click=${() => params.onProfileChange(params.agentId, null, false)}>Inherit</button>
+            @click=${() => params.onProfileChange(params.agentId, null, false)}>Kế thừa</button>
         </div>
       </div>
       <div class="agent-tools-grid" style="margin-top: 20px;">

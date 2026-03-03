@@ -141,7 +141,7 @@ function titleForTab(tab: Tab): string {
     channels: "Kênh Kết Nối",
     settings: "Cài Đặt",
     login: "Đăng Nhập",
-    agents: "Agents",
+    agents: "Nhân viên",
     skills: "Skills",
     nodes: "Nodes",
     report: "Báo Cáo",
@@ -161,7 +161,7 @@ function subtitleForTab(tab: Tab): string {
     channels: "Kết nối ứng dụng nhắn tin",
     settings: "Cài đặt tài khoản và tùy chọn",
     login: "Truy cập tài khoản của bạn",
-    agents: "Quản lý agents và workspace",
+    agents: "Quản lý nhân viên AI",
     skills: "Quản lý skills và cài đặt",
     nodes: "Thiết bị và node kết nối",
     report: "Báo cáo lỗi và phản hồi",
@@ -302,7 +302,7 @@ export class OperisApp extends LitElement {
   @state() agentsList: AgentsListResult | null = null;
   @state() agentSelectedId: string | null = null;
   @state() agentActivePanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
-    "overview";
+    "files";
   // Agent config state
   @state() agentConfigForm: Record<string, unknown> | null = null;
   @state() agentConfigLoading = false;
@@ -1956,10 +1956,11 @@ export class OperisApp extends LitElement {
         if (!this.agentSelectedId || !known) {
           this.agentSelectedId = res.defaultId ?? res.agents[0]?.id ?? null;
         }
-        // Auto-load config + identity for overview panel
+        // Auto-load config + identity + files
         if (this.agentSelectedId) {
           this.loadAgentConfig();
           this.loadAgentIdentity(this.agentSelectedId);
+          this.loadAgentFiles(this.agentSelectedId);
         }
       }
     } catch (err) {
@@ -1972,7 +1973,7 @@ export class OperisApp extends LitElement {
   private handleSelectAgent(agentId: string) {
     if (this.agentSelectedId === agentId) return;
     this.agentSelectedId = agentId;
-    this.agentActivePanel = "overview";
+    this.agentActivePanel = "files";
     // Reset agent-specific state
     this.agentFilesList = null;
     this.agentFilesError = null;
@@ -1987,9 +1988,10 @@ export class OperisApp extends LitElement {
     this.agentSkillsError = null;
     this.agentSkillsAgentId = null;
     this.agentSkillsFilter = "";
-    // Auto-load config + identity
+    // Auto-load config + identity + files
     this.loadAgentConfig();
     this.loadAgentIdentity(agentId);
+    this.loadAgentFiles(agentId);
   }
 
   private handleSelectPanel(
@@ -2797,7 +2799,7 @@ export class OperisApp extends LitElement {
       channels: "Kênh",
       settings: "Cài đặt",
       login: "Đăng nhập",
-      agents: "Agents",
+      agents: "Nhân viên",
       skills: "Skills",
       nodes: "Nodes",
       report: "Báo cáo",
@@ -2831,6 +2833,7 @@ export class OperisApp extends LitElement {
 
   private renderNavigation() {
     const mainItems = NAV_ITEMS.filter((item) => item.section === "main");
+    const agentItems = NAV_ITEMS.filter((item) => item.section === "agent");
 
     return html`
       <aside class="nav ${this.settings.navCollapsed ? "nav--collapsed" : ""}">
@@ -2841,7 +2844,18 @@ export class OperisApp extends LitElement {
           </div>
         </div>
 
-        ${nothing /* agent section hidden */}
+        ${
+          agentItems.length > 0 && this.settings.isLoggedIn
+            ? html`
+          <div class="nav-section">
+            <div class="nav-section-title">Nhân viên</div>
+            <div class="nav-items">
+              ${agentItems.map((item) => this.renderNavItem(item))}
+            </div>
+          </div>
+        `
+            : nothing
+        }
 
         <div class="nav-footer">
           <div class="nav-section">

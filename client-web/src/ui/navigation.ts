@@ -74,25 +74,14 @@ export const NAV_ITEMS: Array<{
   // Agent section
   {
     tab: "agents",
-    label: "Agents",
+    label: "Nhân viên",
     icon: "folder",
-    description: "Quản lý agents và workspace",
+    description: "Quản lý nhân viên AI",
     section: "agent",
   },
-  {
-    tab: "skills",
-    label: "Skills",
-    icon: "zap",
-    description: "Quản lý skills và cài đặt",
-    section: "agent",
-  },
-  {
-    tab: "nodes",
-    label: "Nodes",
-    icon: "cpu",
-    description: "Thiết bị và node kết nối",
-    section: "agent",
-  },
+  // skills and nodes hidden from sidebar
+  // { tab: "skills", label: "Skills", icon: "zap", description: "Quản lý skills và cài đặt", section: "agent" },
+  // { tab: "nodes", label: "Nodes", icon: "cpu", description: "Thiết bị và node kết nối", section: "agent" },
   // Account section
   {
     tab: "settings",
@@ -166,7 +155,9 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   let normalized = normalizePath(path).toLowerCase();
   if (normalized.endsWith("/index.html")) normalized = "/";
   if (normalized === "/") return "chat";
-  return PATH_TO_TAB.get(normalized) ?? null;
+  const tab = PATH_TO_TAB.get(normalized) ?? null;
+  if (tab === "skills" || tab === "nodes") return null;
+  return tab;
 }
 
 export function iconForTab(tab: Tab): IconName {
