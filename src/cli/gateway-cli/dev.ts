@@ -60,31 +60,31 @@ async function ensureDevWorkspace(dir: string) {
   const [agents, soul, tools, identity, user] = await Promise.all([
     loadDevTemplate(
       "AGENTS.dev.md",
-      `# AGENTS.md - OpenClaw Dev Workspace\n\nDefault dev workspace for openclaw gateway --dev.\n`,
+      `# QUY_TAC.md - OpenClaw Dev Workspace\n\nDefault dev workspace for openclaw gateway --dev.\n`,
     ),
     loadDevTemplate(
       "SOUL.dev.md",
-      `# SOUL.md - Dev Persona\n\nProtocol droid for debugging and operations.\n`,
+      `# TINH_CACH.md - Dev Persona\n\nProtocol droid for debugging and operations.\n`,
     ),
     loadDevTemplate(
       "TOOLS.dev.md",
-      `# TOOLS.md - User Tool Notes (editable)\n\nAdd your local tool notes here.\n`,
+      `# CONG_CU.md - User Tool Notes (editable)\n\nAdd your local tool notes here.\n`,
     ),
     loadDevTemplate(
       "IDENTITY.dev.md",
-      `# IDENTITY.md - Agent Identity\n\n- Name: ${DEV_IDENTITY_NAME}\n- Creature: protocol droid\n- Vibe: ${DEV_IDENTITY_THEME}\n- Emoji: ${DEV_IDENTITY_EMOJI}\n`,
+      `# DANH_TINH.md - Agent Identity\n\n- Name: ${DEV_IDENTITY_NAME}\n- Creature: protocol droid\n- Vibe: ${DEV_IDENTITY_THEME}\n- Emoji: ${DEV_IDENTITY_EMOJI}\n`,
     ),
     loadDevTemplate(
       "USER.dev.md",
-      `# USER.md - User Profile\n\n- Name:\n- Preferred address:\n- Notes:\n`,
+      `# NGUOI_DUNG.md - User Profile\n\n- Name:\n- Preferred address:\n- Notes:\n`,
     ),
   ]);
 
-  await writeFileIfMissing(path.join(resolvedDir, "AGENTS.md"), agents);
-  await writeFileIfMissing(path.join(resolvedDir, "SOUL.md"), soul);
-  await writeFileIfMissing(path.join(resolvedDir, "TOOLS.md"), tools);
-  await writeFileIfMissing(path.join(resolvedDir, "IDENTITY.md"), identity);
-  await writeFileIfMissing(path.join(resolvedDir, "USER.md"), user);
+  await writeFileIfMissing(path.join(resolvedDir, "QUY_TAC.md"), agents);
+  await writeFileIfMissing(path.join(resolvedDir, "TINH_CACH.md"), soul);
+  await writeFileIfMissing(path.join(resolvedDir, "CONG_CU.md"), tools);
+  await writeFileIfMissing(path.join(resolvedDir, "DANH_TINH.md"), identity);
+  await writeFileIfMissing(path.join(resolvedDir, "NGUOI_DUNG.md"), user);
 }
 
 export async function ensureDevGatewayConfig(opts: { reset?: boolean }) {

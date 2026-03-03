@@ -132,7 +132,7 @@ export async function agentsSetIdentityCommand(
     if (!identityFromFile) {
       const targetPath =
         identityFilePath ??
-        (workspaceDir ? path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME) : "IDENTITY.md");
+        (workspaceDir ? path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME) : "DANH_TINH.md");
       runtime.error(`No identity data found in ${shortenHomePath(targetPath)}.`);
       runtime.exit(1);
       return;

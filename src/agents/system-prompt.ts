@@ -410,7 +410,7 @@ export function buildAgentSystemPrompt(params: {
           "- sessions_send: send to another session",
           '- session_status: show usage/time/model state and answer "what model are we using?"',
         ].join("\n"),
-    "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
+    "CONG_CU.md does not control tool availability; it is user guidance for how to use external tools.",
     "If a task is more complex or takes longer, spawn a sub-agent. It will do the work for you and ping you when it's done. You can always check up on it.",
     "",
     "## Tool Call Style",
@@ -569,12 +569,12 @@ export function buildAgentSystemPrompt(params: {
     const hasSoulFile = contextFiles.some((file) => {
       const normalizedPath = file.path.trim().replace(/\\/g, "/");
       const baseName = normalizedPath.split("/").pop() ?? normalizedPath;
-      return baseName.toLowerCase() === "soul.md";
+      return baseName.toLowerCase() === "tinh_cach.md";
     });
     lines.push("# Project Context", "", "The following project context files have been loaded:");
     if (hasSoulFile) {
       lines.push(
-        "If SOUL.md is present, embody its persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.",
+        "If TINH_CACH.md is present, embody its persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.",
       );
     }
     lines.push("");

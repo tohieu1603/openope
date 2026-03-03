@@ -252,17 +252,17 @@ export async function applySoulEvilOverride(params: {
     return params.files;
   }
 
-  const hasSoulEntry = params.files.some((file) => file.name === "SOUL.md");
+  const hasSoulEntry = params.files.some((file) => file.name === "TINH_CACH.md");
   if (!hasSoulEntry) {
     params.log?.warn?.(
-      `SOUL_EVIL active (${decision.reason ?? "unknown"}) but SOUL.md not in bootstrap files`,
+      `SOUL_EVIL active (${decision.reason ?? "unknown"}) but TINH_CACH.md not in bootstrap files`,
     );
     return params.files;
   }
 
   let replaced = false;
   const updated = params.files.map((file) => {
-    if (file.name !== "SOUL.md") {
+    if (file.name !== "TINH_CACH.md") {
       return file;
     }
     replaced = true;

@@ -26,15 +26,15 @@ export function resolveDefaultAgentWorkspaceDir(
 }
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
-export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
-export const DEFAULT_SOUL_FILENAME = "SOUL.md";
-export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
-export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
-export const DEFAULT_USER_FILENAME = "USER.md";
+export const DEFAULT_AGENTS_FILENAME = "QUY_TAC.md";
+export const DEFAULT_SOUL_FILENAME = "TINH_CACH.md";
+export const DEFAULT_TOOLS_FILENAME = "CONG_CU.md";
+export const DEFAULT_IDENTITY_FILENAME = "DANH_TINH.md";
+export const DEFAULT_USER_FILENAME = "NGUOI_DUNG.md";
 export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
-export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
-export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
+export const DEFAULT_MEMORY_FILENAME = "KY_UC.md";
+export const DEFAULT_MEMORY_ALT_FILENAME = "ky_uc.md";
 
 function stripFrontMatter(content: string): string {
   if (!content.startsWith("---")) {
