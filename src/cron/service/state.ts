@@ -63,6 +63,7 @@ export type CronServiceDeps = {
   runIsolatedAgentJob: (params: {
     job: CronJob;
     message: string;
+    signal?: AbortSignal;
     onProgress?: (step: CronProgressStep, detail?: string) => void;
     onActivity?: (activity: CronActivity) => void;
   }) => Promise<{
@@ -96,6 +97,8 @@ export type CronServiceState = {
   warnedDisabled: boolean;
   storeLoadedAtMs: number | null;
   storeFileMtimeMs: number | null;
+  /** AbortControllers for currently running jobs, keyed by job id. */
+  runningAbortControllers: Map<string, AbortController>;
 };
 
 export function createCronServiceState(deps: CronServiceDeps): CronServiceState {
@@ -108,6 +111,7 @@ export function createCronServiceState(deps: CronServiceDeps): CronServiceState 
     warnedDisabled: false,
     storeLoadedAtMs: null,
     storeFileMtimeMs: null,
+    runningAbortControllers: new Map(),
   };
 }
 

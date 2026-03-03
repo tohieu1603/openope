@@ -79,6 +79,8 @@ export type GatewayClientOptions = {
   onEvent?: (evt: GatewayEventFrame) => void;
   onClose?: (info: { code: number; reason: string }) => void;
   onConnected?: () => void;
+  /** Fired when reconnecting after a previous successful connection (not the first connect). */
+  onReconnected?: () => void;
 };
 
 const CLIENT_ID = "openclaw-control-ui";
@@ -95,6 +97,7 @@ export class GatewayClient {
   private connectTimer: number | null = null;
   private backoffMs = 800;
   private _connected = false;
+  private _hasConnectedOnce = false;
 
   constructor(private opts: GatewayClientOptions) {}
 
@@ -238,9 +241,12 @@ export class GatewayClient {
           });
         }
         this.backoffMs = 800;
+        const isReconnect = this._hasConnectedOnce;
         this._connected = true;
+        this._hasConnectedOnce = true;
         this.opts.onHello?.(hello);
         this.opts.onConnected?.();
+        if (isReconnect) this.opts.onReconnected?.();
       })
       .catch(() => {
         if (canFallbackToShared && deviceIdentity) {
@@ -343,16 +349,36 @@ export type ToolEvent = {
   };
 };
 
+export type ExecApprovalDecision = "allow-once" | "allow-always" | "deny";
+
+export type CronProgressStep = "initializing" | "prompting" | "executing" | "delivering";
+
+/** Live activity item from agent execution (tool call or assistant text). */
+export type CronActivity = {
+  kind: "tool" | "thinking";
+  id: string;
+  name?: string;
+  phase?: "start" | "result";
+  detail?: string;
+  isError?: boolean;
+};
+
 // Cron event type from gateway
 export type CronEvent = {
   jobId: string;
-  action: "added" | "updated" | "removed" | "started" | "finished";
+  action: "added" | "updated" | "removed" | "started" | "finished" | "progress" | "activity";
   runAtMs?: number;
   durationMs?: number;
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  /** Progress milestone step (only for action: "progress"). */
+  step?: CronProgressStep;
+  /** Human-readable detail for the progress step. */
+  stepDetail?: string;
+  /** Live activity from agent run (only for action: "activity"). */
+  activity?: CronActivity;
   usage?: {
     input: number;
     output: number;
@@ -381,7 +407,7 @@ export type ChatStreamEvent = {
   runId: string;
   sessionKey?: string;
   seq: number;
-  state: "delta" | "final" | "error";
+  state: "delta" | "final" | "error" | "aborted";
   message?: {
     role: "assistant";
     content: Array<{ type: string; text?: string }>;
@@ -454,6 +480,39 @@ function notifyChatStreamListeners(event: ChatStreamEvent) {
   }
 }
 
+// Compaction event from gateway (agent stream: "compaction")
+export type CompactionEvent = {
+  phase: "start" | "end";
+};
+
+type CompactionEventListener = (event: CompactionEvent) => void;
+const compactionEventListeners = new Set<CompactionEventListener>();
+
+export function subscribeToCompactionEvents(listener: CompactionEventListener): () => void {
+  compactionEventListeners.add(listener);
+  getGatewayClient();
+  return () => compactionEventListeners.delete(listener);
+}
+
+function notifyCompactionListeners(event: CompactionEvent) {
+  for (const listener of compactionEventListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error("[gateway] compaction event listener error:", err);
+    }
+  }
+}
+
+// Reconnect listeners — fired when gateway WS reconnects after a drop
+type ReconnectListener = () => void;
+const reconnectListeners = new Set<ReconnectListener>();
+
+export function onGatewayReconnect(listener: ReconnectListener): () => void {
+  reconnectListeners.add(listener);
+  return () => reconnectListeners.delete(listener);
+}
+
 // Singleton instance
 let client: GatewayClient | null = null;
 let connectionPromise: Promise<void> | null = null;
@@ -490,6 +549,16 @@ export function getGatewayClient(): GatewayClient {
       onConnected: () => {
         console.log("[gateway] connected");
       },
+      onReconnected: () => {
+        console.log("[gateway] reconnected — notifying listeners");
+        for (const listener of reconnectListeners) {
+          try {
+            listener();
+          } catch (err) {
+            console.error("[gateway] reconnect listener error:", err);
+          }
+        }
+      },
       onClose: ({ code, reason }) => {
         console.log(`[gateway] closed: ${code} ${reason}`);
       },
@@ -502,12 +571,16 @@ export function getGatewayClient(): GatewayClient {
         if (evt.event === "chat" && evt.payload) {
           notifyChatStreamListeners(evt.payload as ChatStreamEvent);
         }
-        // Handle agent tool events
+        // Handle agent events (tool + compaction streams)
         if (evt.event === "agent" && evt.payload) {
-          const p = evt.payload as { stream?: string };
-          console.log("[gateway] agent event stream=" + p.stream);
+          const p = evt.payload as { stream?: string; data?: Record<string, unknown> };
           if (p.stream === "tool") {
             notifyToolListeners(evt.payload as ToolEvent);
+          } else if (p.stream === "compaction" && p.data) {
+            const phase = typeof p.data.phase === "string" ? p.data.phase : "";
+            if (phase === "start" || phase === "end") {
+              notifyCompactionListeners({ phase });
+            }
           }
         }
       },
@@ -542,10 +615,12 @@ export async function waitForConnection(timeoutMs = 5000): Promise<GatewayClient
         }
       };
       check();
+    }).finally(() => {
+      // Always reset so next call creates a fresh promise
+      connectionPromise = null;
     });
   }
 
   await connectionPromise;
-  connectionPromise = null;
   return c;
 }

@@ -21,6 +21,7 @@ type CronJob = {
     lastRunAtMs?: number;
     lastStatus?: string;
     nextRunAtMs?: number;
+    runningAtMs?: number;
   };
 };
 
@@ -42,6 +43,7 @@ function cronJobToWorkflow(job: CronJob): Workflow {
     lastRunAt: job.state?.lastRunAtMs,
     lastRunStatus: job.state?.lastStatus as Workflow["lastRunStatus"],
     nextRunAt: job.state?.nextRunAtMs,
+    runningAtMs: job.state?.runningAtMs,
     createdAtMs: job.createdAtMs,
     updatedAtMs: job.updatedAtMs,
     agentId: job.agentId,
@@ -89,6 +91,17 @@ export async function runWorkflow(id: string): Promise<boolean> {
   }
 }
 
+export async function cancelWorkflow(id: string): Promise<boolean> {
+  try {
+    const client = await waitForConnection();
+    await client.request("cron.cancel", { id });
+    return true;
+  } catch (error) {
+    console.error("Failed to cancel workflow:", error);
+    throw error;
+  }
+}
+
 export async function deleteWorkflow(id: string): Promise<boolean> {
   try {
     const client = await waitForConnection();
@@ -100,12 +113,21 @@ export async function deleteWorkflow(id: string): Promise<boolean> {
   }
 }
 
+export type WorkflowRunActivity = {
+  name: string;
+  detail?: string;
+  durationMs: number;
+  isError?: boolean;
+};
+
 export type WorkflowRun = {
   ts: number;
   status: string;
   summary?: string;
   durationMs?: number;
   error?: string;
+  /** Tool call activities recorded during the run. */
+  activities?: WorkflowRunActivity[];
 };
 
 export type WorkflowStatus = {

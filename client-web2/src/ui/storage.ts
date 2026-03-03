@@ -6,6 +6,8 @@ export interface ClientSettings {
   chatSidebarCollapsed: boolean;
   isLoggedIn: boolean;
   username: string | null;
+  /** Persisted gateway chat session key (like original sessionKey in storage). */
+  lastSessionKey: string;
 }
 
 const STORAGE_KEY = "operis-client-settings";
@@ -16,6 +18,7 @@ const DEFAULT_SETTINGS: ClientSettings = {
   chatSidebarCollapsed: false,
   isLoggedIn: false,
   username: null,
+  lastSessionKey: "main",
 };
 
 export function loadSettings(): ClientSettings {

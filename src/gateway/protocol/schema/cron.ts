@@ -229,6 +229,13 @@ export const CronRunsParamsSchema = Type.Union([
   ),
 ]);
 
+const CronRunLogActivitySchema = Type.Object({
+  name: Type.String(),
+  detail: Type.Optional(Type.String()),
+  durationMs: Type.Integer({ minimum: 0 }),
+  isError: Type.Optional(Type.Boolean()),
+});
+
 export const CronRunLogEntrySchema = Type.Object(
   {
     ts: Type.Integer({ minimum: 0 }),
@@ -242,6 +249,7 @@ export const CronRunLogEntrySchema = Type.Object(
     runAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
     durationMs: Type.Optional(Type.Integer({ minimum: 0 })),
     nextRunAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    activities: Type.Optional(Type.Array(CronRunLogActivitySchema)),
   },
   { additionalProperties: false },
 );

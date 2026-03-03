@@ -441,6 +441,65 @@ export const icons = {
       <line x1="4" x2="4" y1="22" y2="15" />
     </svg>
   `,
+  wrench: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+      />
+    </svg>
+  `,
+  globe: html`
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </svg>
+  `,
+  penLine: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  `,
+  edit2: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  `,
+  paperclip: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+      />
+    </svg>
+  `,
+  loader: html`
+    <svg viewBox="0 0 24 24">
+      <line x1="12" x2="12" y1="2" y2="6" />
+      <line x1="12" x2="12" y1="18" y2="22" />
+      <line x1="4.93" x2="7.76" y1="4.93" y2="7.76" />
+      <line x1="16.24" x2="19.07" y1="16.24" y2="19.07" />
+      <line x1="2" x2="6" y1="12" y2="12" />
+      <line x1="18" x2="22" y1="12" y2="12" />
+      <line x1="4.93" x2="7.76" y1="19.07" y2="16.24" />
+      <line x1="16.24" x2="19.07" y1="7.76" y2="4.93" />
+    </svg>
+  `,
+  plug: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M12 22v-5" />
+      <path d="M9 8V2" />
+      <path d="M15 8V2" />
+      <path d="M18 8v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8Z" />
+    </svg>
+  `,
+  smartphone: html`
+    <svg viewBox="0 0 24 24">
+      <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+      <path d="M12 18h.01" />
+    </svg>
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

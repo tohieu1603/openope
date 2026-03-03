@@ -1,6 +1,34 @@
 // Workflow types for Client Web
 // Matches Admin UI's Cron types for full compatibility
 
+import type { CronActivity, CronProgressStep } from "./gateway-client";
+
+/** A resolved tool call entry for UI rendering. */
+export type CronToolEntry = {
+  id: string;
+  name: string;
+  detail?: string;
+  startedAtMs: number;
+  finishedAtMs?: number;
+  isError?: boolean;
+};
+
+/** Ephemeral progress state for a running workflow (not persisted). */
+export type CronProgressState = {
+  jobId: string;
+  /** High-level phase (kept for header display). */
+  phase: CronProgressStep;
+  /** Live tool calls in order. */
+  toolCalls: CronToolEntry[];
+  /** Latest thinking text from assistant. */
+  thinkingText?: string;
+  startedAtMs: number;
+  finishedAtMs?: number;
+  status?: "ok" | "error" | "skipped";
+};
+
+export type { CronActivity };
+
 export type ScheduleKind = "every" | "at" | "cron";
 export type EveryUnit = "minutes" | "hours" | "days";
 export type SessionTarget = "main" | "isolated";
@@ -38,6 +66,8 @@ export type Workflow = {
   createdAtMs?: number;
   updatedAtMs?: number;
   agentId?: string;
+  /** Non-null when the job is currently running on the gateway. */
+  runningAtMs?: number;
 };
 
 export type WorkflowFormState = {

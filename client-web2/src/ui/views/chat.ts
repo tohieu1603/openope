@@ -4,7 +4,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import type { Conversation } from "../chat-api";
 import { t } from "../i18n";
-import { icons } from "../icons";
+import { icons, type IconName } from "../icons";
 
 // Configure marked for safe inline rendering
 marked.setOptions({
@@ -97,6 +97,15 @@ export interface ToolCallInfo {
   isError?: boolean;
   /** Short action detail e.g. "navigate · google.com" */
   detail?: string;
+  /** Tool output text (result phase) */
+  output?: string;
+}
+
+export interface QueueItem {
+  id: string;
+  text: string;
+  createdAt: number;
+  images?: Array<{ preview: string }>;
 }
 
 export interface PendingImage {
@@ -133,6 +142,19 @@ export interface ChatProps {
   onNewConversation?: () => void;
   onSwitchConversation?: (id: string) => void;
   onDeleteConversation?: (id: string) => void;
+  onRefreshChat?: () => void;
+  compactionActive?: boolean;
+  queue?: QueueItem[];
+  onQueueRemove?: (id: string) => void;
+  sessionKey?: string;
+  /** Available gateway sessions for the session selector dropdown */
+  gatewaySessions?: Array<{
+    key: string;
+    displayName?: string;
+    model?: string;
+    updatedAt?: number | null;
+  }>;
+  onSessionChange?: (key: string) => void;
 }
 
 function formatTime(timestamp?: string | Date): string {
@@ -187,6 +209,59 @@ const suggestions = [
   },
 ];
 
+// ── Tool display resolution (matching original tool-display.ts) ──
+
+const TOOL_DISPLAY_MAP: Record<string, { icon: IconName; title: string; detailKeys?: string[] }> = {
+  bash: { icon: "wrench", title: "Bash", detailKeys: ["command"] },
+  process: { icon: "wrench", title: "Process", detailKeys: ["sessionId"] },
+  read: { icon: "fileText", title: "Read", detailKeys: ["path"] },
+  write: { icon: "penLine", title: "Write", detailKeys: ["path"] },
+  edit: { icon: "penLine", title: "Edit", detailKeys: ["path"] },
+  attach: { icon: "paperclip", title: "Attach", detailKeys: ["path", "url", "fileName"] },
+  browser: { icon: "globe", title: "Browser" },
+  canvas: { icon: "image", title: "Canvas" },
+  nodes: { icon: "smartphone", title: "Nodes" },
+  cron: { icon: "loader", title: "Cron" },
+  gateway: { icon: "plug", title: "Gateway" },
+  discord: { icon: "messageSquare", title: "Discord" },
+  slack: { icon: "messageSquare", title: "Slack" },
+};
+
+function resolveToolIcon(name: string): IconName {
+  return TOOL_DISPLAY_MAP[name.toLowerCase()]?.icon ?? "puzzle";
+}
+
+function resolveToolLabel(name: string): string {
+  const spec = TOOL_DISPLAY_MAP[name.toLowerCase()];
+  if (spec) return spec.title;
+  // Default: capitalize and replace underscores
+  const cleaned = name.replace(/_/g, " ").trim();
+  if (!cleaned) return "Tool";
+  return cleaned
+    .split(/\s+/)
+    .map((w) => (w.length <= 2 && w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+const PREVIEW_MAX_LINES = 2;
+const PREVIEW_MAX_CHARS = 100;
+
+function getTruncatedPreview(text: string): string {
+  const lines = text.split("\n").slice(0, PREVIEW_MAX_LINES);
+  let preview = lines.join("\n");
+  if (preview.length > PREVIEW_MAX_CHARS) {
+    preview = preview.slice(0, PREVIEW_MAX_CHARS) + "…";
+  } else if (text.split("\n").length > PREVIEW_MAX_LINES) {
+    preview += "…";
+  }
+  return preview;
+}
+
+function shortenHomePath(input: string): string {
+  if (!input) return input;
+  return input.replace(/\/Users\/[^/]+/g, "~").replace(/\/home\/[^/]+/g, "~");
+}
+
 export function renderChat(props: ChatProps) {
   const {
     messages,
@@ -213,8 +288,13 @@ export function renderChat(props: ChatProps) {
     sidebarCollapsed = false,
     onToggleSidebar,
     onNewConversation,
-    onSwitchConversation,
-    onDeleteConversation,
+    onRefreshChat,
+    compactionActive = false,
+    queue = [],
+    onQueueRemove,
+    sessionKey = "main",
+    gatewaySessions = [],
+    onSessionChange,
   } = props;
   const isEmpty = messages.length === 0;
   const displayName = username || "Bạn";
@@ -269,176 +349,24 @@ export function renderChat(props: ChatProps) {
 
   return html`
     <style>
-      /* Full-width Chat Container - grid with sidebar + main */
+      /* Full-width Chat Container */
       .gc-wrapper {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        display: grid;
-        grid-template-columns: 280px 1fr;
+        display: flex;
+        flex-direction: column;
         background: var(--bg);
         overflow: hidden;
-        transition: grid-template-columns 0.2s ease;
-      }
-      .gc-wrapper.gc-sidebar-collapsed {
-        grid-template-columns: 0px 1fr;
       }
       .gc-main {
+        flex: 1;
         display: flex;
         flex-direction: column;
         overflow: hidden;
         position: relative;
-      }
-
-      /* Sidebar */
-      .gc-sidebar {
-        display: flex;
-        flex-direction: column;
-        border-right: 1px solid var(--border);
-        background: var(--bg);
-        overflow: hidden;
-        min-width: 0;
-        transition: opacity 0.2s ease;
-      }
-      .gc-sidebar-collapsed .gc-sidebar {
-        opacity: 0;
-        pointer-events: none;
-      }
-      .gc-sidebar-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px;
-        border-bottom: 1px solid var(--border);
-        flex-shrink: 0;
-      }
-      .gc-sidebar-title {
-        flex: 1;
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--text-strong);
-      }
-      .gc-sidebar-btn {
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        border: none;
-        border-radius: var(--radius-md, 8px);
-        color: var(--muted);
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }
-      .gc-sidebar-btn:hover {
-        background: var(--bg-hover);
-        color: var(--text);
-      }
-      .gc-sidebar-btn svg {
-        width: 18px;
-        height: 18px;
-        stroke: currentColor;
-        fill: none;
-        stroke-width: 1.5;
-      }
-      .gc-sidebar-list {
-        flex: 1;
-        overflow-y: auto;
-        padding: 8px;
-      }
-      .gc-sidebar-list::-webkit-scrollbar { width: 6px; }
-      .gc-sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-      .gc-sidebar-empty {
-        padding: 24px 16px;
-        text-align: center;
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      /* Conversation item */
-      .gc-conv-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 12px;
-        border-radius: var(--radius-md, 8px);
-        cursor: pointer;
-        border: 1px solid transparent;
-        transition: all 0.15s ease;
-      }
-      .gc-conv-item:hover { background: var(--bg-hover); }
-      .gc-conv-item--active {
-        background: var(--accent-subtle);
-        border-color: var(--accent-subtle);
-      }
-      .gc-conv-item-content { flex: 1; min-width: 0; }
-      .gc-conv-item-preview {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .gc-conv-item--active .gc-conv-item-preview { color: var(--text-strong); }
-      .gc-conv-item-meta {
-        font-size: 11px;
-        color: var(--muted);
-        margin-top: 2px;
-      }
-      .gc-conv-item-delete {
-        width: 28px;
-        height: 28px;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        border: none;
-        border-radius: var(--radius-md, 8px);
-        color: var(--muted);
-        cursor: pointer;
-        flex-shrink: 0;
-      }
-      .gc-conv-item:hover .gc-conv-item-delete { display: flex; }
-      .gc-conv-item-delete:hover { background: var(--destructive, #dc2626); color: white; }
-      .gc-conv-item-delete svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
-
-      /* Open sidebar button (shown when collapsed) */
-      .gc-sidebar-open-btn {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        z-index: 10;
-        width: 32px;
-        height: 32px;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md, 8px);
-        color: var(--muted);
-        cursor: pointer;
-      }
-      .gc-sidebar-open-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.5; }
-      .gc-sidebar-open-btn:hover { background: var(--bg-hover); color: var(--text); }
-      .gc-sidebar-collapsed .gc-sidebar-open-btn { display: flex; }
-
-      @media (max-width: 768px) {
-        .gc-wrapper { grid-template-columns: 1fr; }
-        .gc-sidebar {
-          position: fixed;
-          top: 0; left: 0; bottom: 0;
-          width: 220px;
-          z-index: 50;
-          box-shadow: 4px 0 20px rgba(0,0,0,0.15);
-          transition: transform 0.25s ease;
-        }
-        .gc-sidebar-collapsed .gc-sidebar { transform: translateX(-100%); opacity: 1; pointer-events: auto; }
-        .gc-sidebar-collapsed .gc-sidebar-open-btn { display: flex; }
       }
 
       /* Empty State - Gemini Style */
@@ -704,16 +632,18 @@ export function renderChat(props: ChatProps) {
       }
 
       .gc-stop-btn {
-        width: 36px;
         height: 36px;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
+        padding: 0 14px;
         background: var(--destructive, #dc2626);
         border: none;
-        border-radius: 50%;
+        border-radius: 18px;
         color: white;
         cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
         transition: all 0.15s ease;
         animation: gc-stop-pop 0.2s ease-out;
       }
@@ -721,13 +651,40 @@ export function renderChat(props: ChatProps) {
         background: var(--destructive-hover, #b91c1c);
         transform: scale(1.05);
       }
-      .gc-stop-btn svg {
-        width: 16px;
-        height: 16px;
-      }
       @keyframes gc-stop-pop {
         from { transform: scale(0.8); opacity: 0.5; }
         to { transform: scale(1); opacity: 1; }
+      }
+
+      .gc-queue-btn {
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 14px;
+        background: var(--accent);
+        border: none;
+        border-radius: 18px;
+        color: var(--accent-foreground);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.15s ease;
+      }
+      .gc-queue-btn:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+      .gc-queue-btn:disabled {
+        background: var(--secondary);
+        color: var(--muted);
+        cursor: not-allowed;
+      }
+      .gc-queue-btn svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
       }
 
       /* Suggestions */
@@ -770,6 +727,85 @@ export function renderChat(props: ChatProps) {
       .gc-suggestion-icon svg {
         width: 18px;
         height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+      }
+
+      /* Chat header bar (like original content-header) */
+      .gc-chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border, rgba(255,255,255,.08));
+        flex-shrink: 0;
+      }
+      .gc-chat-header__left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .gc-chat-header__session-select {
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 12px;
+        color: var(--text, #ccc);
+        padding: 4px 24px 4px 10px;
+        border: 1px solid var(--border, rgba(255,255,255,.12));
+        border-radius: 6px;
+        background: var(--card, rgba(30,30,30,.5));
+        cursor: pointer;
+        max-width: 300px;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 6px center;
+        background-size: 12px;
+      }
+      .gc-chat-header__session-select:hover {
+        border-color: var(--accent, #7c3aed);
+      }
+      .gc-chat-header__session-select:focus {
+        outline: none;
+        border-color: var(--accent, #7c3aed);
+        box-shadow: 0 0 0 2px rgba(124,58,237,.2);
+      }
+      .gc-chat-header__session-select option {
+        background: var(--bg, #1a1a1a);
+        color: var(--text, #ccc);
+      }
+      .gc-chat-header__right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .gc-header-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: transparent;
+        border: 1px solid var(--border, rgba(255,255,255,.12));
+        border-radius: 6px;
+        color: var(--text-secondary, #888);
+        cursor: pointer;
+        transition: all .15s ease;
+      }
+      .gc-header-btn:hover {
+        color: var(--text-primary, #fff);
+        border-color: var(--text-secondary, #888);
+        background: rgba(255,255,255,.06);
+      }
+      .gc-header-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .gc-header-btn svg {
+        width: 15px;
+        height: 15px;
         stroke: currentColor;
         fill: none;
         stroke-width: 2;
@@ -1108,57 +1144,213 @@ export function renderChat(props: ChatProps) {
         margin: 16px 0;
       }
 
-      /* Tool call pills */
-      .gc-tool-calls {
+      /* Tool cards (matching original chat-tool-card) */
+      .gc-tool-cards {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
+        flex-direction: column;
+        gap: 0;
         margin-top: 6px;
-        margin-bottom: 2px;
+        margin-bottom: 4px;
       }
-      .gc-tool-pill {
+      .gc-tool-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 8px;
+        background: var(--card);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        transition: border-color 150ms ease-out, background 150ms ease-out;
+        max-height: 120px;
+        overflow: hidden;
+      }
+      .gc-tool-card:first-child { margin-top: 0; }
+      .gc-tool-card:hover {
+        border-color: var(--border-strong);
+        background: var(--bg-hover);
+      }
+      .gc-tool-card--running {
+        border-color: var(--accent);
+      }
+      .gc-tool-card__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .gc-tool-card__title {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 4px 10px;
-        background: var(--bg-muted, var(--secondary));
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        font-size: 12px;
-        font-family: "SF Mono", "Fira Code", monospace;
-        color: var(--muted);
-        line-height: 1.4;
+        font-weight: 600;
+        font-size: 13px;
+        line-height: 1.2;
       }
-      .gc-tool-pill--running {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .gc-tool-pill--done {
-        border-color: var(--success, #22c55e);
-        color: var(--success, #22c55e);
-      }
-      .gc-tool-pill--error {
-        border-color: var(--destructive, #dc2626);
-        color: var(--destructive, #dc2626);
-      }
-      .gc-tool-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: currentColor;
+      .gc-tool-card__icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
         flex-shrink: 0;
       }
-      .gc-tool-pill--running .gc-tool-dot {
+      .gc-tool-card__icon svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.5px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .gc-tool-card__status {
+        display: inline-flex;
+        align-items: center;
+        color: var(--success, #22c55e);
+      }
+      .gc-tool-card__status svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .gc-tool-card__status--error {
+        color: var(--destructive, #dc2626);
+      }
+      .gc-tool-card__spinner {
+        display: inline-flex;
+        align-items: center;
+      }
+      .gc-tool-card__dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
         animation: gc-pulse 1.2s ease-in-out infinite;
       }
-      .gc-tool-detail {
-        opacity: 0.7;
-        max-width: 180px;
+      .gc-tool-card__detail {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        display: inline-block;
-        vertical-align: bottom;
+      }
+      .gc-tool-card__status-text {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .gc-tool-card__preview {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: var(--bg-muted, var(--secondary));
+        border-radius: 6px;
+        white-space: pre-wrap;
+        overflow: hidden;
+        max-height: 44px;
+        line-height: 1.4;
+        border: 1px solid var(--border);
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+
+      /* Compaction toast (agent compressing context) */
+      .gc-compaction-toast {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        margin: 8px 0;
+        font-size: 13px;
+        color: var(--text-secondary, #8b949e);
+        background: var(--bg-secondary, rgba(255,255,255,0.03));
+        border-radius: 8px;
+        animation: gc-fade-in 0.3s ease;
+      }
+      .gc-compaction-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent, #646cff);
+        animation: gc-pulse 1.5s ease-in-out infinite;
+      }
+      @keyframes gc-pulse {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
+      }
+      @keyframes gc-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      /* Queue panel (matching original chat-queue) */
+      /* Compact queue strip between messages and input */
+      .gc-queue {
+        padding: 6px 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        border-top: 1px solid var(--border, rgba(255,255,255,.08));
+        background: var(--card, rgba(30,30,30,.5));
+      }
+      .gc-queue__title {
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--muted, #888);
+        white-space: nowrap;
+      }
+      .gc-queue__list {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        flex: 1;
+        min-width: 0;
+      }
+      .gc-queue__item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px 3px 10px;
+        border-radius: 14px;
+        border: 1px dashed var(--border-strong, rgba(255,255,255,.15));
+        background: var(--bg-muted, rgba(255,255,255,.05));
+        max-width: 220px;
+      }
+      .gc-queue__text {
+        font-size: 12px;
+        line-height: 1.3;
+        color: var(--text, #ccc);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .gc-queue__remove {
+        padding: 1px;
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        color: var(--muted, #888);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        transition: color 0.1s;
+      }
+      .gc-queue__remove:hover {
+        color: var(--destructive, #dc2626);
+      }
+      .gc-queue__remove svg {
+        width: 12px;
+        height: 12px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
       }
 
       /* Loading spinner - Gemini style */
@@ -1370,59 +1562,44 @@ export function renderChat(props: ChatProps) {
       }
     </style>
 
-    <div class="gc-wrapper ${sidebarCollapsed ? "gc-sidebar-collapsed" : ""}">
-      <!-- Sidebar -->
-      <aside class="gc-sidebar">
-        <div class="gc-sidebar-header">
-          <button class="gc-sidebar-btn" @click=${onToggleSidebar} title="Thu gọn">
-            ${icons.panelLeft}
-          </button>
-          <span class="gc-sidebar-title">${t("chatSidebarTitle")}</span>
-          <button class="gc-sidebar-btn" @click=${onNewConversation} title="${t("chatSidebarNew")}">
-            ${icons.messageSquarePlus}
-          </button>
-        </div>
-        <div class="gc-sidebar-list">
-          ${
-            conversationsLoading
-              ? html`${[1, 2, 3, 4].map(
-                  () =>
-                    html`
-                      <div class="gc-skeleton" style="height: 52px; border-radius: 8px; margin-bottom: 8px"></div>
-                    `,
-                )}`
-              : conversations.length === 0
-                ? html`<div class="gc-sidebar-empty">${t("chatSidebarEmpty")}</div>`
-                : conversations.map(
-                    (conv) => html`
-                  <div
-                    class="gc-conv-item ${conv.conversation_id === currentConversationId ? "gc-conv-item--active" : ""}"
-                    @click=${() => onSwitchConversation?.(conv.conversation_id)}
-                  >
-                    <div class="gc-conv-item-content">
-                      <div class="gc-conv-item-preview">${conv.last_message ? conv.last_message.slice(0, 60).replace(/\n/g, " ") : t("chatSidebarNoPreview")}</div>
-                      <div class="gc-conv-item-meta">${formatTime(conv.created_at)}</div>
-                    </div>
-                    <button
-                      class="gc-conv-item-delete"
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        onDeleteConversation?.(conv.conversation_id);
-                      }}
-                      title="Xóa"
-                    >${icons.trash}</button>
-                  </div>
-                `,
-                  )
-          }
-        </div>
-      </aside>
-
+    <div class="gc-wrapper">
       <!-- Main chat area -->
       <div class="gc-main">
-        <button class="gc-sidebar-open-btn" @click=${onToggleSidebar} title="Mở sidebar">
-          ${icons.panelLeft}
-        </button>
+
+        <!-- Chat header: session selector + refresh -->
+        <div class="gc-chat-header">
+          <div class="gc-chat-header__left">
+            <select
+              class="gc-chat-header__session-select"
+              .value=${sessionKey}
+              @change=${(e: Event) => {
+                const sel = (e.target as HTMLSelectElement).value;
+                onSessionChange?.(sel);
+              }}
+            >
+              ${
+                gatewaySessions.length > 0
+                  ? gatewaySessions.map((s) => {
+                      const label = s.displayName || s.key.split(":").pop() || s.key;
+                      return html`<option value=${s.key} ?selected=${s.key === sessionKey}>${label}</option>`;
+                    })
+                  : html`<option value=${sessionKey} selected>${sessionKey.split(":").pop() || sessionKey}</option>`
+              }
+            </select>
+          </div>
+          <div class="gc-chat-header__right">
+            ${
+              onRefreshChat
+                ? html`
+              <button class="gc-header-btn" @click=${onRefreshChat} ?disabled=${sending} title="Tải lại">
+                ${icons.refresh}
+              </button>
+            `
+                : nothing
+            }
+          </div>
+        </div>
+
       ${
         loading
           ? html`
@@ -1495,10 +1672,11 @@ export function renderChat(props: ChatProps) {
                       <div class="gc-actions-left">
                         <button
                           type="button"
-                          class="gc-action-btn"
-                          title="Thêm tệp"
+                          class="gc-action-btn gc-new-chat-btn"
+                          title="Cuộc trò chuyện mới"
+                          @click=${onNewConversation}
                         >
-                          ${icons.plus}
+                          ${icons.messageSquarePlus}
                         </button>
                         <button
                           type="button"
@@ -1609,15 +1787,57 @@ export function renderChat(props: ChatProps) {
                             </div>
                             ${
                               toolCalls.length > 0
-                                ? html`<div class="gc-tool-calls">
+                                ? html`<div class="gc-tool-cards">
                                   ${toolCalls.map((tc) => {
-                                    const cls =
-                                      tc.phase === "result"
-                                        ? tc.isError
-                                          ? "gc-tool-pill--error"
-                                          : "gc-tool-pill--done"
-                                        : "gc-tool-pill--running";
-                                    return html`<span class="gc-tool-pill ${cls}"><span class="gc-tool-dot"></span>${tc.name}${tc.detail ? html` · <span class="gc-tool-detail">${tc.detail}</span>` : nothing}</span>`;
+                                    const toolIcon = resolveToolIcon(tc.name);
+                                    const toolLabel = resolveToolLabel(tc.name);
+                                    const detail = tc.detail
+                                      ? shortenHomePath(tc.detail)
+                                      : undefined;
+                                    const isDone = tc.phase === "result";
+                                    const isError = tc.isError;
+                                    const hasOutput = Boolean(tc.output?.trim());
+                                    const isRunning = !isDone;
+
+                                    return html`
+                                      <div class="gc-tool-card ${isRunning ? "gc-tool-card--running" : ""}">
+                                        <div class="gc-tool-card__header">
+                                          <div class="gc-tool-card__title">
+                                            <span class="gc-tool-card__icon">${icons[toolIcon]}</span>
+                                            <span>${toolLabel}</span>
+                                          </div>
+                                          ${
+                                            isDone && !isError
+                                              ? html`<span class="gc-tool-card__status">${icons.check}</span>`
+                                              : nothing
+                                          }
+                                          ${
+                                            isError
+                                              ? html`<span class="gc-tool-card__status gc-tool-card__status--error">${icons.alertCircle}</span>`
+                                              : nothing
+                                          }
+                                          ${
+                                            isRunning
+                                              ? html`
+                                                  <span class="gc-tool-card__spinner"><span class="gc-tool-card__dot"></span></span>
+                                                `
+                                              : nothing
+                                          }
+                                        </div>
+                                        ${detail ? html`<div class="gc-tool-card__detail">${detail}</div>` : nothing}
+                                        ${
+                                          isDone && !hasOutput
+                                            ? html`
+                                                <div class="gc-tool-card__status-text">Completed</div>
+                                              `
+                                            : nothing
+                                        }
+                                        ${
+                                          hasOutput
+                                            ? html`<div class="gc-tool-card__preview">${getTruncatedPreview(tc.output!)}</div>`
+                                            : nothing
+                                        }
+                                      </div>`;
                                   })}
                                 </div>`
                                 : nothing
@@ -1640,10 +1860,47 @@ export function renderChat(props: ChatProps) {
                       `
                       : nothing
                   }
+                  ${
+                    compactionActive
+                      ? html`
+                          <div class="gc-compaction-toast">
+                            <span class="gc-compaction-dot"></span>
+                            Đang nén ngữ cảnh…
+                          </div>
+                        `
+                      : nothing
+                  }
                   <!-- Spacer to allow scrolling user message to top -->
                   <div class="gc-scroll-spacer"></div>
                 </div>
               </div>
+
+              <!-- Queue strip between messages and input (like original, compact) -->
+              ${
+                queue.length > 0
+                  ? html`
+                <div class="gc-queue" role="status" aria-live="polite">
+                  <span class="gc-queue__title">Queued (${queue.length})</span>
+                  <div class="gc-queue__list">
+                    ${queue.map(
+                      (item) => html`
+                      <div class="gc-queue__item">
+                        <span class="gc-queue__text">${item.text || (item.images?.length ? `Ảnh (${item.images.length})` : "")}</span>
+                        ${
+                          onQueueRemove
+                            ? html`
+                          <button class="gc-queue__remove" type="button" aria-label="Xóa" @click=${() => onQueueRemove(item.id)}>${icons.x}</button>
+                        `
+                            : nothing
+                        }
+                      </div>
+                    `,
+                    )}
+                  </div>
+                </div>
+              `
+                  : nothing
+              }
 
               <!-- Bottom Input -->
               <div class="gc-input-bottom">
@@ -1669,7 +1926,10 @@ export function renderChat(props: ChatProps) {
                       }}
                       @keydown=${handleKeyDown}
                       @paste=${handlePaste}
+<<<<<<< HEAD
                       ?disabled=${sending || !gatewayReady}
+=======
+>>>>>>> dev
                     ></textarea>
                     ${
                       pendingImages.length > 0
@@ -1691,10 +1951,11 @@ export function renderChat(props: ChatProps) {
                       <div class="gc-actions-left">
                         <button
                           type="button"
-                          class="gc-action-btn"
-                          title="Thêm tệp"
+                          class="gc-action-btn gc-new-chat-btn"
+                          title="Cuộc trò chuyện mới"
+                          @click=${onNewConversation}
                         >
-                          ${icons.plus}
+                          ${icons.messageSquarePlus}
                         </button>
                         <button
                           type="button"
@@ -1721,23 +1982,30 @@ export function renderChat(props: ChatProps) {
                         </button>
                         ${
                           sending
-                            ? html`<button
-                              type="button"
-                              class="gc-stop-btn"
-                              @click=${onStop}
-                              title="Dừng"
-                            >
-                              ${icons.stop}
-                            </button>`
-                            : html`<button
-                              type="button"
-                              class="gc-send-btn"
-                              @click=${handleSendClick}
-                              ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
-                              title=${!gatewayReady ? "Đang chờ gateway..." : isLoggedIn ? t("chatSend") : t("chatSignIn")}
-                            >
-                              ${icons.arrowUp}
-                            </button>`
+                            ? html`
+                          <button
+                            type="button"
+                            class="gc-stop-btn"
+                            @click=${onStop}
+                            title="Dừng"
+                          >Stop</button>
+                          <button
+                            type="button"
+                            class="gc-queue-btn"
+                            @click=${handleSendClick}
+                            ?disabled=${!draft.trim() && pendingImages.length === 0}
+                            title="Thêm vào hàng chờ"
+                          >Queue ${icons.arrowUp}</button>
+                        `
+                            : html`
+                          <button
+                            type="button"
+                            class="gc-send-btn"
+                            @click=${handleSendClick}
+                            ?disabled=${!draft.trim() && pendingImages.length === 0}
+                            title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
+                          >${icons.arrowUp}</button>
+                        `
                         }
                       </div>
                     </div>

@@ -16,7 +16,7 @@ import type {
   CronStatus,
 } from "./agent-types";
 import type { ReportFormState } from "./views/report";
-import type { Workflow, WorkflowFormState } from "./workflow-types";
+import type { Workflow, WorkflowFormState, CronProgressState } from "./workflow-types";
 import {
   getDailyUsage,
   getRangeUsage,
@@ -44,12 +44,7 @@ import {
   type ChannelStatus,
   type ChannelId,
 } from "./channels-api";
-import {
-  getConversations,
-  getConversationHistory,
-  deleteConversation,
-  type Conversation,
-} from "./chat-api";
+import { getConversations, deleteConversation, type Conversation } from "./chat-api";
 import { showConfirm } from "./components/operis-confirm";
 import { showToast } from "./components/operis-toast";
 import {
@@ -66,12 +61,15 @@ import {
   subscribeToCronEvents,
   subscribeToChatStream,
   subscribeToToolEvents,
+  subscribeToCompactionEvents,
   stopGatewayClient,
   waitForConnection,
   getGatewayClient,
+  onGatewayReconnect,
   type CronEvent,
   type ChatStreamEvent,
   type ToolEvent,
+  type CompactionEvent,
 } from "./gateway-client";
 import { t } from "./i18n";
 import { icons } from "./icons";
@@ -180,28 +178,48 @@ export class OperisApp extends LitElement {
   @state() chatSending = false;
   @state() chatConversationId: string | null = null;
   @state() chatError: string | null = null;
-  @state() chatHistoryLoaded = false;
   @state() chatInitializing = true;
   // Streaming state
   @state() chatStreamingText = "";
   @state() chatStreamingRunId: string | null = null;
-  // Tool call tracking for current run
+  // Tool call tracking for current run (structured like original ToolStreamEntry)
   @state() chatToolCalls: Array<{
     id: string;
     name: string;
     phase: "start" | "update" | "result";
     isError?: boolean;
     detail?: string;
+    output?: string;
   }> = [];
   @state() chatPendingImages: PendingImage[] = [];
   // Session token tracking
   @state() chatSessionTokens = 0;
+  // Thinking level from gateway session (off | low | medium | high)
+  @state() chatThinkingLevel: string | null = null;
   @state() chatTokenBalance = 0;
   // Current chat run ID for abort
   private chatRunId: string | null = null;
+  // Chat queue — messages sent while busy, flushed after final (like original UI)
+  @state() chatQueue: Array<{
+    id: string;
+    text: string;
+    createdAt: number;
+    images?: PendingImage[];
+  }> = [];
+  // Compaction status (agent compressing context)
+  @state() chatCompactionActive = false;
+  private compactionClearTimer: ReturnType<typeof setTimeout> | null = null;
+  private compactionEventUnsubscribe: (() => void) | null = null;
   // Chat sidebar state
   @state() chatConversations: Conversation[] = [];
   @state() chatConversationsLoading = false;
+  // Gateway sessions (for session selector dropdown)
+  @state() gatewaySessions: Array<{
+    key: string;
+    displayName?: string;
+    model?: string;
+    updatedAt?: number | null;
+  }> = [];
   // Login state
   @state() loginLoading = false;
   @state() loginError: string | null = null;
@@ -226,6 +244,12 @@ export class OperisApp extends LitElement {
     error?: string;
   }> = [];
   @state() workflowRunsLoading = false;
+  // Split panel + progress state
+  @state() selectedWorkflowId: string | null = null;
+  @state() progressMap: Map<string, CronProgressState> = new Map();
+  @state() workflowShowForm = false;
+  @state() workflowModalRun: import("./workflow-api").WorkflowRun | null = null;
+  private progressTimer: ReturnType<typeof setInterval> | null = null;
 
   // Logs state
   @state() logsEntries: LogEntry[] = [];
@@ -391,6 +415,7 @@ export class OperisApp extends LitElement {
   private chatStreamUnsubscribe: (() => void) | null = null;
   private toolEventUnsubscribe: (() => void) | null = null;
   private gatewayStatusUnsubscribe: (() => void) | null = null;
+  private reconnectUnsubscribe: (() => void) | null = null;
 
   createRenderRoot() {
     return this;
@@ -437,6 +462,10 @@ export class OperisApp extends LitElement {
       this.tab = initialTab;
     }
 
+    // Restore chat session from URL ?session= param (like original applySettingsFromUrl)
+    // Falls back to lastSessionKey from localStorage
+    this.restoreSessionFromUrl();
+
     // Listen for browser navigation
     window.addEventListener("popstate", this.popStateHandler);
     // Close token dropdown on outside click
@@ -457,6 +486,24 @@ export class OperisApp extends LitElement {
       this.handleToolEvent(evt);
     });
 
+    // Subscribe to compaction events (agent compressing context)
+    this.compactionEventUnsubscribe = subscribeToCompactionEvents((evt: CompactionEvent) => {
+      this.handleCompactionEvent(evt);
+    });
+
+    // Reload current tab data when gateway WS reconnects after a drop
+    // (Original: onHello silently resets orphaned chat run state, then refreshes active tab)
+    this.reconnectUnsubscribe = onGatewayReconnect(() => {
+      console.log("[app] gateway reconnected — resetting chat state and reloading");
+      // Reset orphaned chat run state (any in-flight run's final event was lost during disconnect)
+      this.chatRunId = null;
+      this.chatStreamingText = "";
+      this.chatStreamingRunId = null;
+      this.chatToolCalls = [];
+      this.chatSending = false;
+      this.loadTabData(this.tab);
+    });
+
     // Start usage tracker - reports token usage from WS to Operis BE
     startUsageTracker();
 
@@ -475,10 +522,84 @@ export class OperisApp extends LitElement {
     // Track running workflows
     if (evt.action === "started") {
       this.runningWorkflowIds = new Set([...this.runningWorkflowIds, evt.jobId]);
+      // Init progress state
+      const pm = new Map(this.progressMap);
+      pm.set(evt.jobId, {
+        jobId: evt.jobId,
+        phase: "initializing",
+        toolCalls: [],
+        startedAtMs: evt.runAtMs ?? Date.now(),
+      });
+      this.progressMap = pm;
+      this.startProgressTimer();
+      // Auto-select running workflow if none selected
+      if (!this.selectedWorkflowId) {
+        this.selectedWorkflowId = evt.jobId;
+      }
+    } else if (evt.action === "progress") {
+      const step = evt.step;
+      if (!step) return;
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (prev) {
+        pm.set(evt.jobId, { ...prev, phase: step });
+      }
+      this.progressMap = pm;
+    } else if (evt.action === "activity") {
+      const a = evt.activity;
+      if (!a) return;
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (!prev) return;
+
+      if (a.kind === "tool") {
+        const toolCalls = [...prev.toolCalls];
+        if (a.phase === "start") {
+          toolCalls.push({
+            id: a.id,
+            name: a.name ?? "tool",
+            detail: a.detail,
+            startedAtMs: Date.now(),
+          });
+        } else if (a.phase === "result") {
+          const idx = toolCalls.findIndex((t) => t.id === a.id);
+          if (idx >= 0) {
+            toolCalls[idx] = { ...toolCalls[idx], finishedAtMs: Date.now(), isError: a.isError };
+          }
+        }
+        pm.set(evt.jobId, { ...prev, toolCalls });
+      } else if (a.kind === "thinking") {
+        pm.set(evt.jobId, { ...prev, thinkingText: a.detail });
+      }
+      this.progressMap = pm;
     } else if (evt.action === "finished") {
       const newSet = new Set(this.runningWorkflowIds);
       newSet.delete(evt.jobId);
       this.runningWorkflowIds = newSet;
+
+      // Mark progress as finished
+      const pm = new Map(this.progressMap);
+      const prev = pm.get(evt.jobId);
+      if (prev) {
+        const toolCalls = prev.toolCalls.map((t) =>
+          t.finishedAtMs ? t : { ...t, finishedAtMs: Date.now() },
+        );
+        pm.set(evt.jobId, {
+          ...prev,
+          phase: "delivering",
+          toolCalls,
+          finishedAtMs: Date.now(),
+          status: evt.status ?? "ok",
+        });
+        this.progressMap = pm;
+        // Clear progress after 8s
+        setTimeout(() => {
+          const pm2 = new Map(this.progressMap);
+          pm2.delete(evt.jobId);
+          this.progressMap = pm2;
+          this.stopProgressTimerIfIdle();
+        }, 8000);
+      }
 
       // Report cron usage to Operis BE (request_type: "cron") when gateway includes it
       if (evt.usage && (evt.usage.input || evt.usage.output)) {
@@ -488,20 +609,39 @@ export class OperisApp extends LitElement {
 
     // Auto-refresh workflows when on workflow tab (silent - no loading indicator)
     if (this.tab === "workflow") {
-      // Debounce: only refresh if not already loading
       if (!this.workflowLoading) {
         this.loadWorkflows(true);
       }
     }
   }
 
+  private startProgressTimer() {
+    if (this.progressTimer) return;
+    this.progressTimer = setInterval(() => {
+      if (this.progressMap.size > 0) {
+        this.progressMap = new Map(this.progressMap);
+      }
+    }, 1000);
+  }
+
+  private stopProgressTimerIfIdle() {
+    if (this.progressMap.size === 0 && this.progressTimer) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = null;
+    }
+  }
+
   private handleToolEvent(evt: ToolEvent) {
-    console.log("[app] toolEvent", evt.data?.phase, evt.data?.name);
-    if (!this.chatSending) return;
-    const { phase, toolCallId, name, isError, args } = evt.data;
+    // Accept tool events when busy (chatSending or chatRunId active)
+    if (!this.isChatBusy()) return;
+    const { phase, toolCallId, name, isError, args, result, partialResult } = evt.data;
     if (!toolCallId) return;
 
     const detail = this.extractToolDetail(name, args);
+    // Capture tool output (like original formatToolOutput)
+    const rawOutput = phase === "result" ? result : phase === "update" ? partialResult : undefined;
+    const output = rawOutput !== undefined ? this.formatToolOutput(rawOutput) : undefined;
+
     const existing = this.chatToolCalls.findIndex((t) => t.id === toolCallId);
     if (phase === "start" && existing < 0) {
       this.chatToolCalls = [
@@ -510,8 +650,42 @@ export class OperisApp extends LitElement {
       ];
     } else if (existing >= 0) {
       const updated = [...this.chatToolCalls];
-      updated[existing] = { ...updated[existing], phase, isError, ...(detail ? { detail } : {}) };
+      updated[existing] = {
+        ...updated[existing],
+        phase,
+        isError,
+        ...(detail ? { detail } : {}),
+        ...(output !== undefined ? { output } : {}),
+      };
       this.chatToolCalls = updated;
+    }
+
+    // Trim to 50 entries max (like original TOOL_STREAM_LIMIT)
+    if (this.chatToolCalls.length > 50) {
+      this.chatToolCalls = this.chatToolCalls.slice(-50);
+    }
+  }
+
+  /** Format tool output to string (like original formatToolOutput). */
+  private formatToolOutput(value: unknown): string | undefined {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "string") return value.slice(0, 120_000);
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    // Extract text from content blocks
+    if (typeof value === "object") {
+      const rec = value as Record<string, unknown>;
+      if (typeof rec.text === "string") return rec.text.slice(0, 120_000);
+      if (Array.isArray(rec.content)) {
+        const parts = (rec.content as Array<Record<string, unknown>>)
+          .filter((item) => item.type === "text" && typeof item.text === "string")
+          .map((item) => item.text as string);
+        if (parts.length > 0) return parts.join("\n").slice(0, 120_000);
+      }
+    }
+    try {
+      return JSON.stringify(value, null, 2).slice(0, 120_000);
+    } catch {
+      return String(value);
     }
   }
 
@@ -579,12 +753,12 @@ export class OperisApp extends LitElement {
   }
 
   private handleChatStreamEvent(evt: ChatStreamEvent) {
-    // Only process events if we're actively sending AND using WebSocket streaming (not SSE)
-    // SSE streaming sets chatStreamingRunId = "sse-stream", skip WebSocket events in that case
+    // Guard: only process events when actively sending via WS (like original client-web)
+    // SSE streaming sets chatStreamingRunId = "sse-stream", skip WS events in that case
     if (!this.chatSending || this.chatStreamingRunId === "sse-stream") return;
 
     if (evt.state === "delta" && evt.message?.content) {
-      // Extract text from content blocks
+      // Extract text from content blocks (same as original)
       const text = evt.message.content
         .filter((block) => block.type === "text" && block.text)
         .map((block) => block.text)
@@ -592,46 +766,17 @@ export class OperisApp extends LitElement {
 
       this.chatStreamingText = text;
       this.chatStreamingRunId = evt.runId;
-      // Don't scroll during streaming - user message stays at top
     } else if (evt.state === "final") {
-      // Final message received - add to messages and clear streaming state
-      const finalText =
-        evt.message?.content
-          ?.filter((block) => block.type === "text" && block.text)
-          .map((block) => block.text)
-          .join("") || this.chatStreamingText;
-
-      if (finalText) {
-        this.chatMessages = [
-          ...this.chatMessages,
-          { role: "assistant", content: finalText, timestamp: new Date() },
-        ];
-      }
-
-      // Accumulate WS token usage
-      const wsUsage = evt.usage ?? evt.message?.usage;
-      if (wsUsage) {
-        this.chatSessionTokens +=
-          wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
-      }
-
+      this.handleChatFinal(evt);
+    } else if (evt.state === "aborted") {
+      // Run was aborted (e.g. superseded by new message) — clear state and flush queue
       this.chatRunId = null;
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
       this.chatSending = false;
-
-      // Fetch updated token balance from operis-api (fire-and-forget)
-      getTokenBalance()
-        .then((bal) => {
-          this.chatTokenBalance = bal.balance;
-          if (this.currentUser) {
-            this.currentUser = { ...this.currentUser, token_balance: bal.balance };
-          }
-        })
-        .catch(() => {});
+      this.flushChatQueue();
     } else if (evt.state === "error") {
-      // Error occurred - show error message
       const errorMsg = evt.errorMessage || "Có lỗi xảy ra khi xử lý tin nhắn";
       this.chatMessages = [
         ...this.chatMessages,
@@ -642,11 +787,169 @@ export class OperisApp extends LitElement {
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
       this.chatSending = false;
-      // Don't scroll here - user message is already at top
+      this.flushChatQueue();
     }
   }
 
+  /** Handle final chat event — append message, reset state, flush queue (like original). */
+  private handleChatFinal(evt: ChatStreamEvent) {
+    const finalText =
+      evt.message?.content
+        ?.filter((block) => block.type === "text" && block.text)
+        .map((block) => block.text)
+        .join("") || this.chatStreamingText;
+
+    if (finalText) {
+      this.chatMessages = [
+        ...this.chatMessages,
+        { role: "assistant", content: finalText, timestamp: new Date() },
+      ];
+    }
+
+    // Accumulate WS token usage
+    const wsUsage = evt.usage ?? evt.message?.usage;
+    if (wsUsage) {
+      this.chatSessionTokens +=
+        wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
+    }
+
+    this.chatRunId = null;
+    this.chatStreamingText = "";
+    this.chatStreamingRunId = null;
+    this.chatToolCalls = [];
+    this.chatSending = false;
+
+    // Cache to sessionStorage as backup.
+    this.cacheChatMessages();
+
+    // Refresh session selector (new sessions may have been created)
+    this.loadGatewaySessions();
+
+    // Flush queued messages (like original flushChatQueueForEvent)
+    this.flushChatQueue();
+
+    // Fetch updated token balance (fire-and-forget)
+    getTokenBalance()
+      .then((bal) => {
+        this.chatTokenBalance = bal.balance;
+        if (this.currentUser) {
+          this.currentUser = { ...this.currentUser, token_balance: bal.balance };
+        }
+      })
+      .catch(() => {});
+  }
+
+  // --- Chat message cache (localStorage — survives reload AND shared across tabs) ---
+  private static readonly CHAT_CACHE_KEY = "operis-chat-messages";
+
+  /** Save current messages to localStorage so they survive page reload and sync across tabs. */
+  private cacheChatMessages() {
+    try {
+      const sessionKey = this.chatConversationId || "main";
+      const data = {
+        sessionKey,
+        cachedAt: Date.now(),
+        messages: this.chatMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp?.toISOString(),
+        })),
+      };
+      localStorage.setItem(OperisApp.CHAT_CACHE_KEY, JSON.stringify(data));
+    } catch {
+      /* ignore quota errors */
+    }
+  }
+
+  /** Restore messages from localStorage cache (returns true if cache was used). */
+  private restoreCachedMessages(): boolean {
+    try {
+      const raw = localStorage.getItem(OperisApp.CHAT_CACHE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      const sessionKey = this.chatConversationId || "main";
+      if (data.sessionKey !== sessionKey) return false;
+      if (!Array.isArray(data.messages) || data.messages.length === 0) return false;
+      // Skip stale cache (older than 24h)
+      if (data.cachedAt && Date.now() - data.cachedAt > 24 * 60 * 60 * 1000) return false;
+      this.chatMessages = data.messages.map((m: Record<string, string>) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        timestamp: m.timestamp ? new Date(m.timestamp) : undefined,
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // --- Chat queue (like original app-chat.ts) ---
+
+  /** Check if chat is busy (sending request OR waiting for run to finish). */
+  private isChatBusy() {
+    return this.chatSending || Boolean(this.chatRunId);
+  }
+
+  /** Add message to queue (sent when current run finishes). */
+  private enqueueChatMessage(text: string, images?: PendingImage[]) {
+    const trimmed = text.trim();
+    if (!trimmed && (!images || images.length === 0)) return;
+    this.chatQueue = [
+      ...this.chatQueue,
+      { id: crypto.randomUUID(), text: trimmed, createdAt: Date.now(), images },
+    ];
+  }
+
+  /** Flush first queued message — called after final/aborted events (like original). */
+  private async flushChatQueue() {
+    if (this.isChatBusy() || this.chatQueue.length === 0) return;
+    const [next, ...rest] = this.chatQueue;
+    this.chatQueue = rest;
+    // Re-use handleSendMessage logic but with queued content
+    this.chatDraft = next.text;
+    this.chatPendingImages = next.images ?? [];
+    await this.handleSendMessage();
+    // If send failed (chatSending still false), restore queue
+    if (!this.chatSending && !this.isChatBusy()) {
+      // Send didn't start — put it back
+      if (this.chatDraft === next.text) {
+        this.chatDraft = "";
+        this.chatQueue = [next, ...this.chatQueue];
+      }
+    }
+  }
+
+  /** Remove a queued message by id (like original removeQueuedMessage). */
+  private removeQueuedMessage(id: string) {
+    this.chatQueue = this.chatQueue.filter((item) => item.id !== id);
+  }
+
+  // --- Compaction event handler (like original app-tool-stream.ts) ---
+
+  private handleCompactionEvent(evt: CompactionEvent) {
+    // Clear any existing auto-dismiss timer
+    if (this.compactionClearTimer) {
+      clearTimeout(this.compactionClearTimer);
+      this.compactionClearTimer = null;
+    }
+    if (evt.phase === "start") {
+      this.chatCompactionActive = true;
+    } else if (evt.phase === "end") {
+      this.chatCompactionActive = false;
+      // Auto-clear after 5s (like original COMPACTION_TOAST_DURATION_MS)
+      this.compactionClearTimer = setTimeout(() => {
+        this.chatCompactionActive = false;
+        this.compactionClearTimer = null;
+      }, 5000);
+    }
+  }
+
+  private static _lastRestoreMs = 0;
   private async tryRestoreSession() {
+    // Debounce: skip if called again within 3s (e.g. HMR re-mounts)
+    const now = Date.now();
+    if (now - OperisApp._lastRestoreMs < 3000) return;
+    OperisApp._lastRestoreMs = now;
     try {
       const user = await restoreSession();
       if (user) {
@@ -708,14 +1011,20 @@ export class OperisApp extends LitElement {
     this.chatStreamUnsubscribe = null;
     this.toolEventUnsubscribe?.();
     this.toolEventUnsubscribe = null;
+    this.compactionEventUnsubscribe?.();
+    this.compactionEventUnsubscribe = null;
+    this.reconnectUnsubscribe?.();
+    this.reconnectUnsubscribe = null;
     stopUsageTracker();
     stopGatewayClient();
   }
 
   private loadTabData(tab: string) {
     if (tab === "chat") {
-      this.loadChatHistory();
-      this.scrollChatToBottom();
+      // Load current session messages from gateway (source of truth)
+      this.loadChatMessagesFromGateway(true).then(() => this.scrollChatToBottom());
+      // Load available sessions for the session selector dropdown
+      this.loadGatewaySessions();
     } else if (tab === "workflow") {
       this.loadWorkflows();
     } else if (tab === "channels") {
@@ -751,7 +1060,6 @@ export class OperisApp extends LitElement {
     this.chatConversationId = null;
     this.chatSessionTokens = 0;
     this.chatTokenBalance = 0;
-    this.chatHistoryLoaded = false;
     this.chatInitializing = false;
     // Reset settings
     this.applySettings({
@@ -778,6 +1086,10 @@ export class OperisApp extends LitElement {
     this.gatewayStatusUnsubscribe?.();
     this.stopGatewayServices();
     this.stopBillingCountdown();
+    if (this.progressTimer) {
+      clearInterval(this.progressTimer);
+      this.progressTimer = null;
+    }
     super.disconnectedCallback();
   }
 
@@ -806,6 +1118,15 @@ export class OperisApp extends LitElement {
       window.history.replaceState({}, "", pathForTab("login"));
     }
     if (tab) {
+      // Restore session from URL on chat tab navigation
+      if (tab === "chat") {
+        const params = new URLSearchParams(window.location.search);
+        const session = params.get("session")?.trim();
+        if (session && session !== (this.chatConversationId || "main")) {
+          this.chatConversationId = session === "main" ? null : session;
+          this.persistSessionKey(session);
+        }
+      }
       this.setTab(tab);
     }
   }
@@ -824,31 +1145,65 @@ export class OperisApp extends LitElement {
     this.tab = tab;
     const path = pathForTab(tab);
     window.history.pushState({}, "", path);
+    // Sync ?session= param in URL (add on chat tab, remove on others)
+    this.syncSessionUrl();
 
     this.loadTabData(tab);
   }
 
-  private async loadChatHistory() {
-    // Skip if not logged in or already loaded
-    if (!this.settings.isLoggedIn || this.chatHistoryLoaded) {
-      this.chatInitializing = false;
-      return;
-    }
-
+  /** Load available sessions from gateway for session selector dropdown */
+  private async loadGatewaySessions() {
     try {
-      // Load sidebar conversation list only — show welcome state (like ChatGPT/Gemini)
-      const { conversations } = await getConversations();
-      conversations.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-      this.chatConversations = conversations;
-      this.chatHistoryLoaded = true;
+      const gw = await waitForConnection(5000);
+      const result = await gw.request<{
+        sessions: Array<{
+          key: string;
+          displayName?: string;
+          model?: string;
+          updatedAt?: number | null;
+          kind?: string;
+        }>;
+      }>("sessions.list", { includeDerivedTitles: true, includeLastMessage: true });
+      if (result?.sessions) {
+        // Filter to only show agent sessions (agent:*) — skip openai/telegram/unknown/global
+        this.gatewaySessions = result.sessions.filter((s: { key: string }) =>
+          s.key.startsWith("agent:"),
+        );
+      }
     } catch (err) {
-      console.error("[chat] Failed to load history:", err);
-      // Don't show error to user, just start fresh
-    } finally {
-      this.chatInitializing = false;
+      console.error("[chat] Failed to load gateway sessions:", err);
     }
+  }
+
+  /** Normalize session key: "main" → "agent:main:main", passthrough if already full key */
+  private normalizeSessionKey(key: string): string {
+    if (key.startsWith("agent:")) return key;
+    return `agent:main:${key}`;
+  }
+
+  /** Short display label for session key: "agent:main:main" → "main" */
+  private shortSessionKey(key: string): string {
+    // agent:main:main → main, agent:main:webchat-xyz → webchat-xyz
+    const parts = key.split(":");
+    if (parts.length === 3 && parts[0] === "agent") return parts[2];
+    return key;
+  }
+
+  /** Switch to a different gateway session */
+  private async handleSessionChange(key: string) {
+    const fullKey = this.normalizeSessionKey(key);
+    const currentFull = this.normalizeSessionKey(this.chatConversationId || "main");
+    if (fullKey === currentFull) return;
+
+    // Use the short key for internal state (matches chat.send behavior)
+    const shortKey = this.shortSessionKey(key);
+    this.chatConversationId = shortKey;
+    this.chatMessages = [];
+    this.chatStreamingText = "";
+    this.chatToolCalls = [];
+    this.persistSessionKey(shortKey);
+    await this.loadChatMessagesFromGateway(true);
+    this.scrollChatToBottom();
   }
 
   private updateDynamicSpacer(active: boolean = true) {
@@ -966,7 +1321,6 @@ export class OperisApp extends LitElement {
       }
       // Reset chat state for fresh load
       this.chatInitializing = true;
-      this.chatHistoryLoaded = false;
       this.setTab("chat");
     } catch (err) {
       this.loginError = err instanceof Error ? err.message : "Đăng nhập thất bại";
@@ -1014,7 +1368,19 @@ export class OperisApp extends LitElement {
   }
 
   private async handleSendMessage() {
-    if ((!this.chatDraft.trim() && this.chatPendingImages.length === 0) || this.chatSending) return;
+    const hasDraft = this.chatDraft.trim() || this.chatPendingImages.length > 0;
+    if (!hasDraft) return;
+
+    // Queue if busy (like original — enqueueChatMessage when isChatBusy)
+    if (this.isChatBusy()) {
+      this.enqueueChatMessage(
+        this.chatDraft,
+        this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined,
+      );
+      this.chatDraft = "";
+      this.chatPendingImages = [];
+      return;
+    }
 
     const userMessage = this.chatDraft.trim();
     const images = this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined;
@@ -1026,6 +1392,14 @@ export class OperisApp extends LitElement {
     this.chatStreamingRunId = null;
     this.chatToolCalls = [];
 
+    // Detect /new or /reset → clear messages before sending (gateway will create new transcript)
+    const isResetCommand = /^\/(new|reset)\b/i.test(userMessage);
+    if (isResetCommand) {
+      this.chatMessages = [];
+      this.chatSessionTokens = 0;
+      this.cacheChatMessages();
+    }
+
     // Add user message (with image previews if any)
     this.chatMessages = [
       ...this.chatMessages,
@@ -1036,7 +1410,7 @@ export class OperisApp extends LitElement {
         ...(images ? { images: images.map((img) => ({ preview: img.preview })) } : {}),
       },
     ];
-    // Scroll user message to top of viewport before streaming starts
+    this.cacheChatMessages();
     await this.scrollChatToBottom();
 
     try {
@@ -1051,7 +1425,9 @@ export class OperisApp extends LitElement {
         {
           sessionKey: this.chatConversationId || "main",
           message: userMessage,
+          deliver: false,
           idempotencyKey: runId,
+          ...(this.chatThinkingLevel ? { thinking: this.chatThinkingLevel } : {}),
           ...(images?.length
             ? {
                 attachments: images.map((img) => ({
@@ -1064,21 +1440,20 @@ export class OperisApp extends LitElement {
         },
         30_000,
       );
-
-      // chat.send returns { runId, status: "started" } immediately.
-      // Streaming handled by handleChatStreamEvent (delta → final/error).
-      // chatSending cleared when final/error event arrives.
+      // chat.send returns immediately. Streaming via handleChatStreamEvent.
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Không thể gửi tin nhắn";
-
       this.chatError = errorMsg;
       this.chatMessages = [
         ...this.chatMessages,
         { role: "assistant", content: `⚠️ ${errorMsg}`, timestamp: new Date() },
       ];
+      this.chatRunId = null;
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
+    } finally {
+      // Original: chatSending = false in finally, chatRunId stays until final/aborted/error
       this.chatSending = false;
     }
   }
@@ -1131,43 +1506,134 @@ export class OperisApp extends LitElement {
     }
   }
 
+  // --- Session persistence (like original app-settings.ts) ---
+
+  /** Restore chat session from URL ?session= param or localStorage. */
+  private restoreSessionFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const sessionParam = params.get("session")?.trim();
+    if (sessionParam) {
+      this.chatConversationId = sessionParam;
+      this.persistSessionKey(sessionParam);
+    } else if (this.settings.lastSessionKey && this.settings.lastSessionKey !== "main") {
+      this.chatConversationId = this.settings.lastSessionKey;
+    }
+    // Sync URL to include session param on chat tab
+    this.syncSessionUrl();
+  }
+
+  /** Save session key to localStorage and update URL. */
+  private persistSessionKey(key: string) {
+    const next = { ...this.settings, lastSessionKey: key };
+    this.settings = next;
+    saveSettings(next);
+    this.syncSessionUrl();
+  }
+
+  /** Keep URL in sync: add ?session= on chat tab, remove on others. */
+  private syncSessionUrl() {
+    const url = new URL(window.location.href);
+    const sessionKey = this.chatConversationId || "main";
+    if (this.tab === "chat" && sessionKey) {
+      url.searchParams.set("session", sessionKey);
+    } else {
+      url.searchParams.delete("session");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }
+
   private handleNewConversation() {
-    this.chatConversationId = null;
-    this.chatMessages = [];
-    this.chatSessionTokens = 0;
+    // Simulate typing "/new" — triggers gateway session reset + greeting
+    this.chatDraft = "/new";
+    this.handleSendMessage();
+  }
+
+  /**
+   * Load chat messages from gateway WS `chat.history` — source of truth.
+   * On initial load: show cache instantly as placeholder, then gateway replaces.
+   */
+  private async loadChatMessagesFromGateway(isInitialLoad = false) {
+    // Show cache as placeholder while gateway loads (instant UI, no blank screen)
+    if (isInitialLoad) {
+      this.restoreCachedMessages();
+    }
+
+    try {
+      const gw = await waitForConnection(5000);
+      const sessionKey = this.chatConversationId || "main";
+      const res = await gw.request<{
+        messages?: Array<Record<string, unknown>>;
+        thinkingLevel?: string;
+        sessionId?: string;
+      }>("chat.history", { sessionKey, limit: 200 });
+
+      const rawMessages = Array.isArray(res.messages) ? res.messages : [];
+
+      // Parse gateway content blocks → flat string format used by client-web2
+      const parsed = rawMessages
+        .map((msg) => {
+          const role = (msg.role === "user" ? "user" : "assistant") as "user" | "assistant";
+          let content = "";
+          if (typeof msg.content === "string") {
+            content = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            content = (msg.content as Array<Record<string, unknown>>)
+              .filter((block) => block.type === "text" && typeof block.text === "string")
+              .map((block) => block.text as string)
+              .join("\n");
+          }
+          const ts = typeof msg.timestamp === "number" ? new Date(msg.timestamp) : undefined;
+          return { role, content, timestamp: ts };
+        })
+        .filter((m) => m.content);
+
+      // Gateway is source of truth — always replace local state
+      this.chatMessages = parsed;
+      // Store thinking level from session (used in chat.send)
+      if (typeof res.thinkingLevel === "string") {
+        this.chatThinkingLevel = res.thinkingLevel;
+      }
+      this.cacheChatMessages();
+    } catch (err) {
+      console.warn("[chat] Failed to load messages from gateway:", err);
+      // If gateway failed and we have no messages, try cache as fallback
+      if (this.chatMessages.length === 0) {
+        this.restoreCachedMessages();
+      }
+    } finally {
+      if (isInitialLoad) {
+        this.chatInitializing = false;
+      }
+    }
+  }
+
+  private async handleRefreshChat() {
+    // Match original UI: resetToolStream + refreshChat (history + sessions + scroll)
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
     this.chatToolCalls = [];
-    this.chatSending = false;
-    this.chatError = null;
+
+    // Load messages from gateway WS (source of truth)
+    await this.loadChatMessagesFromGateway();
+
+    // Reload session selector
+    this.loadGatewaySessions();
+    this.scrollChatToBottom();
   }
 
   private async handleSwitchConversation(conversationId: string) {
     if (conversationId === this.chatConversationId) return;
 
     this.chatConversationId = conversationId;
+    this.persistSessionKey(conversationId);
     this.chatMessages = [];
     this.chatInitializing = true;
     this.chatSessionTokens = 0;
     this.chatError = null;
 
-    try {
-      const { messages, usage } = await getConversationHistory(conversationId);
-      this.chatMessages = messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-        timestamp: m.created_at ? new Date(m.created_at) : undefined,
-      }));
-      if (usage?.total_tokens) {
-        this.chatSessionTokens = usage.total_tokens;
-      }
-      this.scrollChatToBottom();
-    } catch (err) {
-      console.error("[chat] Failed to load conversation:", err);
-      this.chatError = "Không thể tải hội thoại";
-    } finally {
-      this.chatInitializing = false;
-    }
+    // Use gateway chat.history (source of truth) instead of REST API
+    await this.loadChatMessagesFromGateway(true);
+    this.scrollChatToBottom();
   }
 
   private async handleDeleteConversation(conversationId: string) {
@@ -1220,6 +1686,14 @@ export class OperisApp extends LitElement {
         this.workflows = workflows;
       }
       this.workflowStatus = status;
+
+      // Restore runningWorkflowIds from gateway state (survives page reload)
+      const loaded = this.workflows;
+      const running = new Set(this.runningWorkflowIds);
+      for (const w of loaded) {
+        if (typeof w.runningAtMs === "number") running.add(w.id);
+      }
+      this.runningWorkflowIds = running;
     } catch (err) {
       if (!silent) {
         this.workflowError = err instanceof Error ? err.message : "Không thể tải workflows";
@@ -1248,6 +1722,7 @@ export class OperisApp extends LitElement {
       await createWorkflow(this.workflowForm);
       showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
       this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+      this.workflowShowForm = false;
       // Silent background refresh - no loading indicator
       this.loadWorkflows(true);
     } catch (err) {
@@ -1260,11 +1735,27 @@ export class OperisApp extends LitElement {
   }
 
   private async handleWorkflowToggle(workflow: Workflow) {
-    if (this.runningWorkflowIds.has(workflow.id)) {
-      showToast(`"${workflow.name}" đang chạy, không thể thay đổi trạng thái.`, "warning");
-      return;
-    }
     const newState = !workflow.enabled;
+    // If disabling and job is running, cancel it on gateway first then wait for it to stop
+    if (!newState && this.runningWorkflowIds.has(workflow.id)) {
+      try {
+        const { cancelWorkflow } = await import("./workflow-api");
+        await cancelWorkflow(workflow.id);
+        // Wait for job to finish (gateway sends cron event when done) — max 30s
+        await new Promise<void>((resolve) => {
+          const maxWait = setTimeout(resolve, 30_000);
+          const check = setInterval(() => {
+            if (!this.runningWorkflowIds.has(workflow.id)) {
+              clearInterval(check);
+              clearTimeout(maxWait);
+              resolve();
+            }
+          }, 500);
+        });
+      } catch {
+        /* best effort */
+      }
+    }
     // Optimistic update - update UI immediately
     this.workflows = this.workflows.map((w) =>
       w.id === workflow.id ? { ...w, enabled: newState } : w,
@@ -1321,11 +1812,22 @@ export class OperisApp extends LitElement {
     }
   }
 
-  private async handleWorkflowDelete(workflow: Workflow) {
-    if (this.runningWorkflowIds.has(workflow.id)) {
-      showToast(`"${workflow.name}" đang chạy, không thể xóa.`, "warning");
+  private async handleWorkflowCancel(workflow: Workflow) {
+    if (!this.runningWorkflowIds.has(workflow.id)) {
+      showToast(`"${workflow.name}" không đang chạy.`, "warning");
       return;
     }
+    try {
+      const { cancelWorkflow } = await import("./workflow-api");
+      await cancelWorkflow(workflow.id);
+      showToast(`Đã gửi lệnh hủy "${workflow.name}"`, "info");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Không thể hủy workflow";
+      showToast(msg, "error");
+    }
+  }
+
+  private async handleWorkflowDelete(workflow: Workflow) {
     const confirmed = await showConfirm({
       title: "Xóa workflow?",
       message: `Bạn có chắc muốn xóa workflow "${workflow.name}"? Hành động này không thể hoàn tác.`,
@@ -1334,6 +1836,25 @@ export class OperisApp extends LitElement {
       variant: "danger",
     });
     if (!confirmed) return;
+    // If running, cancel on gateway first then wait for it to stop
+    if (this.runningWorkflowIds.has(workflow.id)) {
+      try {
+        const { cancelWorkflow } = await import("./workflow-api");
+        await cancelWorkflow(workflow.id);
+        await new Promise<void>((resolve) => {
+          const maxWait = setTimeout(resolve, 30_000);
+          const check = setInterval(() => {
+            if (!this.runningWorkflowIds.has(workflow.id)) {
+              clearInterval(check);
+              clearTimeout(maxWait);
+              resolve();
+            }
+          }, 500);
+        });
+      } catch {
+        /* best effort */
+      }
+    }
     // Optimistic delete - remove from UI immediately
     const originalWorkflows = this.workflows;
     this.workflows = this.workflows.filter((w) => w.id !== workflow.id);
@@ -1461,7 +1982,6 @@ export class OperisApp extends LitElement {
     // Navigate to chat with this conversation
     if (log.type === "chat") {
       this.chatConversationId = log.id;
-      this.chatHistoryLoaded = false; // Force reload
       this.setTab("chat");
     }
   }
@@ -2734,7 +3254,7 @@ export class OperisApp extends LitElement {
         return renderChat({
           messages: this.chatMessages,
           draft: this.chatDraft,
-          sending: this.chatSending,
+          sending: this.chatSending || Boolean(this.chatRunId),
           loading: this.chatInitializing,
           isLoggedIn: this.settings.isLoggedIn,
           username: this.settings.username ?? undefined,
@@ -2758,6 +3278,13 @@ export class OperisApp extends LitElement {
           onNewConversation: () => this.handleNewConversation(),
           onSwitchConversation: (id: string) => this.handleSwitchConversation(id),
           onDeleteConversation: (id: string) => this.handleDeleteConversation(id),
+          onRefreshChat: () => this.handleRefreshChat(),
+          compactionActive: this.chatCompactionActive,
+          queue: this.chatQueue,
+          onQueueRemove: (id: string) => this.removeQueuedMessage(id),
+          sessionKey: this.normalizeSessionKey(this.chatConversationId || "main"),
+          gatewaySessions: this.gatewaySessions,
+          onSessionChange: (key: string) => this.handleSessionChange(key),
         });
       case "analytics":
         return renderAnalytics({
@@ -2870,17 +3397,39 @@ export class OperisApp extends LitElement {
           onSubmit: () => this.handleWorkflowSubmit(),
           onToggle: (w) => this.handleWorkflowToggle(w),
           onRun: (w) => this.handleWorkflowRun(w),
+          onCancel: (w) => this.handleWorkflowCancel(w),
           onDelete: (w) => this.handleWorkflowDelete(w),
           onToggleDetails: (id: string) => {
             this.workflowExpandedId = this.workflowExpandedId === id ? null : id;
           },
           expandedWorkflowId: this.workflowExpandedId,
           runningWorkflowIds: this.runningWorkflowIds,
+          // Split panel
+          selectedWorkflowId: this.selectedWorkflowId,
+          progressMap: this.progressMap,
+          onSelectWorkflow: (id: string | null) => {
+            this.selectedWorkflowId = id;
+            // Auto-load run history when selecting idle workflow
+            if (id && !this.progressMap.has(id)) {
+              this.loadWorkflowRuns(id);
+            }
+          },
           // Run history
           runsWorkflowId: this.workflowRunsId,
           runs: this.workflowRuns,
           runsLoading: this.workflowRunsLoading,
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
+          showForm: this.workflowShowForm,
+          onToggleForm: () => {
+            this.workflowShowForm = !this.workflowShowForm;
+          },
+          modalRun: this.workflowModalRun,
+          onOpenRunDetail: (run) => {
+            this.workflowModalRun = run;
+          },
+          onCloseRunDetail: () => {
+            this.workflowModalRun = null;
+          },
         });
       case "docs":
         return renderDocs({
