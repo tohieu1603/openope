@@ -83,7 +83,7 @@ export function renderWorkflow(props: WorkflowProps) {
 
     <!-- Workflow list section header -->
     <div class="wf-section-header">
-      <h3 class="wf-section-title">Workflows</h3>
+      <h3 class="wf-section-title">Việc định kỳ</h3>
       ${
         runningCount > 0
           ? html`
@@ -151,7 +151,7 @@ function renderRightPanel(
     return html`
       <div class="wf-empty-panel">
         <div class="wf-empty-panel-icon">${icons.workflow}</div>
-        <p>Chọn một workflow để xem chi tiết</p>
+        <p>Chọn một việc để xem chi tiết</p>
       </div>
     `;
   }
@@ -192,7 +192,7 @@ function renderRightPanel(
     <div class="wf-empty-panel">
       <h4 style="margin:0 0 4px">${selWf.name}</h4>
       <p style="opacity:.6;font-size:12px;margin:0">
-        ${selWf.enabled ? "Nhấn ▶ Chạy ngay hoặc chờ lịch trình" : "Workflow đang tạm dừng"}
+        ${selWf.enabled ? "Nhấn ▶ Chạy ngay hoặc chờ lịch trình" : "Việc đang tạm dừng"}
       </p>
     </div>
   `;

@@ -1655,7 +1655,7 @@ export function renderChat(props: ChatProps) {
                       }}
                       @keydown=${handleKeyDown}
                       @paste=${handlePaste}
-                      ?disabled=${sending || !gatewayReady}
+                      ?disabled=${!gatewayReady}
                     ></textarea>
                     ${
                       pendingImages.length > 0
@@ -1931,7 +1931,7 @@ export function renderChat(props: ChatProps) {
                       }}
                       @keydown=${handleKeyDown}
                       @paste=${handlePaste}
-                      ?disabled=${sending || !gatewayReady}
+                      ?disabled=${!gatewayReady}
                     ></textarea>
                     ${
                       pendingImages.length > 0
@@ -1995,7 +1995,7 @@ export function renderChat(props: ChatProps) {
                             type="button"
                             class="gc-queue-btn"
                             @click=${handleSendClick}
-                            ?disabled=${!draft.trim() && pendingImages.length === 0}
+                            ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
                             title="Thêm vào hàng chờ"
                           >Queue ${icons.arrowUp}</button>
                         `
@@ -2004,7 +2004,7 @@ export function renderChat(props: ChatProps) {
                             type="button"
                             class="gc-send-btn"
                             @click=${handleSendClick}
-                            ?disabled=${!draft.trim() && pendingImages.length === 0}
+                            ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
                             title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
                           >${icons.arrowUp}</button>
                         `

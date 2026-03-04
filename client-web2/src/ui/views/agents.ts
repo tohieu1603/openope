@@ -1936,10 +1936,10 @@ function renderAgentCron(params: {
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">Workflows</div>
-          <div class="card-sub">Automated workflows targeting this agent.</div>
+          <div class="card-title">Việc định kỳ</div>
+          <div class="card-sub">Các tác vụ tự động nhắm đến agent này.</div>
         </div>
-        <span class="chip" style="font-size: 13px; font-weight: 600;">${jobs.length} workflow${jobs.length !== 1 ? "s" : ""}</span>
+        <span class="chip" style="font-size: 13px; font-weight: 600;">${jobs.length} việc</span>
       </div>
       ${
         jobs.length === 0

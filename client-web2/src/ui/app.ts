@@ -128,7 +128,7 @@ function titleForTab(tab: Tab): string {
   const titles: Record<Tab, string> = {
     chat: "Trò Chuyện",
     analytics: "Phân Tích",
-    workflow: "Luồng Công Việc",
+    workflow: "Việc Định Kỳ",
     billing: "Thanh Toán",
     logs: "Nhật Ký",
     docs: "Tài Liệu",
@@ -138,7 +138,7 @@ function titleForTab(tab: Tab): string {
     agents: "Agents",
     skills: "Skills",
     nodes: "Nodes",
-    sessions: "Sessions",
+    sessions: "Nhật Ký Phiên",
     report: "Góp Ý",
   };
   return titles[tab] ?? tab;
@@ -159,7 +159,7 @@ function subtitleForTab(tab: Tab): string {
     agents: "Quản lý agents và workspace",
     skills: "Quản lý skills và cài đặt",
     nodes: "Thiết bị và node kết nối",
-    sessions: "Inspect active sessions and adjust per-session defaults.",
+    sessions: "Xem và quản lý các phiên hoạt động.",
     report: "Ý kiến của bạn giúp chúng mình phát triển tốt hơn",
   };
   return subtitles[tab] ?? "";
@@ -3372,7 +3372,7 @@ export class OperisApp extends LitElement {
     const labels: Record<Tab, string> = {
       chat: "Trò chuyện",
       analytics: "Phân tích",
-      workflow: "Workflows",
+      workflow: "Việc định kỳ",
       billing: "Thanh toán",
       logs: "Nhật ký",
       docs: "Tài liệu",
@@ -3382,7 +3382,7 @@ export class OperisApp extends LitElement {
       agents: "Agents",
       skills: "Skills",
       nodes: "Nodes",
-      sessions: "Sessions",
+      sessions: "Nhật ký phiên",
       report: "Góp ý",
     };
     return labels[tab] ?? tab;

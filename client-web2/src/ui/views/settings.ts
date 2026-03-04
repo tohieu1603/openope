@@ -928,8 +928,8 @@ export function renderSettings(props: SettingsProps) {
                 <div class="st-quick-card" @click=${() => onNavigate("workflow")}>
                   <div class="st-quick-icon workflow">${icons.workflow}</div>
                   <div class="st-quick-content">
-                    <div class="st-quick-title">Workflows</div>
-                    <div class="st-quick-desc">Tự động hóa công việc</div>
+                    <div class="st-quick-title">Việc định kỳ</div>
+                    <div class="st-quick-desc">Tự động hóa tác vụ theo lịch</div>
                   </div>
                 </div>
                 <div class="st-quick-card" @click=${() => onNavigate("docs")}>

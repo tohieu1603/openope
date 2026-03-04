@@ -29,7 +29,7 @@ export function renderFormCard(props: WorkflowProps) {
 
   return html`
     <div class="wf-card-panel">
-      <div class="wf-card-title">Tạo Workflow</div>
+      <div class="wf-card-title">Tạo Việc Định Kỳ</div>
       <div class="wf-card-sub">Tạo công việc tự động theo lịch.</div>
 
       <!-- Basic Info -->
@@ -233,7 +233,7 @@ export function renderFormCard(props: WorkflowProps) {
       <!-- Task/Message -->
       <label class="wf-field" style="margin-top: 12px;">
         <span
-          >${form.payloadKind === "systemEvent" ? "System text" : "Tin nhắn cho AI"}</span
+          >${form.payloadKind === "systemEvent" ? "Văn bản hệ thống" : "Tin nhắn cho AI"}</span
         >
         <textarea
           .value=${form.prompt}
@@ -250,7 +250,7 @@ export function renderFormCard(props: WorkflowProps) {
           ?disabled=${saving || !isValid}
           @click=${onSubmit}
         >
-          ${saving ? "Đang tạo…" : "Tạo workflow"}
+          ${saving ? "Đang tạo…" : "Tạo việc định kỳ"}
         </button>
       </div>
     </div>

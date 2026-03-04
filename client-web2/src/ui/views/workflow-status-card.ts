@@ -16,7 +16,7 @@ export function renderStatusCard(props: WorkflowProps) {
         </span>
       </div>
       <div class="wf-metric-card">
-        <span class="wf-metric-label">Workflow</span>
+        <span class="wf-metric-label">Việc định kỳ</span>
         <span class="wf-metric-value">${totalCount}</span>
       </div>
       <div class="wf-metric-card">

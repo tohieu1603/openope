@@ -41,7 +41,7 @@ export const NAV_ITEMS: Array<{
     tab: "sessions",
     label: "Nhật ký",
     icon: "scrollText",
-    description: "Inspect active sessions and adjust per-session defaults.",
+    description: "Xem và quản lý các phiên hoạt động.",
     section: "main",
   },
   {
@@ -53,9 +53,9 @@ export const NAV_ITEMS: Array<{
   },
   {
     tab: "workflow",
-    label: "Workflow",
+    label: "Việc định kỳ",
     icon: "workflow",
-    description: "Automate tasks with workflows",
+    description: "Tự động hóa các tác vụ định kỳ",
     section: "main",
   },
   {

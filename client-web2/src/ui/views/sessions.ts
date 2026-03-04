@@ -78,9 +78,9 @@ function isAlive(row: GatewaySessionRow): boolean {
 const THINK_LEVELS = ["", "off", "minimal", "low", "medium", "high"] as const;
 const BINARY_THINK_LEVELS = ["", "off", "on"] as const;
 const VERBOSE_LEVELS = [
-  { value: "", label: "inherit" },
-  { value: "off", label: "off" },
-  { value: "on", label: "on" },
+  { value: "", label: "kế thừa" },
+  { value: "off", label: "tắt" },
+  { value: "on", label: "bật" },
 ] as const;
 const REASONING_LEVELS = ["", "off", "on", "stream"] as const;
 
@@ -458,9 +458,9 @@ export function renderSessions(props: SessionsProps) {
       <!-- Toolbar -->
       <div class="ses-toolbar">
         <div class="ses-toolbar-left">
-          <span class="ses-count">${count} session${count !== 1 ? "s" : ""}</span>
+          <span class="ses-count">${count} nhật ký</span>
           <div class="ses-filter-row">
-            <span class="ses-filter-label">Active</span>
+            <span class="ses-filter-label">Hoạt động</span>
             <input class="ses-filter-input" .value=${props.activeMinutes}
               @input=${(e: Event) =>
                 props.onFiltersChange({
@@ -469,9 +469,9 @@ export function renderSessions(props: SessionsProps) {
                   includeGlobal: props.includeGlobal,
                   includeUnknown: props.includeUnknown,
                 })} />
-            <span class="ses-filter-label">min</span>
+            <span class="ses-filter-label">phút</span>
 
-            <span class="ses-filter-label" style="margin-left:4px">Limit</span>
+            <span class="ses-filter-label" style="margin-left:4px">Giới hạn</span>
             <input class="ses-filter-input" style="width:52px" .value=${props.limit}
               @input=${(e: Event) =>
                 props.onFiltersChange({
@@ -490,7 +490,7 @@ export function renderSessions(props: SessionsProps) {
                     includeGlobal: (e.target as HTMLInputElement).checked,
                     includeUnknown: props.includeUnknown,
                   })} />
-              Global
+              Toàn cục
             </label>
             <label class="ses-check">
               <input type="checkbox" .checked=${props.includeUnknown}
@@ -501,18 +501,18 @@ export function renderSessions(props: SessionsProps) {
                     includeGlobal: props.includeGlobal,
                     includeUnknown: (e.target as HTMLInputElement).checked,
                   })} />
-              Unknown
+              Không rõ
             </label>
           </div>
         </div>
         <button class="ses-refresh ${props.loading ? "ses-refresh--loading" : ""}"
           ?disabled=${props.loading} @click=${props.onRefresh}>
-          ${props.loading ? "Loading..." : "Refresh"}
+          ${props.loading ? "Đang tải..." : "Làm mới"}
         </button>
       </div>
 
       ${props.error ? html`<div class="ses-error">${props.error}</div>` : nothing}
-      ${props.result ? html`<div class="ses-store">Store: ${props.result.path}</div>` : nothing}
+      ${props.result ? html`<div class="ses-store">Kho: ${props.result.path}</div>` : nothing}
 
       <!-- Loading skeleton -->
       ${
@@ -536,7 +536,7 @@ export function renderSessions(props: SessionsProps) {
           ? html`
               <div class="ses-empty">
                 <div class="ses-empty-icon">📭</div>
-                No sessions found.
+                Không có nhật ký nào.
               </div>
             `
           : rows.length > 0
@@ -585,7 +585,7 @@ function renderCard(
           ${
             alive
               ? html`
-                  <span class="ses-badge ses-badge-alive"><span class="ses-alive-dot"></span>live</span>
+                  <span class="ses-badge ses-badge-alive"><span class="ses-alive-dot"></span>trực tuyến</span>
                 `
               : nothing
           }
@@ -600,7 +600,7 @@ function renderCard(
 
       <!-- Label -->
       <input class="ses-label-input" .value=${row.label ?? ""} ?disabled=${disabled}
-        placeholder="Add label..."
+        placeholder="Thêm nhãn..."
         @change=${(e: Event) => {
           const value = (e.target as HTMLInputElement).value.trim();
           onPatch(row.key, { label: value || null });
@@ -609,7 +609,7 @@ function renderCard(
       <!-- Token bar -->
       <div class="ses-token-bar">
         <div class="ses-token-info">
-          <span>Tokens</span>
+          <span>Token</span>
           <span>${formatTokens(row)}</span>
         </div>
         <div class="ses-token-track">
@@ -621,7 +621,7 @@ function renderCard(
       <!-- Controls -->
       <div class="ses-controls">
         <div class="ses-control">
-          <span class="ses-control-label">Thinking</span>
+          <span class="ses-control-label">Suy nghĩ</span>
           <select .value=${thinking} ?disabled=${disabled}
             @change=${(e: Event) => {
               const value = (e.target as HTMLSelectElement).value;
@@ -629,11 +629,11 @@ function renderCard(
                 thinkingLevel: resolveThinkLevelPatchValue(value, isBinaryThinking),
               });
             }}>
-            ${thinkLevels.map((l) => html`<option value=${l}>${l || "inherit"}</option>`)}
+            ${thinkLevels.map((l) => html`<option value=${l}>${l || "kế thừa"}</option>`)}
           </select>
         </div>
         <div class="ses-control">
-          <span class="ses-control-label">Verbose</span>
+          <span class="ses-control-label">Chi tiết</span>
           <select .value=${verbose} ?disabled=${disabled}
             @change=${(e: Event) => {
               const value = (e.target as HTMLSelectElement).value;
@@ -643,13 +643,13 @@ function renderCard(
           </select>
         </div>
         <div class="ses-control">
-          <span class="ses-control-label">Reasoning</span>
+          <span class="ses-control-label">Lập luận</span>
           <select .value=${reasoning} ?disabled=${disabled}
             @change=${(e: Event) => {
               const value = (e.target as HTMLSelectElement).value;
               onPatch(row.key, { reasoningLevel: value || null });
             }}>
-            ${REASONING_LEVELS.map((l) => html`<option value=${l}>${l || "inherit"}</option>`)}
+            ${REASONING_LEVELS.map((l) => html`<option value=${l}>${l || "kế thừa"}</option>`)}
           </select>
         </div>
       </div>
@@ -657,7 +657,7 @@ function renderCard(
       <!-- Footer -->
       <div class="ses-card-footer">
         <button class="ses-delete" ?disabled=${disabled} @click=${() => onDelete(row.key)}>
-          Delete
+          Xóa
         </button>
       </div>
     </div>

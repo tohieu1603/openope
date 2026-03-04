@@ -98,11 +98,11 @@ export const PAYLOAD_OPTIONS = [
 export const DELIVERY_MODE_OPTIONS = [
   {
     value: "announce",
-    label: "Announce summary",
+    label: "Thông báo tóm tắt",
     description: "Gửi kết quả tóm tắt",
   },
-  { value: "none", label: "None (internal)", description: "Không thông báo" },
+  { value: "none", label: "Không (nội bộ)", description: "Không thông báo" },
 ];
 export const CHANNEL_OPTIONS = [
-  { value: "last", label: "last", description: "Kênh cuối cùng tương tác" },
+  { value: "last", label: "Kênh cuối", description: "Kênh cuối cùng tương tác" },
 ];
