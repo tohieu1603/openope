@@ -5,6 +5,7 @@ import { marked } from "marked";
 import type { Conversation } from "../chat-api";
 import { t } from "../i18n";
 import { icons, type IconName } from "../icons";
+import { formatSessionDisplay } from "../session-actions";
 
 // Configure marked for safe inline rendering
 marked.setOptions({
@@ -150,8 +151,11 @@ export interface ChatProps {
   gatewaySessions?: Array<{
     key: string;
     displayName?: string;
+    derivedTitle?: string;
+    lastMessagePreview?: string;
     model?: string;
     updatedAt?: number | null;
+    kind?: string;
   }>;
   onSessionChange?: (key: string) => void;
 }
@@ -1571,8 +1575,9 @@ export function renderChat(props: ChatProps) {
               ${
                 gatewaySessions.length > 0
                   ? gatewaySessions.map((s) => {
-                      const label = s.displayName || s.key.split(":").pop() || s.key;
-                      return html`<option value=${s.key} ?selected=${s.key === sessionKey}>${label}</option>`;
+                      const { label, description } = formatSessionDisplay(s);
+                      const text = description ? `${label} — ${description}` : label;
+                      return html`<option value=${s.key} ?selected=${s.key === sessionKey}>${text}</option>`;
                     })
                   : html`<option value=${sessionKey} selected>${sessionKey.split(":").pop() || sessionKey}</option>`
               }
@@ -1582,7 +1587,7 @@ export function renderChat(props: ChatProps) {
             ${
               onRefreshChat
                 ? html`
-              <button class="gc-header-btn" @click=${onRefreshChat} ?disabled=${sending} title="Tải lại">
+              <button class="gc-header-btn" @click=${onRefreshChat} title="Tải lại">
                 ${icons.refresh}
               </button>
             `

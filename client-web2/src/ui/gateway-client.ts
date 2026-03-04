@@ -435,6 +435,36 @@ function notifyCronListeners(event: CronEvent) {
   }
 }
 
+// Agent lifecycle event from gateway (stream: "lifecycle")
+export type LifecycleEvent = {
+  runId: string;
+  stream: "lifecycle";
+  sessionKey?: string;
+  data: {
+    phase: "start" | "end" | "error";
+  };
+};
+
+// Event listeners for lifecycle events
+type LifecycleEventListener = (event: LifecycleEvent) => void;
+const lifecycleEventListeners = new Set<LifecycleEventListener>();
+
+export function subscribeToLifecycleEvents(listener: LifecycleEventListener): () => void {
+  lifecycleEventListeners.add(listener);
+  getGatewayClient();
+  return () => lifecycleEventListeners.delete(listener);
+}
+
+function notifyLifecycleListeners(event: LifecycleEvent) {
+  for (const listener of lifecycleEventListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      console.error("[gateway] lifecycle event listener error:", err);
+    }
+  }
+}
+
 // Event listeners for tool events
 type ToolEventListener = (event: ToolEvent) => void;
 const toolEventListeners = new Set<ToolEventListener>();
@@ -567,11 +597,13 @@ export function getGatewayClient(): GatewayClient {
         if (evt.event === "chat" && evt.payload) {
           notifyChatStreamListeners(evt.payload as ChatStreamEvent);
         }
-        // Handle agent events (tool + compaction streams)
+        // Handle agent events (tool + lifecycle + compaction streams)
         if (evt.event === "agent" && evt.payload) {
           const p = evt.payload as { stream?: string; data?: Record<string, unknown> };
           if (p.stream === "tool") {
             notifyToolListeners(evt.payload as ToolEvent);
+          } else if (p.stream === "lifecycle") {
+            notifyLifecycleListeners(evt.payload as LifecycleEvent);
           } else if (p.stream === "compaction" && p.data) {
             const phase = typeof p.data.phase === "string" ? p.data.phase : "";
             if (phase === "start" || phase === "end") {

@@ -610,6 +610,183 @@
 }
 
 /* ===========================================
+   Utility Classes
+   =========================================== */
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.mono {
+  font-family: var(--mono, "SF Mono", "Fira Code", monospace);
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted, #71717a);
+  font-size: 13px;
+}
+
+/* ===========================================
+   Sessions Grid Table (matches original OpenClaw UI)
+   =========================================== */
+
+.table-head,
+.table-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.8fr 0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 0.6fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.table-head {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 0 12px;
+}
+
+.table-row {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--card);
+  transition: border-color 0.15s ease;
+}
+
+.table-row:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+.table-row input,
+.table-row select {
+  border: 1px solid var(--input, var(--border));
+  background: var(--card);
+  border-radius: var(--radius-md, 8px);
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  width: 100%;
+}
+
+.table-row input:focus,
+.table-row select:focus {
+  outline: none;
+  border-color: var(--ring, var(--accent));
+}
+
+.table-row select {
+  appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+
+.session-link {
+  text-decoration: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.session-link:hover {
+  text-decoration: underline;
+}
+
+/* ===========================================
+   Filters
+   =========================================== */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+/* ===========================================
+   Form Fields
+   =========================================== */
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field input,
+.field textarea,
+.field select {
+  border: 1px solid var(--input, var(--border));
+  background: var(--card);
+  border-radius: var(--radius-md, 8px);
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--text);
+  transition: border-color 0.15s ease;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--ring, var(--accent));
+}
+
+.field.checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+/* ===========================================
+   Card Sub
+   =========================================== */
+
+.card-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+/* ===========================================
+   Callouts
+   =========================================== */
+
+.callout {
+  padding: 14px 16px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--secondary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.callout.danger {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%);
+  color: var(--danger, #ef4444);
+}
+
+/* Button danger variant */
+.btn.danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger, #ef4444);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* ===========================================
    Lists
    =========================================== */
 

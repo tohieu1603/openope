@@ -61,6 +61,7 @@ import {
   subscribeToCronEvents,
   subscribeToChatStream,
   subscribeToToolEvents,
+  subscribeToLifecycleEvents,
   subscribeToCompactionEvents,
   stopGatewayClient,
   waitForConnection,
@@ -69,6 +70,7 @@ import {
   type CronEvent,
   type ChatStreamEvent,
   type ToolEvent,
+  type LifecycleEvent,
   type CompactionEvent,
 } from "./gateway-client";
 import { t } from "./i18n";
@@ -97,6 +99,7 @@ import { renderLogin } from "./views/login";
 import { renderLogs, type LogEntry } from "./views/logs";
 import { renderNodes } from "./views/nodes";
 import { renderReportView } from "./views/report";
+import { renderSessions } from "./views/sessions";
 import { renderSettings } from "./views/settings";
 import { renderSkills } from "./views/skills";
 import { renderWorkflow } from "./views/workflow";
@@ -135,6 +138,7 @@ function titleForTab(tab: Tab): string {
     agents: "Agents",
     skills: "Skills",
     nodes: "Nodes",
+    sessions: "Sessions",
     report: "Góp Ý",
   };
   return titles[tab] ?? tab;
@@ -155,6 +159,7 @@ function subtitleForTab(tab: Tab): string {
     agents: "Quản lý agents và workspace",
     skills: "Quản lý skills và cài đặt",
     nodes: "Thiết bị và node kết nối",
+    sessions: "Inspect active sessions and adjust per-session defaults.",
     report: "Ý kiến của bạn giúp chúng mình phát triển tốt hơn",
   };
   return subtitles[tab] ?? "";
@@ -199,6 +204,13 @@ export class OperisApp extends LitElement {
   @state() chatTokenBalance = 0;
   // Current chat run ID for abort
   private chatRunId: string | null = null;
+  // Run dedup maps (matching TUI tui-event-handlers.ts)
+  private finalizedRuns = new Map<string, number>();
+  private sessionRuns = new Map<string, number>();
+  private localRunIds = new Set<string>();
+  private lastTrackedSessionKey: string | null = null;
+  // Lifecycle subscription cleanup
+  private lifecycleEventUnsubscribe: (() => void) | null = null;
   // Chat queue — messages sent while busy, flushed after final (like original UI)
   @state() chatQueue: Array<{
     id: string;
@@ -217,9 +229,40 @@ export class OperisApp extends LitElement {
   @state() gatewaySessions: Array<{
     key: string;
     displayName?: string;
+    derivedTitle?: string;
+    lastMessagePreview?: string;
     model?: string;
     updatedAt?: number | null;
+    kind?: string;
   }> = [];
+  // Sessions tab state
+  @state() sessionsLoading = false;
+  @state() sessionsResult: {
+    ts: number;
+    path: string;
+    count: number;
+    defaults: { model: string | null; contextTokens: number | null };
+    sessions: Array<{
+      key: string;
+      kind: "direct" | "group" | "global" | "unknown";
+      label?: string;
+      displayName?: string;
+      updatedAt: number | null;
+      thinkingLevel?: string;
+      verboseLevel?: string;
+      reasoningLevel?: string;
+      modelProvider?: string;
+      totalTokens?: number;
+      contextTokens?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    }>;
+  } | null = null;
+  @state() sessionsError: string | null = null;
+  @state() sessionsActiveMinutes = "1440";
+  @state() sessionsLimit = "50";
+  @state() sessionsIncludeGlobal = false;
+  @state() sessionsIncludeUnknown = false;
   // Login state
   @state() loginLoading = false;
   @state() loginError: string | null = null;
@@ -478,6 +521,11 @@ export class OperisApp extends LitElement {
       this.handleCompactionEvent(evt);
     });
 
+    // Subscribe to agent lifecycle events (start/end/error)
+    this.lifecycleEventUnsubscribe = subscribeToLifecycleEvents((evt: LifecycleEvent) => {
+      this.handleLifecycleEvent(evt);
+    });
+
     // Reload current tab data when gateway WS reconnects after a drop
     // (Original: onHello silently resets orphaned chat run state, then refreshes active tab)
     this.reconnectUnsubscribe = onGatewayReconnect(() => {
@@ -488,6 +536,10 @@ export class OperisApp extends LitElement {
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
       this.chatSending = false;
+      // Clear run tracking maps (like TUI syncSessionKey on reconnect)
+      this.finalizedRuns.clear();
+      this.sessionRuns.clear();
+      this.localRunIds.clear();
       this.loadTabData(this.tab);
     });
 
@@ -618,9 +670,54 @@ export class OperisApp extends LitElement {
     }
   }
 
+  // --- Run tracking helpers (matching TUI tui-event-handlers.ts) ---
+
+  /** Prune a run map when it exceeds 200 entries (keep 150, evict oldest). */
+  private pruneRunMap(runs: Map<string, number>) {
+    if (runs.size <= 200) return;
+    const keepUntil = Date.now() - 10 * 60 * 1000;
+    for (const [key, ts] of runs) {
+      if (runs.size <= 150) break;
+      if (ts < keepUntil) runs.delete(key);
+    }
+    if (runs.size > 200) {
+      for (const key of runs.keys()) {
+        runs.delete(key);
+        if (runs.size <= 150) break;
+      }
+    }
+  }
+
+  /** Clear run maps when session changes (like TUI syncSessionKey). */
+  private syncRunTracking() {
+    const currentKey = this.chatConversationId || "main";
+    if (currentKey === this.lastTrackedSessionKey) return;
+    this.lastTrackedSessionKey = currentKey;
+    this.finalizedRuns.clear();
+    this.sessionRuns.clear();
+    this.localRunIds.clear();
+  }
+
+  private noteSessionRun(runId: string) {
+    this.sessionRuns.set(runId, Date.now());
+    this.pruneRunMap(this.sessionRuns);
+  }
+
+  private noteFinalizedRun(runId: string) {
+    this.finalizedRuns.set(runId, Date.now());
+    this.sessionRuns.delete(runId);
+    this.localRunIds.delete(runId);
+    this.pruneRunMap(this.finalizedRuns);
+  }
+
+  /** Check if a run is known (active, in-session, or recently finalized). */
+  private isKnownRun(runId: string): boolean {
+    return runId === this.chatRunId || this.sessionRuns.has(runId) || this.finalizedRuns.has(runId);
+  }
+
   private handleToolEvent(evt: ToolEvent) {
-    // Accept tool events when busy (chatSending or chatRunId active)
-    if (!this.isChatBusy()) return;
+    // Filter by known runs (like TUI: active + sessionRuns + finalizedRuns)
+    if (!this.isKnownRun(evt.runId)) return;
     const { phase, toolCallId, name, isError, args, result, partialResult } = evt.data;
     if (!toolCallId) return;
 
@@ -740,12 +837,28 @@ export class OperisApp extends LitElement {
   }
 
   private handleChatStreamEvent(evt: ChatStreamEvent) {
-    // Guard: only process events when actively sending via WS (like original client-web)
     // SSE streaming sets chatStreamingRunId = "sse-stream", skip WS events in that case
-    if (!this.chatSending || this.chatStreamingRunId === "sse-stream") return;
+    if (this.chatStreamingRunId === "sse-stream") return;
+    this.syncRunTracking();
+    // Filter by session key (like TUI: only process events for active session)
+    // Gateway broadcasts the exact sessionKey the client sent in chat.send, so compare
+    // using the same format. Normalize both to full key to handle "main" vs "agent:main:main".
+    if (evt.sessionKey) {
+      const evtKey = this.normalizeSessionKey(evt.sessionKey);
+      const currentKey = this.normalizeSessionKey(this.chatConversationId || "main");
+      if (evtKey !== currentKey) return;
+    }
+    // Dedup: skip delta/final for already-finalized runs
+    if (this.finalizedRuns.has(evt.runId)) {
+      if (evt.state === "delta" || evt.state === "final") return;
+    }
+    this.noteSessionRun(evt.runId);
+    // Auto-assign chatRunId if we receive events without an active run (like TUI)
+    if (!this.chatRunId) {
+      this.chatRunId = evt.runId;
+    }
 
     if (evt.state === "delta" && evt.message?.content) {
-      // Extract text from content blocks (same as original)
       const text = evt.message.content
         .filter((block) => block.type === "text" && block.text)
         .map((block) => block.text)
@@ -756,12 +869,16 @@ export class OperisApp extends LitElement {
     } else if (evt.state === "final") {
       this.handleChatFinal(evt);
     } else if (evt.state === "aborted") {
-      // Run was aborted (e.g. superseded by new message) — clear state and flush queue
+      this.noteFinalizedRun(evt.runId);
       this.chatRunId = null;
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
       this.chatSending = false;
+      // Reload history if not a local run (event from another client)
+      if (!this.localRunIds.has(evt.runId)) {
+        this.loadChatMessagesFromGateway();
+      }
       this.flushChatQueue();
     } else if (evt.state === "error") {
       const errorMsg = evt.errorMessage || "Có lỗi xảy ra khi xử lý tin nhắn";
@@ -769,16 +886,34 @@ export class OperisApp extends LitElement {
         ...this.chatMessages,
         { role: "assistant", content: `⚠️ ${errorMsg}`, timestamp: new Date() },
       ];
+      this.noteFinalizedRun(evt.runId);
       this.chatRunId = null;
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
       this.chatSending = false;
+      if (!this.localRunIds.has(evt.runId)) {
+        this.loadChatMessagesFromGateway();
+      }
       this.flushChatQueue();
     }
   }
 
-  /** Handle final chat event — append message, reset state, flush queue (like original). */
+  /** Handle agent lifecycle events (start/end/error) like TUI. */
+  private handleLifecycleEvent(evt: LifecycleEvent) {
+    // Only process for active run (like TUI)
+    if (evt.runId !== this.chatRunId) return;
+    const phase = evt.data?.phase;
+    if (phase === "start") {
+      // Agent started running — chatRunId is already set
+    } else if (phase === "end") {
+      // Agent finished — final chat event will handle cleanup
+    } else if (phase === "error") {
+      // Agent errored — final/error chat event will handle cleanup
+    }
+  }
+
+  /** Handle final chat event — append message, reset state, flush queue (like TUI). */
   private handleChatFinal(evt: ChatStreamEvent) {
     const finalText =
       evt.message?.content
@@ -786,7 +921,10 @@ export class OperisApp extends LitElement {
         .map((block) => block.text)
         .join("") || this.chatStreamingText;
 
-    if (finalText) {
+    // If not a local run, reload history to get server-side formatting
+    if (!this.localRunIds.has(evt.runId)) {
+      this.loadChatMessagesFromGateway();
+    } else if (finalText) {
       this.chatMessages = [
         ...this.chatMessages,
         { role: "assistant", content: finalText, timestamp: new Date() },
@@ -800,6 +938,7 @@ export class OperisApp extends LitElement {
         wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
     }
 
+    this.noteFinalizedRun(evt.runId);
     this.chatRunId = null;
     this.chatStreamingText = "";
     this.chatStreamingRunId = null;
@@ -1000,6 +1139,8 @@ export class OperisApp extends LitElement {
     this.toolEventUnsubscribe = null;
     this.compactionEventUnsubscribe?.();
     this.compactionEventUnsubscribe = null;
+    this.lifecycleEventUnsubscribe?.();
+    this.lifecycleEventUnsubscribe = null;
     this.reconnectUnsubscribe?.();
     this.reconnectUnsubscribe = null;
     stopUsageTracker();
@@ -1033,6 +1174,8 @@ export class OperisApp extends LitElement {
       this.startBillingCountdown();
     } else if (tab === "logs") {
       this.loadLogs();
+    } else if (tab === "sessions") {
+      this.loadSessionsList();
     } else if (tab === "report") {
       this.loadReports();
     }
@@ -1090,6 +1233,7 @@ export class OperisApp extends LitElement {
     "analytics",
     "billing",
     "logs",
+    "sessions",
   ];
 
   private handlePopState() {
@@ -1145,16 +1289,27 @@ export class OperisApp extends LitElement {
         sessions: Array<{
           key: string;
           displayName?: string;
+          derivedTitle?: string;
+          lastMessagePreview?: string;
           model?: string;
           updatedAt?: number | null;
           kind?: string;
         }>;
-      }>("sessions.list", { includeDerivedTitles: true, includeLastMessage: true });
+      }>("sessions.list", {
+        includeGlobal: false,
+        includeUnknown: false,
+        includeDerivedTitles: true,
+        includeLastMessage: true,
+      });
       if (result?.sessions) {
-        // Filter to only show agent sessions (agent:*) — skip openai/telegram/unknown/global
-        this.gatewaySessions = result.sessions.filter((s: { key: string }) =>
-          s.key.startsWith("agent:"),
-        );
+        // Only show web-chat sessions: agent keys whose rest part has no ":"
+        // This excludes telegram:*, openai-user:*, cron:*, discord:*, etc.
+        this.gatewaySessions = result.sessions.filter((s) => {
+          if (!s.key.startsWith("agent:")) return false;
+          if (s.kind === "group") return false;
+          const rest = this.shortSessionKey(s.key);
+          return !rest.includes(":");
+        });
       }
     } catch (err) {
       console.error("[chat] Failed to load gateway sessions:", err);
@@ -1167,12 +1322,13 @@ export class OperisApp extends LitElement {
     return `agent:main:${key}`;
   }
 
-  /** Short display label for session key: "agent:main:main" → "main" */
+  /** Strip agent prefix: "agent:main:main" → "main", "agent:main:telegram:123" → "telegram:123" */
   private shortSessionKey(key: string): string {
-    // agent:main:main → main, agent:main:webchat-xyz → webchat-xyz
-    const parts = key.split(":");
-    if (parts.length === 3 && parts[0] === "agent") return parts[2];
-    return key;
+    if (!key.startsWith("agent:")) return key;
+    const firstColon = key.indexOf(":");
+    const secondColon = key.indexOf(":", firstColon + 1);
+    if (secondColon === -1) return key;
+    return key.substring(secondColon + 1);
   }
 
   /** Switch to a different gateway session */
@@ -1181,13 +1337,13 @@ export class OperisApp extends LitElement {
     const currentFull = this.normalizeSessionKey(this.chatConversationId || "main");
     if (fullKey === currentFull) return;
 
-    // Use the short key for internal state (matches chat.send behavior)
-    const shortKey = this.shortSessionKey(key);
-    this.chatConversationId = shortKey;
+    // Store full key so chat.history receives the exact key from sessions.list
+    this.chatConversationId = fullKey;
     this.chatMessages = [];
     this.chatStreamingText = "";
     this.chatToolCalls = [];
-    this.persistSessionKey(shortKey);
+    this.persistSessionKey(fullKey);
+    console.log("[session] switching to:", fullKey);
     await this.loadChatMessagesFromGateway(true);
     this.scrollChatToBottom();
   }
@@ -1403,6 +1559,7 @@ export class OperisApp extends LitElement {
       const gw = await waitForConnection(5000);
       const runId = crypto.randomUUID();
       this.chatRunId = runId;
+      this.localRunIds.add(runId);
       await gw.request(
         "chat.send",
         {
@@ -1551,6 +1708,11 @@ export class OperisApp extends LitElement {
       }>("chat.history", { sessionKey, limit: 200 });
 
       const rawMessages = Array.isArray(res.messages) ? res.messages : [];
+      console.log("[chat] history response:", {
+        sessionKey,
+        sessionId: res.sessionId,
+        messageCount: rawMessages.length,
+      });
 
       // Parse gateway content blocks → flat string format used by client-web2
       const parsed = rawMessages
@@ -3038,6 +3200,63 @@ export class OperisApp extends LitElement {
     if (start && end) this.loadAnalytics();
   }
 
+  // ── Sessions handlers ─────────────────────────────────────────────────
+
+  private async loadSessionsList() {
+    this.sessionsLoading = true;
+    this.sessionsError = null;
+    try {
+      const gw = await waitForConnection(5000);
+      const result = await gw.request<any>("sessions.list", {
+        activeMinutes: Number(this.sessionsActiveMinutes) || 60,
+        limit: Number(this.sessionsLimit) || 50,
+        includeGlobal: this.sessionsIncludeGlobal,
+        includeUnknown: this.sessionsIncludeUnknown,
+      });
+      this.sessionsResult = result;
+    } catch (err) {
+      this.sessionsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.sessionsLoading = false;
+    }
+  }
+
+  private async handleSessionsPatch(
+    key: string,
+    patch: {
+      label?: string | null;
+      thinkingLevel?: string | null;
+      verboseLevel?: string | null;
+      reasoningLevel?: string | null;
+    },
+  ) {
+    try {
+      const gw = await waitForConnection(5000);
+      await gw.request("sessions.patch", { key, ...patch });
+      this.loadSessionsList();
+    } catch (err) {
+      console.error("[sessions] patch failed:", err);
+      showToast("Failed to patch session", "error");
+    }
+  }
+
+  private async handleSessionsDelete(key: string) {
+    const confirmed = await showConfirm({
+      title: `Delete session "${key}"?`,
+      message: "This action cannot be undone.",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      const gw = await waitForConnection(5000);
+      await gw.request("sessions.delete", { key });
+      this.loadSessionsList();
+    } catch (err) {
+      console.error("[sessions] delete failed:", err);
+      showToast("Failed to delete session", "error");
+    }
+  }
+
   // ── Report handlers ──────────────────────────────────────────────────
 
   private async loadReports() {
@@ -3145,6 +3364,7 @@ export class OperisApp extends LitElement {
       agents: "Agents",
       skills: "Skills",
       nodes: "Nodes",
+      sessions: "Sessions",
       report: "Góp ý",
     };
     return labels[tab] ?? tab;
@@ -3625,6 +3845,27 @@ export class OperisApp extends LitElement {
           onFormChange: (patch) => (this.reportForm = { ...this.reportForm, ...patch }),
           onSubmit: () => this.handleReportSubmit(),
           onRefresh: () => this.loadReports(),
+        });
+      case "sessions":
+        return renderSessions({
+          loading: this.sessionsLoading,
+          result: this.sessionsResult as any,
+          error: this.sessionsError,
+          activeMinutes: this.sessionsActiveMinutes,
+          limit: this.sessionsLimit,
+          includeGlobal: this.sessionsIncludeGlobal,
+          includeUnknown: this.sessionsIncludeUnknown,
+          basePath: "",
+          onFiltersChange: (next) => {
+            this.sessionsActiveMinutes = next.activeMinutes;
+            this.sessionsLimit = next.limit;
+            this.sessionsIncludeGlobal = next.includeGlobal;
+            this.sessionsIncludeUnknown = next.includeUnknown;
+            this.loadSessionsList();
+          },
+          onRefresh: () => this.loadSessionsList(),
+          onPatch: (key, patch) => this.handleSessionsPatch(key, patch),
+          onDelete: (key) => this.handleSessionsDelete(key),
         });
       default:
         return nothing;

@@ -13,6 +13,7 @@ export type Tab =
   | "skills"
   | "nodes"
   | "analytics"
+  | "sessions"
   | "report";
 
 export const NAV_ITEMS: Array<{
@@ -37,17 +38,17 @@ export const NAV_ITEMS: Array<{
     section: "main",
   },
   {
+    tab: "sessions",
+    label: "Nhật ký",
+    icon: "scrollText",
+    description: "Inspect active sessions and adjust per-session defaults.",
+    section: "main",
+  },
+  {
     tab: "billing",
     label: "Billing",
     icon: "creditCard",
     description: "Manage your subscription and payments",
-    section: "main",
-  },
-  {
-    tab: "logs",
-    label: "Logs",
-    icon: "scrollText",
-    description: "View your conversation history",
     section: "main",
   },
   {
@@ -123,6 +124,7 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   skills: "/skills",
   nodes: "/nodes",
+  sessions: "/sessions",
   report: "/report",
 };
 
