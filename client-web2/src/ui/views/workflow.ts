@@ -38,12 +38,14 @@ export interface WorkflowProps {
   onToggle: (workflow: Workflow) => void;
   onRun: (workflow: Workflow) => void;
   onCancel?: (workflow: Workflow) => void;
+  onEdit?: (workflow: Workflow) => void;
   onDelete: (workflow: Workflow) => void;
   onToggleDetails?: (workflowId: string) => void;
   onLoadRuns?: (workflowId: string | null) => void;
   onSelectWorkflow?: (workflowId: string | null) => void;
   showForm?: boolean;
   onToggleForm?: () => void;
+  editingWorkflowId?: string | null;
 }
 
 export function renderWorkflow(props: WorkflowProps) {

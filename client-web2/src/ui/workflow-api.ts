@@ -68,6 +68,36 @@ export async function createWorkflow(form: WorkflowFormState): Promise<boolean> 
   }
 }
 
+export async function updateWorkflow(id: string, form: WorkflowFormState): Promise<boolean> {
+  try {
+    const client = await waitForConnection();
+    // Build patch matching CronJobPatchSchema (differs from cron.add format)
+    const addPayload = formToCronPayload(form);
+    const { payload: rawPayload, isolation: _iso, ...rest } = addPayload as Record<string, unknown>;
+    // Strip delivery fields from payload (cron.update expects separate 'delivery')
+    const { deliver, channel, to, ...cleanPayload } = rawPayload as Record<string, unknown>;
+
+    const patch: Record<string, unknown> = { ...rest, payload: cleanPayload };
+
+    // Build delivery object separately
+    if (form.payloadKind === "agentTurn" && form.deliveryMode === "announce") {
+      patch.delivery = {
+        mode: "announce",
+        ...(form.deliveryChannel ? { channel: form.deliveryChannel } : {}),
+        ...(form.deliveryTo?.trim() ? { to: form.deliveryTo.trim() } : {}),
+      };
+    } else {
+      patch.delivery = { mode: "none" };
+    }
+
+    await client.request("cron.update", { id, patch });
+    return true;
+  } catch (error) {
+    console.error("Failed to update workflow:", error);
+    throw error;
+  }
+}
+
 export async function toggleWorkflow(id: string, enabled: boolean): Promise<boolean> {
   try {
     const client = await waitForConnection();

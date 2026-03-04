@@ -176,6 +176,17 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
         </button>
         <button
           class="wf-action"
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            props.onEdit?.(workflow);
+          }}
+          ?disabled=${saving || isRunning}
+        >
+          ${icons.pencil}
+          <span>Sửa</span>
+        </button>
+        <button
+          class="wf-action"
           @click=${() => onToggle(workflow)}
           ?disabled=${saving}
         >
