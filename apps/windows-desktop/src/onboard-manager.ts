@@ -177,6 +177,49 @@ export class OnboardManager {
   }
 
   /**
+   * Seed default cron jobs if none exist yet.
+   * Copies cron-jobs-preset.json → ~/.operis/cron/jobs.json on first run.
+   * Idempotent: skips if jobs.json already exists and is non-empty.
+   */
+  seedDefaultCronJobs(presetPath: string): void {
+    try {
+      const cronDir = path.join(this.stateDir, "cron");
+      const jobsPath = path.join(cronDir, "jobs.json");
+
+      // Skip if jobs.json already exists with content
+      if (fs.existsSync(jobsPath)) {
+        const raw = fs.readFileSync(jobsPath, "utf-8").trim();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed?.jobs) && parsed.jobs.length > 0) return;
+          } catch { /* invalid JSON — overwrite with preset */ }
+        }
+      }
+
+      if (!fs.existsSync(presetPath)) return;
+
+      // Read preset and stamp timestamps + generate unique IDs
+      const presetRaw = fs.readFileSync(presetPath, "utf-8");
+      const preset = JSON.parse(presetRaw);
+      const now = Date.now();
+      if (Array.isArray(preset?.jobs)) {
+        for (const job of preset.jobs) {
+          if (!job.createdAtMs) job.createdAtMs = now;
+          if (!job.updatedAtMs) job.updatedAtMs = now;
+        }
+      }
+
+      if (!fs.existsSync(cronDir)) {
+        fs.mkdirSync(cronDir, { recursive: true });
+      }
+      fs.writeFileSync(jobsPath, JSON.stringify(preset, null, 2), "utf-8");
+    } catch (err) {
+      console.error("[onboard] Failed to seed default cron jobs:", err);
+    }
+  }
+
+  /**
    * Ensure gateway config has Electron-specific settings (idempotent).
    * Called after onboard and on every app startup.
    */

@@ -16,7 +16,7 @@ import { GatewayManager } from "./gateway-manager";
 import { TunnelManager } from "./tunnel-manager";
 import { TrayManager } from "./tray-manager";
 import { GATEWAY_PORT, IPC } from "./types";
-import { resolvePresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
+import { resolvePresetPath, resolveCronPresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
 import { IS_PRODUCTION } from "./build-mode";
 
 // Single instance lock - prevent multiple app instances
@@ -299,6 +299,11 @@ app.whenReady().then(async () => {
   }
   onboardMgr.ensureElectronConfig();
   onboardMgr.ensureAgentAuthStore();
+  // Seed default cron jobs on first run (before gateway starts)
+  const cronPresetPath = resolveCronPresetPath();
+  if (cronPresetPath) {
+    onboardMgr.seedDefaultCronJobs(cronPresetPath);
+  }
   const gatewayToken = onboardMgr.readGatewayToken();
   gateway.gatewayToken = gatewayToken;
   // Delay UI loading until gateway is healthy (prevents WS backoff accumulation)

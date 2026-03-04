@@ -185,6 +185,7 @@ export function formToCronPayload(form: WorkflowFormState) {
     kind: "agentTurn";
     message: string;
     model?: string;
+    timeoutSeconds?: number;
     deliver?: boolean;
     channel?: string;
     to?: string;
@@ -201,6 +202,7 @@ export function formToCronPayload(form: WorkflowFormState) {
       kind: "agentTurn",
       message: promptText,
       model: "operis/operis-multi",
+      ...(form.timeout > 0 ? { timeoutSeconds: form.timeout } : {}),
     };
 
     // Delivery settings go INSIDE payload for agentTurn

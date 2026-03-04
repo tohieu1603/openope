@@ -34,3 +34,9 @@ export function resolveStateDir(): string {
 export function resolveConfigPath(): string {
   return path.join(resolveStateDir(), "operis.json");
 }
+
+/** Resolve bundled cron jobs preset (or null if not bundled) */
+export function resolveCronPresetPath(): string | null {
+  const p = resolveResourcePath("cron-jobs-preset.json");
+  return fs.existsSync(p) ? p : null;
+}

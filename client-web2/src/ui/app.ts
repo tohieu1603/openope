@@ -1442,6 +1442,9 @@ export class OperisApp extends LitElement {
       );
       // chat.send returns immediately. Streaming via handleChatStreamEvent.
     } catch (err) {
+      // Only clear chatSending on request failure — no WS events will arrive.
+      // On success, chatSending stays true until handleChatStreamEvent receives
+      // "final", "error", or "aborted" (which clear chatSending themselves).
       const errorMsg = err instanceof Error ? err.message : "Không thể gửi tin nhắn";
       this.chatError = errorMsg;
       this.chatMessages = [
@@ -1452,8 +1455,6 @@ export class OperisApp extends LitElement {
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
-    } finally {
-      // Original: chatSending = false in finally, chatRunId stays until final/aborted/error
       this.chatSending = false;
     }
   }

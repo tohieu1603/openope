@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "preset-test-excel",
+      "name": "Test Excel",
+      "description": "Tạo và sửa file Excel — quản lý nhân sự",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# TEST EXCEL — Quản lý nhân sự\n\nTạo file Excel \"test_excel.xlsx\" trong thư mục Desktop với 4 bước tuần tự:\n\n## Bước 1: Tạo bảng trống\n- Tạo file Excel mới\n- Header dòng 1: STT | Họ Tên | Tuổi | Phòng Ban | Lương (VNĐ)\n- Format header: nền xanh đậm (#1B4F72), chữ trắng, bold\n- Cột STT rộng 6, Họ Tên rộng 25, Tuổi rộng 8, Phòng Ban rộng 20, Lương rộng 18\n\n## Bước 2: Điền dữ liệu 5 nhân viên\n- NV1: Nguyễn Văn An, 28, Kỹ thuật, 15.000.000\n- NV2: Trần Thị Bình, 32, Nhân sự, 12.000.000\n- NV3: Lê Hoàng Cường, 25, Marketing, 13.500.000\n- NV4: Phạm Thị Dung, 30, Kế toán, 14.000.000\n- NV5: Hoàng Minh Đức, 35, Giám đốc, 25.000.000\n- Format lương: number với dấu phẩy ngàn\n\n## Bước 3: Thêm 3 nhân viên mới + dòng tổng kết\n- NV6: Vũ Thị Em, 24, Kỹ thuật, 11.000.000\n- NV7: Đặng Văn Phúc, 29, Marketing, 13.000.000\n- NV8: Bùi Thị Giang, 27, Nhân sự, 11.500.000\n- Tô vàng (#F4D03F) background cho 3 NV mới\n- Thêm dòng tổng kết: nền xanh lá (#27AE60), chữ đỏ (#E74C3C), bold\n- Tổng kết gồm: Tổng NV, Tổng lương (SUM formula)\n\n## Bước 4: Xóa 3 NV, đánh lại STT, cập nhật tổng\n- Xóa NV2 (Trần Thị Bình), NV4 (Phạm Thị Dung), NV6 (Vũ Thị Em)\n- Đánh lại STT từ 1 đến 5\n- Cập nhật lại công thức SUM cho dòng tổng kết\n\nLưu file cuối cùng: Desktop/test_excel.xlsx",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 600
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    },
+    {
+      "id": "preset-test-word",
+      "name": "Test Word",
+      "description": "Tạo báo cáo nhân sự Word — format chuyên nghiệp",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# TEST WORD — Báo cáo nhân sự\n\nTạo file Word \"test_word.docx\" trong thư mục Desktop với 4 bước tuần tự:\n\n## Bước 1: Tạo tiêu đề\n- Tiêu đề: \"BÁO CÁO NHÂN SỰ QUÝ II/2025\"\n- Font: xanh đậm (#1B4F72), cỡ 18, bold, căn giữa\n- Thêm dòng phụ: \"Phòng Nhân sự — Công ty TNHH Operis\"\n\n## Bước 2: Viết nội dung + danh sách 5 nhân viên\n- Đoạn mở đầu: tổng quan tình hình nhân sự quý II\n- Danh sách 5 NV (bullet list):\n  • Nguyễn Văn An — Kỹ thuật — 15.000.000 VNĐ\n  • Trần Thị Bình — Nhân sự — 12.000.000 VNĐ\n  • Lê Hoàng Cường — Marketing — 13.500.000 VNĐ\n  • Phạm Thị Dung — Kế toán — 14.000.000 VNĐ\n  • Hoàng Minh Đức — Giám đốc — 25.000.000 VNĐ\n- Tổng quỹ lương: 79.500.000 VNĐ\n\n## Bước 3: Thêm 3 NV mới (highlight vàng) + tổng kết (chữ đỏ)\n- Thêm mục \"Nhân viên mới Quý II\":\n  • Vũ Thị Em — Kỹ thuật — 11.000.000 VNĐ (highlight vàng)\n  • Đặng Văn Phúc — Marketing — 13.000.000 VNĐ (highlight vàng)\n  • Bùi Thị Giang — Nhân sự — 11.500.000 VNĐ (highlight vàng)\n- Dòng tổng kết: chữ đỏ (#E74C3C), bold\n  \"Tổng nhân sự: 8 người | Tổng quỹ lương: 115.000.000 VNĐ\"\n\n## Bước 4: Cập nhật nghỉ việc + ký tên\n- Thêm mục \"Nghỉ việc Quý II\": Trần Thị Bình, Phạm Thị Dung\n- Cập nhật tổng: 6 người, quỹ lương mới\n- Phần ký tên cuối trang:\n  Bên trái: \"Trưởng phòng Nhân sự\" + dòng ký\n  Bên phải: \"Giám đốc\" + dòng ký\n  Ngày tháng ở giữa\n\nLưu file cuối cùng: Desktop/test_word.docx",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 600
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    },
+    {
+      "id": "preset-test-browser",
+      "name": "Test Browser",
+      "description": "Mở trình duyệt, tìm kiếm Google, vào VnExpress",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# TEST BROWSER — Tìm kiếm & duyệt web\n\nThực hiện 4 bước duyệt web (chờ 5 giây giữa mỗi bước):\n\n## Bước 1: Mở trình duyệt → vào google.com\n- Mở trình duyệt có sẵn trên hệ thống\n- Truy cập google.com\n- Xác nhận trang đã load thành công\n\n## Bước 2: Tìm \"thời tiết Hà Nội hôm nay\"\n- Nhập vào ô tìm kiếm: \"thời tiết Hà Nội hôm nay\"\n- Enter để tìm\n- Ghi lại kết quả: nhiệt độ, trạng thái thời tiết, độ ẩm\n\n## Bước 3: Mở tab mới → vnexpress.net\n- Mở tab mới trong trình duyệt\n- Truy cập vnexpress.net\n- Lấy 5 tiêu đề tin nổi bật trên trang chủ\n\n## Bước 4: Lưu kết quả vào file txt + đóng trình duyệt\n- Tạo file \"ket_qua_browser.txt\" trong thư mục Desktop\n- Nội dung file:\n  [Ngày giờ chạy]\n  --- THỜI TIẾT HÀ NỘI ---\n  (kết quả từ bước 2)\n  --- TIN TỨC VNEXPRESS ---\n  1. (tiêu đề 1)\n  2. (tiêu đề 2)\n  3. (tiêu đề 3)\n  4. (tiêu đề 4)\n  5. (tiêu đề 5)\n- Đóng trình duyệt\n\nLưu file kết quả: Desktop/ket_qua_browser.txt",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 600
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    },
+    {
+      "id": "preset-bao-cao-tong-hop",
+      "name": "Báo Cáo Tổng Hợp",
+      "description": "Thu thập web → tổng hợp Excel → xuất Word",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# BÁO CÁO TỔNG HỢP — Browser + Excel + Word\n\nThu thập dữ liệu web, tổng hợp vào Excel, xuất báo cáo Word. 6 bước:\n\n## Bước 1: Tìm thời tiết TP.HCM\n- Mở trình duyệt, tìm \"thời tiết TP.HCM hôm nay\"\n- Ghi lại: nhiệt độ, trạng thái, độ ẩm, dự báo 3 ngày\n\n## Bước 2: Tìm tỷ giá USD/VND, EUR/VND\n- Tìm \"tỷ giá USD VND hôm nay\"\n- Tìm \"tỷ giá EUR VND hôm nay\"\n- Ghi lại: tỷ giá mua, bán cho cả 2 loại\n\n## Bước 3: Lấy 5 tin nổi bật VnExpress\n- Truy cập vnexpress.net\n- Lấy 5 tin nổi bật: tiêu đề + tóm tắt ngắn\n\n## Bước 4: Tổng hợp vào Excel (4 sheet)\n- Tạo file \"bao_cao_tong_hop.xlsx\" trong thư mục Desktop\n- Sheet \"Thời Tiết\": bảng dữ liệu thời tiết từ bước 1\n  Header: nền xanh dương (#2E86C1), chữ trắng\n- Sheet \"Tỷ Giá\": bảng tỷ giá từ bước 2\n  Header: nền xanh lá (#27AE60), chữ trắng\n- Sheet \"Tin Tức\": 5 tin từ bước 3 (STT, Tiêu đề, Tóm tắt)\n  Header: nền cam (#E67E22), chữ trắng\n- Sheet \"Tổng Kết\": tóm tắt tất cả\n  Header: nền đỏ đậm (#C0392B), chữ trắng\n\n## Bước 5: Xuất báo cáo Word (4 mục + ký tên)\n- Tạo file \"bao_cao_tong_hop.docx\" trong thư mục Desktop\n- Tiêu đề: \"BÁO CÁO TỔNG HỢP NGÀY [ngày hôm nay]\" (xanh đậm, cỡ 16, bold)\n- Mục 1: Thời tiết TP.HCM\n- Mục 2: Tỷ giá ngoại tệ\n- Mục 3: Tin tức nổi bật\n- Mục 4: Nhận xét & đề xuất\n- Ký tên: \"Người tổng hợp\" + ngày tháng\n\n## Bước 6: Tạo file tóm tắt txt\n- Tạo \"tom_tat.txt\" trong thư mục Desktop\n- Nội dung ngắn gọn: thời tiết, tỷ giá, 5 tiêu đề tin\n\nKết quả: Desktop/bao_cao_tong_hop.xlsx, Desktop/bao_cao_tong_hop.docx, Desktop/tom_tat.txt",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 900
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    },
+    {
+      "id": "preset-marketing-campaign",
+      "name": "Marketing Campaign — TEA HOUSE",
+      "description": "Kế hoạch grand opening thương hiệu trà sữa TEA HOUSE",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# MARKETING CAMPAIGN — TEA HOUSE Grand Opening\nTông màu chủ đạo: Cam #E67E22 + Đen #2C3E50\n\nLập kế hoạch marketing grand opening thương hiệu trà sữa TEA HOUSE. 6 bước:\n\n## Bước 1: Nghiên cứu đối thủ (5+ thương hiệu)\n- Mở trình duyệt, tìm kiếm 3 từ khóa cụ thể:\n  • \"top thương hiệu trà sữa Việt Nam 2025\"\n  • \"Phúc Long Gong Cha thị phần trà sữa\"\n  • \"xu hướng trà sữa Việt Nam\"\n- Nghiên cứu 5+ đối thủ: Phúc Long, Gong Cha, Tiger Sugar, Koi Thé, TocoToco\n- Mỗi đối thủ: 7 tiêu chí (giá TB, số cửa hàng, USP, TA, marketing style, menu đặc biệt, điểm yếu)\n- Ước tính quy mô thị trường trà sữa VN\n\n## Bước 2: Phân tích xu hướng + hành vi Gen Z\n- Tìm kiếm:\n  • \"xu hướng đồ uống Gen Z 2025\"\n  • \"TikTok trà sữa viral\"\n  • Vào TikTok tìm \"khai trương trà sữa\" → ghi 5 video hot\n- 5 xu hướng (kèm ví dụ cụ thể + cách TEA HOUSE áp dụng)\n- Phân tích fanpage đối thủ: followers, tần suất post, engagement rate\n- Xu hướng healthy/low sugar: cơ hội cho TEA HOUSE\n\n## Bước 3: Excel marketing_plan.xlsx (4 sheet)\n- Lưu trong thư mục Desktop\n- Sheet \"Thị Trường\": tổng quan thị trường + hành vi KH\n  Header: nền xanh đậm #1B4F72, chữ trắng\n- Sheet \"Đối Thủ\": 9 cột phân tích chi tiết\n  Header: nền cam #E67E22, chữ trắng\n- Sheet \"SWOT\": ma trận 4 ô\n  S (xanh lá #27AE60) | W (đỏ #E74C3C)\n  O (xanh dương #2E86C1) | T (cam #F39C12)\n- Sheet \"Xu Hướng\": 3 bảng con (Digital, F&B, GenZ)\n\n## Bước 4: Thêm ngân sách (Goal-Based Budgeting chuẩn Gartner)\n- Sheet \"Ngân Sách\": Digital (40%) + KOL (35%) + Offline (25%) + dự phòng 10%\n- Sheet \"So Sánh Kênh\": % ngân sách vs % khách hàng dự kiến\n- Sheet \"Timeline\": 4 tuần chi tiết (W-1 đến W+2 sau khai trương)\n\n## Bước 5: Word ke_hoach_marketing.docx\n- Lưu trong thư mục Desktop\n- 7 mục: Thị trường → Đối thủ → SWOT → Chiến lược → Ngân sách → Timeline → KPI\n- Ký tên: Marketing Manager + Giám đốc\n\n## Bước 6: PowerPoint tea_house_pitch.pptx\n- Lưu trong thư mục Desktop\n- Design: cam #E67E22 + đen #2C3E50 + trắng\n- 8-12 slide pitch deck\n\nKết quả: Desktop/marketing_plan.xlsx, Desktop/ke_hoach_marketing.docx, Desktop/tea_house_pitch.pptx",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 1800
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    },
+    {
+      "id": "preset-stock-analysis",
+      "name": "Stock Investment Analysis",
+      "description": "Phân tích TTCK VN, chọn 5 CP, lập danh mục 500 triệu VND",
+      "enabled": false,
+      "schedule": { "kind": "every", "everyMs": 86400000 },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "# STOCK INVESTMENT ANALYSIS — Phân tích TTCK Việt Nam\nTông màu: Xanh đậm #1A5276 + Vàng gold #F4D03F\nThư mục kết quả: Desktop/Stock Analysis/ (tạo nếu chưa có)\n\nQUAN TRỌNG:\n- Mỗi bước DỰA VÀO dữ liệu bước trước (chuỗi logic)\n- Bước 2 TỰ CHỌN cổ phiếu dựa trên phân tích bước 1\n- KHÔNG bịa số liệu — chỉ dùng dữ liệu thực tế từ web\n\n## Bước 1: Nghiên cứu thị trường\n- Mở trình duyệt, tìm kiếm:\n  • \"VN-Index hôm nay\" → chỉ số, % thay đổi, khối lượng GD\n  • \"HNX Index hôm nay\"\n  • \"lãi suất ngân hàng Việt Nam\" → lãi suất tiết kiệm 12 tháng\n  • \"tỷ giá USD VND\"\n- Tổng hợp: VN-Index, HNX, KLGD, lãi suất, tỷ giá\n- Top CP tăng mạnh nhất phiên\n- Khối ngoại mua/bán ròng\n- Ngành dẫn dắt thị trường\n\n## Bước 2: Tự chọn 5 CP tiềm năng\n- DỰA VÀO bước 1: top tăng + ngành hot + khối ngoại\n- Chọn 5 mã thuộc 5 NGÀNH KHÁC NHAU\n- Mỗi mã: Giá hiện tại, P/E, P/B, EPS, tin tức, lý do chọn\n\n## Bước 3: Excel phân tích (4 sheet)\n- File: Desktop/Stock Analysis/phan_tich_dau_tu.xlsx\n- Sheet \"Tổng Quan TT\": header xanh đậm #1A5276\n- Sheet \"5 Cổ Phiếu\": header vàng gold #F4D03F\n- Sheet \"So Sánh Ngành\": xếp hạng 5 ngành\n- Sheet \"Định Giá\": MUA (xanh) / GIỮ (cam) / BÁN (đỏ)\n\n## Bước 4: Excel danh mục + kịch bản (2 sheet thêm)\n- Sheet \"Danh Mục\": phân bổ 500 triệu VND\n- Sheet \"Kịch Bản\": Lạc quan +10%, Trung bình ±2%, Bi quan -15%\n\n## Bước 5: Word báo cáo 7 mục\n- File: Desktop/Stock Analysis/bao_cao_dau_tu.docx\n- 7 mục: Tổng quan → Vĩ mô → 5 CP → Ngành → Định giá → Danh mục → Kịch bản\n- Ký tên: \"Chuyên viên phân tích\" + ngày tháng\n\n## Bước 6: PowerPoint 12-15 slide\n- File: Desktop/Stock Analysis/investment_pitch.pptx\n- Bảng màu: xanh đậm #1A5276 + vàng gold #F4D03F\n- Số liệu quan trọng: cỡ 48-72pt, bold\n\nKết quả: Desktop/Stock Analysis/ (3 files: .xlsx, .docx, .pptx)",
+        "model": "operis/operis-multi",
+        "timeoutSeconds": 1800
+      },
+      "delivery": { "mode": "announce" },
+      "createdAtMs": 0,
+      "updatedAtMs": 0,
+      "state": {}
+    }
+  ]
+}

@@ -42,8 +42,8 @@ extraResources:
       - "!**/*.map"
   - from: "resources/gateway-package.json"
     to: "gateway/package.json"
-  # Client-web2 UI build (same dist path — built from client-web2)
-  - from: "../../dist/control-ui"
+  # Client-web2 UI build (output dir is control-ui2, mapped to control-ui for gateway)
+  - from: "../../dist/control-ui2"
     to: "control-ui"
     filter:
       - "**/*"
@@ -68,6 +68,8 @@ extraResources:
     to: "tray-gray.ico"
   - from: "resources/config-preset-operis.json"
     to: "config-preset-operis.json"
+  - from: "resources/cron-jobs-preset.json"
+    to: "cron-jobs-preset.json"
   - from: "resources/icon.ico"
     to: "icon.ico"
 

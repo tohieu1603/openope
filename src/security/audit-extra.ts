@@ -1245,7 +1245,7 @@ export async function collectInstalledSkillsCodeSafetyFindings(params: {
   for (const workspaceDir of workspaceDirs) {
     const entries = loadWorkspaceSkillEntries(workspaceDir, { config: params.cfg });
     for (const entry of entries) {
-      if (entry.skill.source === "openclaw-bundled") {
+      if (entry.skill.source === "operis-bundled") {
         continue;
       }
 
