@@ -15,7 +15,7 @@ const COMMON_FIELDS = {
   wakeMode: "now" as const,
   payloadKind: "agentTurn" as const,
   postToMainPrefix: "",
-  deliveryMode: "announce" as const,
+  deliveryMode: "none" as const,
   deliveryChannel: "last",
   deliveryTo: "",
   notifyMe: false,
