@@ -259,9 +259,9 @@ export class OperisApp extends LitElement {
     }>;
   } | null = null;
   @state() sessionsError: string | null = null;
-  @state() sessionsActiveMinutes = "1440";
-  @state() sessionsLimit = "50";
-  @state() sessionsIncludeGlobal = false;
+  @state() sessionsActiveMinutes = "";
+  @state() sessionsLimit = "120";
+  @state() sessionsIncludeGlobal = true;
   @state() sessionsIncludeUnknown = false;
   // Login state
   @state() loginLoading = false;
@@ -351,6 +351,11 @@ export class OperisApp extends LitElement {
   @state() settingsEditingName = false;
   @state() settingsNameValue = "";
   @state() settingsShowPasswordForm = false;
+  // API key state (operis provider key from gateway config)
+  @state() settingsApiKey = "";
+  @state() settingsApiKeyLoading = false;
+  @state() settingsApiKeySaving = false;
+  @state() settingsApiKeyHasKey = false;
 
   // Agents state
   @state() agentsLoading = false;
@@ -1160,6 +1165,7 @@ export class OperisApp extends LitElement {
     } else if (tab === "settings") {
       this.loadUserProfile();
       this.loadChannels();
+      this.loadApiKeyStatus();
     } else if (tab === "agents") {
       this.loadAgents();
     } else if (tab === "skills") {
@@ -2450,6 +2456,57 @@ export class OperisApp extends LitElement {
     }
   }
 
+  // API key handlers
+  private async loadApiKeyStatus() {
+    this.settingsApiKeyLoading = true;
+    try {
+      const client = await waitForConnection();
+      const res = await client.request<{ config: Record<string, unknown>; hash: string }>(
+        "config.get",
+        {},
+      );
+      if (res?.config) {
+        const providers = (res.config as any)?.models?.providers?.operis;
+        this.settingsApiKeyHasKey = !!(providers?.apiKey && providers.apiKey !== "••••••••");
+      }
+    } catch {
+      // ignore — config may not be available
+    } finally {
+      this.settingsApiKeyLoading = false;
+    }
+  }
+
+  private async handleSaveApiKey() {
+    const key = this.settingsApiKey.trim();
+    if (!key) return;
+    this.settingsApiKeySaving = true;
+    this.settingsError = null;
+    try {
+      const client = await waitForConnection();
+      // Get current config hash for optimistic concurrency
+      const snapshot = await client.request<{ config: Record<string, unknown>; hash: string }>(
+        "config.get",
+        {},
+      );
+      const baseHash = snapshot?.hash ?? "";
+      // Patch only the apiKey field
+      await client.request("config.patch", {
+        baseHash,
+        raw: JSON.stringify({ models: { providers: { operis: { apiKey: key } } } }),
+      });
+      this.settingsApiKey = "";
+      this.settingsApiKeyHasKey = true;
+      this.settingsSuccess = "API key đã được lưu";
+      setTimeout(() => (this.settingsSuccess = null), 3000);
+      showToast("API key đã được lưu", "success");
+    } catch (err) {
+      this.settingsError = err instanceof Error ? err.message : "Không thể lưu API key";
+      showToast(err instanceof Error ? err.message : "Không thể lưu API key", "error");
+    } finally {
+      this.settingsApiKeySaving = false;
+    }
+  }
+
   // Agents handlers
   private async loadAgents() {
     this.agentsLoading = true;
@@ -3208,8 +3265,8 @@ export class OperisApp extends LitElement {
     try {
       const gw = await waitForConnection(5000);
       const result = await gw.request<any>("sessions.list", {
-        activeMinutes: Number(this.sessionsActiveMinutes) || 60,
-        limit: Number(this.sessionsLimit) || 50,
+        activeMinutes: this.sessionsActiveMinutes ? Number(this.sessionsActiveMinutes) : 525600,
+        limit: Number(this.sessionsLimit) || 120,
         includeGlobal: this.sessionsIncludeGlobal,
         includeUnknown: this.sessionsIncludeUnknown,
       });
@@ -3406,7 +3463,12 @@ export class OperisApp extends LitElement {
           </div>
         </div>
 
-        ${nothing /* agent section hidden */}
+        <div class="nav-section">
+          <div class="nav-section-title">Nhân viên</div>
+          <div class="nav-items">
+            ${NAV_ITEMS.filter((item) => item.section === "agent").map((item) => this.renderNavItem(item))}
+          </div>
+        </div>
 
         <div class="nav-footer">
           <div class="nav-section">
@@ -3691,6 +3753,13 @@ export class OperisApp extends LitElement {
           onTogglePasswordForm: () =>
             (this.settingsShowPasswordForm = !this.settingsShowPasswordForm),
           onChangePassword: (current, newPwd) => this.handleChangePassword(current, newPwd),
+          // API Key
+          apiKeyValue: this.settingsApiKey,
+          apiKeyLoading: this.settingsApiKeyLoading,
+          apiKeySaving: this.settingsApiKeySaving,
+          apiKeyHasKey: this.settingsApiKeyHasKey,
+          onApiKeyChange: (value) => (this.settingsApiKey = value),
+          onSaveApiKey: () => this.handleSaveApiKey(),
           // Navigation
           onNavigate: (tab) => this.setTab(tab as Tab),
         });
@@ -3866,6 +3935,14 @@ export class OperisApp extends LitElement {
           onRefresh: () => this.loadSessionsList(),
           onPatch: (key, patch) => this.handleSessionsPatch(key, patch),
           onDelete: (key) => this.handleSessionsDelete(key),
+          onOpenSession: (key) => {
+            this.chatConversationId = key === "main" ? null : key;
+            this.chatMessages = [];
+            this.chatStreamingText = "";
+            this.chatToolCalls = [];
+            this.persistSessionKey(key);
+            this.setTab("chat");
+          },
         });
       default:
         return nothing;

@@ -1860,7 +1860,7 @@ export function renderChat(props: ChatProps) {
                       ? html`
                           <div class="gc-compaction-toast">
                             <span class="gc-compaction-dot"></span>
-                            Đang nén ngữ cảnh…
+                            Cuộc trò chuyện quá dài, đang tóm tắt lại…
                           </div>
                         `
                       : nothing

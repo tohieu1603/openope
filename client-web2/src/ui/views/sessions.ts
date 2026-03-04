@@ -138,6 +138,7 @@ export type SessionsProps = {
     },
   ) => void;
   onDelete: (key: string) => void;
+  onOpenSession: (key: string) => void;
 };
 
 export function renderSessions(props: SessionsProps) {
@@ -541,7 +542,7 @@ export function renderSessions(props: SessionsProps) {
             `
           : rows.length > 0
             ? html`<div class="ses-grid">
-            ${rows.map((row) => renderCard(row, props.basePath, props.onPatch, props.onDelete, props.loading))}
+            ${rows.map((row) => renderCard(row, props.basePath, props.onPatch, props.onDelete, props.onOpenSession, props.loading))}
           </div>`
             : nothing
       }
@@ -554,6 +555,7 @@ function renderCard(
   basePath: string,
   onPatch: SessionsProps["onPatch"],
   onDelete: SessionsProps["onDelete"],
+  onOpenSession: SessionsProps["onOpenSession"],
   disabled: boolean,
 ) {
   const rawThinking = row.thinkingLevel ?? "";
@@ -564,9 +566,6 @@ function renderCard(
   const reasoning = row.reasoningLevel ?? "";
   const name = shortName(row.displayName ?? row.key);
   const canLink = row.kind !== "global";
-  const chatUrl = canLink
-    ? `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`
-    : null;
   const pct = tokenPercent(row);
   const alive = isAlive(row);
 
@@ -577,7 +576,10 @@ function renderCard(
         <div style="flex:1;min-width:0">
           ${
             canLink
-              ? html`<a href=${chatUrl} class="ses-card-key">${name}</a>`
+              ? html`<a href="#" class="ses-card-key" @click=${(e: Event) => {
+                  e.preventDefault();
+                  onOpenSession(row.key);
+                }}>${name}</a>`
               : html`<span class="ses-card-key-text">${name}</span>`
           }
         </div>

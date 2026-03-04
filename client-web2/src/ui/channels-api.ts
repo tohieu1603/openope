@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from "./auth-api";
+import { waitForConnection } from "./gateway-client";
 
 // Channel types
 export type ChannelId = "whatsapp" | "telegram" | "zalo";
@@ -43,11 +44,42 @@ function getDefaultChannels(): ChannelStatus[] {
   }));
 }
 
-// Get all channels status from backend
+// Get all channels status from backend + gateway
 export async function getChannelsStatus(): Promise<ChannelStatus[]> {
   const channels = getDefaultChannels();
 
-  // Fetch Zalo connection status from /zalo/channel
+  // Fetch gateway channels.status for Telegram (and other gateway-managed channels)
+  try {
+    const gw = await waitForConnection(3000);
+    const res = await gw.request<{
+      channels?: Record<string, { configured?: boolean; linked?: boolean }>;
+      channelAccounts?: Record<
+        string,
+        Array<{ accountId: string; connected?: boolean; linked?: boolean; name?: string }>
+      >;
+    }>("channels.status", { probe: false });
+    if (res?.channels) {
+      for (const ch of channels) {
+        const summary = res.channels[ch.id];
+        if (!summary) continue;
+        // Use linked (= actually connected and working) as the connected indicator
+        if (typeof summary.linked === "boolean") {
+          ch.connected = summary.linked;
+        } else if (typeof summary.configured === "boolean") {
+          ch.connected = summary.configured;
+        }
+        // Get account name from first account if available
+        const accounts = res.channelAccounts?.[ch.id];
+        if (accounts?.[0]?.name) {
+          ch.accountName = accounts[0].name;
+        }
+      }
+    }
+  } catch {
+    // Gateway not available, fall through to operis-api checks
+  }
+
+  // Fetch Zalo connection status from operis-api (overrides gateway if available)
   try {
     const zalo = await apiRequest<{
       connected: boolean;
