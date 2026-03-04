@@ -46,7 +46,7 @@ export async function getAgentLocalStatuses(): Promise<{
       }
     })();
 
-    const bootstrapPath = workspaceDir != null ? path.join(workspaceDir, "BOOTSTRAP.md") : null;
+    const bootstrapPath = workspaceDir != null ? path.join(workspaceDir, "KHOI_TAO.md") : null;
     const bootstrapPending = bootstrapPath != null ? await fileExists(bootstrapPath) : null;
 
     const sessionsPath = resolveStorePath(cfg.session?.store, { agentId });

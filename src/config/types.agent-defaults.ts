@@ -104,7 +104,7 @@ export type AgentDefaultsConfig = {
   workspace?: string;
   /** Optional repository root for system prompt runtime line (overrides auto-detect). */
   repoRoot?: string;
-  /** Skip bootstrap (BOOTSTRAP.md creation, etc.) for pre-configured deployments. */
+  /** Skip bootstrap (KHOI_TAO.md creation, etc.) for pre-configured deployments. */
   skipBootstrap?: boolean;
   /** Max chars for injected bootstrap files before truncation (default: 20000). */
   bootstrapMaxChars?: number;

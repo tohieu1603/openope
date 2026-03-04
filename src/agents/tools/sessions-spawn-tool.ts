@@ -82,7 +82,7 @@ export function createSessionsSpawnTool(opts?: {
     label: "Sessions",
     name: "sessions_spawn",
     description:
-      "Spawn a background sub-agent run in an isolated session and announce the result back to the requester chat.",
+      "Spawn a background sub-agent run in an isolated session and announce the result back to the requester chat. Dùng tool này khi người dùng yêu cầu tạo nhân viên, thêm nhân viên mới, hoặc giao việc cho nhân viên.",
     parameters: SessionsSpawnToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;

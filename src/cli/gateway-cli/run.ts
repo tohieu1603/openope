@@ -332,7 +332,7 @@ export function addGatewayRunCommand(cmd: Command): Command {
       "Allow gateway start without gateway.mode=local in config",
       false,
     )
-    .option("--dev", "Create a dev config + workspace if missing (no BOOTSTRAP.md)", false)
+    .option("--dev", "Create a dev config + workspace if missing (no KHOI_TAO.md)", false)
     .option(
       "--reset",
       "Reset dev config + credentials + sessions + workspace (requires --dev)",
