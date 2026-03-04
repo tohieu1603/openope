@@ -10,9 +10,16 @@
     "build:gateway": "cd ../.. && pnpm build",
     "build:bundle-gateway": "node bundle-gateway.js",
     "build:electron": "tsc -p tsconfig.json",
-    "build:ui": "cd ../.. && pnpm ui:build",
+    "build:ui": "cd ../../client-web && pnpm install && pnpm run build",
+    "build:ui-ws": "cd ../../client-web2 && npm install && npm run build",
     "build:installer": "electron-builder --win --config electron-builder.yml",
-    "build": "pnpm build:gateway && pnpm build:ui && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer"
+    "build:installer-ws": "electron-builder --win --config electron-builder-ws.yml",
+    "build:installer-product": "electron-builder --win --config electron-builder-product.yml",
+    "build:set-production": "node scripts/set-build-mode.mjs production",
+    "build:set-development": "node scripts/set-build-mode.mjs development",
+    "build": "pnpm build:gateway && pnpm build:ui && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer",
+    "build:ws": "pnpm build:gateway && pnpm build:ui-ws && pnpm build:bundle-gateway && pnpm build:electron && pnpm build:installer-ws",
+    "build:product": "pnpm build:gateway && pnpm build:ui && pnpm build:bundle-gateway && pnpm build:set-production && pnpm build:electron && pnpm build:installer-product && pnpm build:set-development"
   },
   "devDependencies": {
     "electron": "^35.0.0",

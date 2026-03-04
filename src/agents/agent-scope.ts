@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir, resolveUserDataDir } from "../config/paths.js";
 import {
   DEFAULT_AGENT_ID,
   normalizeAgentId,
@@ -171,14 +171,19 @@ export function resolveAgentWorkspaceDir(cfg: OpenClawConfig, agentId: string) {
     return resolveUserPath(configured);
   }
   const defaultAgentId = resolveDefaultAgentId(cfg);
+  const userDataDir = resolveUserDataDir(cfg);
   if (id === defaultAgentId) {
     const fallback = cfg.agents?.defaults?.workspace?.trim();
     if (fallback) {
       return resolveUserPath(fallback);
     }
+    if (userDataDir) {
+      return path.join(userDataDir, "workspace");
+    }
     return DEFAULT_AGENT_WORKSPACE_DIR;
   }
-  return path.join(os.homedir(), ".operis", `workspace-${id}`);
+  const base = userDataDir ?? resolveStateDir(process.env, os.homedir);
+  return path.join(base, `workspace-${id}`);
 }
 
 export function resolveAgentDir(cfg: OpenClawConfig, agentId: string) {

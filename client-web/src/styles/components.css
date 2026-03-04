@@ -767,3 +767,51 @@
   color: var(--accent);
   font-weight: 500;
 }
+
+/* ===========================================
+   Gateway Status Banner
+   =========================================== */
+
+.gw-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-radius: 8px;
+  margin: 0 16px 8px;
+  animation: gw-banner-in 0.3s ease;
+}
+.gw-banner--starting {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+.gw-banner--stopped {
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.gw-banner--error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+:root[data-theme="light"] .gw-banner--starting {
+  background: #fef3c7;
+  color: #92400e;
+}
+:root[data-theme="light"] .gw-banner--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.gw-banner__icon {
+  animation: gw-spin 1s linear infinite;
+}
+.gw-banner--error .gw-banner__icon {
+  animation: none;
+}
+@keyframes gw-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes gw-banner-in {
+  from { opacity: 0; transform: translateY(-8px); }
+}

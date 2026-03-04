@@ -7,6 +7,7 @@ import { Tray, Menu, app, shell, type BrowserWindow } from "electron";
 import path from "node:path";
 import type { GatewayStatus } from "./types";
 import { getTrayIcon } from "./tray-icon";
+import { IS_PRODUCTION } from "./build-mode";
 
 type TrayActionHandler = {
   onRestartGateway: () => void;
@@ -69,15 +70,18 @@ export class TrayManager {
     const template: Electron.MenuItemConstructorOptions[] = [
       { label: "Show Window", click: () => this.showWindow() },
       { type: "separator" },
-      { label: `Gateway: ${this.gatewayStatus}`, enabled: false },
-      {
-        label: "Gateway Log",
-        click: () => {
-          const logPath = path.join(app.getPath("userData"), "gateway.log");
-          shell.openPath(logPath);
-        },
-      },
-      { type: "separator" },
+      // Dev-only: gateway status + log access
+      ...(!IS_PRODUCTION ? [
+        { label: `Gateway: ${this.gatewayStatus}`, enabled: false } as Electron.MenuItemConstructorOptions,
+        {
+          label: "Gateway Log",
+          click: () => {
+            const logPath = path.join(app.getPath("userData"), "gateway.log");
+            shell.openPath(logPath);
+          },
+        } as Electron.MenuItemConstructorOptions,
+        { type: "separator" as const } as Electron.MenuItemConstructorOptions,
+      ] : []),
       {
         label: "Restart Gateway",
         click: () => this.actions?.onRestartGateway(),

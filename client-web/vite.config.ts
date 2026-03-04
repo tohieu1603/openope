@@ -1,7 +1,7 @@
+import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import dotenv from "dotenv";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(here, "..");
@@ -24,11 +24,9 @@ export default defineConfig(() => {
   const base = envBase ? normalizeBase(envBase) : "./";
 
   // Map root GATEWAY_TOKEN to VITE_GATEWAY_TOKEN for client
-  const gatewayToken =
-    process.env.VITE_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || "";
+  const gatewayToken = process.env.VITE_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || "";
   const port = parseInt(process.env.CLIENT_WEB_PORT || "5173", 10);
-  const apiTarget =
-    process.env.CLIENT_WEB_API_TARGET || "http://127.0.0.1:18789";
+  const apiTarget = process.env.CLIENT_WEB_API_TARGET || "http://127.0.0.1:18789";
 
   return {
     base,
@@ -54,6 +52,20 @@ export default defineConfig(() => {
           target: apiTarget,
           changeOrigin: true,
           ws: true,
+          // Rewrite cookie flags so they work on localhost (Safari blocks cross-site cookies)
+          configure: (proxy) => {
+            proxy.on("proxyRes", (proxyRes) => {
+              const sc = proxyRes.headers["set-cookie"];
+              if (sc) {
+                proxyRes.headers["set-cookie"] = (Array.isArray(sc) ? sc : [sc]).map((c) =>
+                  c
+                    .replace(/;\s*Secure/gi, "")
+                    .replace(/;\s*SameSite=None/gi, "; SameSite=Lax")
+                    .replace(/;\s*Domain=[^;]*/gi, ""),
+                );
+              }
+            });
+          },
         },
       },
     },

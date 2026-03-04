@@ -1,0 +1,86 @@
+appId: com.operis.agent.ws
+productName: Agent Operis WS
+copyright: Copyright (c) 2026 Agent Operis
+
+directories:
+  output: release_ws
+  buildResources: resources
+
+asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/better-sqlite3/**/*"
+  - "**/*.node"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent Operis WS
+  uninstallDisplayName: Agent Operis WS
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+  include: installer.nsh
+
+extraResources:
+  - from: "dist-gateway/"
+    to: "gateway/"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  - from: "resources/gateway-package.json"
+    to: "gateway/package.json"
+  # Client-web2 UI build (output dir is control-ui2, mapped to control-ui for gateway)
+  - from: "../../dist/control-ui2"
+    to: "control-ui"
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  - from: "resources/cloudflared.exe"
+    to: "cloudflared.exe"
+  - from: "resources/setup.html"
+    to: "setup.html"
+  - from: "resources/jiti-babel.cjs"
+    to: "dist/babel.cjs"
+  - from: "dist-extensions"
+    to: "extensions"
+    filter:
+      - "**/*"
+  - from: "resources/tray-green.ico"
+    to: "tray-green.ico"
+  - from: "resources/tray-yellow.ico"
+    to: "tray-yellow.ico"
+  - from: "resources/tray-red.ico"
+    to: "tray-red.ico"
+  - from: "resources/tray-gray.ico"
+    to: "tray-gray.ico"
+  - from: "resources/config-preset-operis.json"
+    to: "config-preset-operis.json"
+  - from: "resources/cron-jobs-preset.json"
+    to: "cron-jobs-preset.json"
+  - from: "resources/icon.ico"
+    to: "icon.ico"
+
+extraFiles:
+  - from: "../../docs/reference/templates"
+    to: "docs/reference/templates"
+    filter:
+      - "**/*"
+
+files:
+  - "dist-electron/**/*"
+  - "!node_modules/@lydell/node-pty/**"
+  - "!node_modules/playwright-core/**"
+  - "!**/*.map"

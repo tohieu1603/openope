@@ -134,29 +134,21 @@ export async function getWorkflowRuns(id: string): Promise<WorkflowRun[]> {
   }
 }
 
-const SEED_STORAGE_KEY = "operis_workflows_seeded";
-
 /**
- * Auto-seed default workflow presets if no workflows exist.
- * Only runs once per browser (tracked via localStorage).
- * Returns the seeded workflows, or empty array if skipped.
+ * Auto-seed default workflow presets if no workflows exist in gateway.
+ * Checks gateway state directly — no localStorage guard (Electron persists
+ * localStorage across reinstalls, causing presets to never appear).
  */
 export async function seedDefaultWorkflows(): Promise<Workflow[]> {
-  // Skip if already seeded in this browser
-  if (localStorage.getItem(SEED_STORAGE_KEY)) return [];
-
   try {
     const existing = await listWorkflows();
-    if (existing.length > 0) {
-      // Workflows already exist — mark as seeded and skip
-      localStorage.setItem(SEED_STORAGE_KEY, Date.now().toString());
-      return [];
-    }
+    if (existing.length > 0) return [];
 
     console.log(
       `[workflow-seed] No workflows found, seeding ${WORKFLOW_PRESETS.length} presets...`,
     );
 
+    let created = 0;
     for (const preset of WORKFLOW_PRESETS) {
       const form: WorkflowFormState = {
         ...preset,
@@ -164,16 +156,15 @@ export async function seedDefaultWorkflows(): Promise<Workflow[]> {
       };
       try {
         await createWorkflow(form);
+        created++;
         console.log(`[workflow-seed] Created: ${preset.name}`);
       } catch (err) {
         console.warn(`[workflow-seed] Failed to create "${preset.name}":`, err);
       }
     }
 
-    localStorage.setItem(SEED_STORAGE_KEY, Date.now().toString());
-
-    // Return fresh list
-    return listWorkflows();
+    console.log(`[workflow-seed] Done — ${created}/${WORKFLOW_PRESETS.length} created`);
+    return created > 0 ? listWorkflows() : [];
   } catch (err) {
     console.warn("[workflow-seed] Seed failed:", err);
     return [];

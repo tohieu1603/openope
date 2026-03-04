@@ -4,7 +4,7 @@
  * handles crash recovery with exponential backoff, graceful shutdown,
  * and captures stdout/stderr to log file for debugging.
  */
-import { spawn, type ChildProcess, execFile } from "node:child_process";
+import { spawn, type ChildProcess, execFile, execFileSync } from "node:child_process";
 import { app } from "electron";
 import path from "node:path";
 import net from "node:net";
@@ -118,11 +118,46 @@ export class GatewayManager {
     }
   }
 
+  /**
+   * Kill any zombie gateway process holding the port from a previous install/session.
+   * Uses netstat to find the PID, then taskkill to terminate it.
+   */
+  private killZombieOnPort(): void {
+    if (process.platform !== "win32") return;
+    try {
+      const out = execFileSync("netstat", ["-ano", "-p", "TCP"], {
+        encoding: "utf-8",
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      // Find lines with our port in LISTENING state
+      // Format: "  TCP    127.0.0.1:18789    0.0.0.0:0    LISTENING    12345"
+      for (const line of out.split("\n")) {
+        if (!line.includes(`:${GATEWAY_PORT}`) || !line.includes("LISTENING")) continue;
+        const parts = line.trim().split(/\s+/);
+        const pid = parseInt(parts[parts.length - 1], 10);
+        if (!pid || pid === process.pid) continue;
+        this.appendLog("system", `Killing zombie gateway process PID ${pid} on port ${GATEWAY_PORT}`);
+        try {
+          execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
+            timeout: 5_000,
+            windowsHide: true,
+          });
+        } catch {
+          // Process may have already exited
+        }
+      }
+    } catch {
+      // netstat not available or failed — proceed anyway
+    }
+  }
+
   /** Start the gateway process. No-op if already running. */
   async start(): Promise<void> {
     if (this.child) return;
     this.shuttingDown = false;
     this.openLogStream();
+    this.killZombieOnPort();
     this.spawnGateway();
   }
 

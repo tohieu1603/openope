@@ -5,6 +5,8 @@ import {
   createWriteTool,
   readTool,
 } from "@mariozechner/pi-coding-agent";
+import os from "node:os";
+import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ModelAuthMode } from "./model-auth.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
@@ -52,6 +54,57 @@ import {
   resolveToolProfilePolicy,
   stripPluginOnlyAllowlist,
 } from "./tool-policy.js";
+
+/**
+ * Config path guard: block write/edit to ~/.operis/ and ~/.openclaw/,
+ * except workspace/ subdirectory (agent needs to write AGENTS.md, MEMORY.md, etc.)
+ */
+const CONFIG_PROTECTED_DIRS = [
+  path.join(os.homedir(), ".operis"),
+  path.join(os.homedir(), ".openclaw"),
+];
+const CONFIG_ALLOWED_SUBDIRS = ["workspace"];
+
+function isConfigProtectedPath(filePath: string, cwd: string): string | null {
+  let resolved = filePath.trim();
+  if (resolved === "~") resolved = os.homedir();
+  else if (resolved.startsWith("~/")) resolved = os.homedir() + resolved.slice(1);
+  if (!path.isAbsolute(resolved)) resolved = path.resolve(cwd, resolved);
+  resolved = path.normalize(resolved);
+
+  for (const protectedDir of CONFIG_PROTECTED_DIRS) {
+    if (resolved !== protectedDir && !resolved.startsWith(protectedDir + path.sep)) continue;
+    // Check if path falls under an allowed subdirectory
+    const relative = path.relative(protectedDir, resolved);
+    const topDir = relative.split(path.sep)[0];
+    if (topDir && CONFIG_ALLOWED_SUBDIRS.includes(topDir)) return null;
+    return protectedDir;
+  }
+  return null;
+}
+
+function wrapConfigPathGuard(tool: AnyAgentTool, cwd: string): AnyAgentTool {
+  return {
+    ...tool,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const normalized = normalizeToolParams(args);
+      const record =
+        normalized ??
+        (args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
+      const rawPath = record?.file_path ?? record?.path;
+      if (typeof rawPath === "string" && rawPath.trim()) {
+        const blocked = isConfigProtectedPath(rawPath, cwd);
+        if (blocked) {
+          throw new Error(
+            `Cannot modify files in ${blocked}/ — config directory is protected. ` +
+              `Only ${CONFIG_ALLOWED_SUBDIRS.join(", ")}/ subdirectories are writable.`,
+          );
+        }
+      }
+      return tool.execute(toolCallId, normalized ?? args, signal, onUpdate);
+    },
+  };
+}
 
 function isOpenAIProvider(provider?: string) {
   const normalized = provider?.trim().toLowerCase();
@@ -248,7 +301,7 @@ export function createOpenClawCodingTools(options?: {
         return [createSandboxedReadTool(sandboxRoot)];
       }
       const freshReadTool = createReadTool(workspaceRoot);
-      return [createOpenClawReadTool(freshReadTool)];
+      return [wrapConfigPathGuard(createOpenClawReadTool(freshReadTool), workspaceRoot)];
     }
     if (tool.name === "bash" || tool.name === execToolName) {
       return [];
@@ -257,17 +310,25 @@ export function createOpenClawCodingTools(options?: {
       if (sandboxRoot) {
         return [];
       }
-      // Wrap with param normalization for Claude Code compatibility
+      // Wrap with config path guard + param normalization
       return [
-        wrapToolParamNormalization(createWriteTool(workspaceRoot), CLAUDE_PARAM_GROUPS.write),
+        wrapConfigPathGuard(
+          wrapToolParamNormalization(createWriteTool(workspaceRoot), CLAUDE_PARAM_GROUPS.write),
+          workspaceRoot,
+        ),
       ];
     }
     if (tool.name === "edit") {
       if (sandboxRoot) {
         return [];
       }
-      // Wrap with param normalization for Claude Code compatibility
-      return [wrapToolParamNormalization(createEditTool(workspaceRoot), CLAUDE_PARAM_GROUPS.edit)];
+      // Wrap with config path guard + param normalization
+      return [
+        wrapConfigPathGuard(
+          wrapToolParamNormalization(createEditTool(workspaceRoot), CLAUDE_PARAM_GROUPS.edit),
+          workspaceRoot,
+        ),
+      ];
     }
     return [tool];
   });

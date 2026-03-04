@@ -16,7 +16,8 @@ import { GatewayManager } from "./gateway-manager";
 import { TunnelManager } from "./tunnel-manager";
 import { TrayManager } from "./tray-manager";
 import { GATEWAY_PORT, IPC } from "./types";
-import { resolvePresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
+import { resolvePresetPath, resolveCronPresetPath, resolveStateDir, resolveConfigPath, resolveResourcePath } from "./edition";
+import { IS_PRODUCTION } from "./build-mode";
 
 // Single instance lock - prevent multiple app instances
 const gotLock = app.requestSingleInstanceLock();
@@ -133,17 +134,27 @@ function loadClientWeb(win: BrowserWindow, gatewayToken: string | null): void {
   win.loadFile(uiIndex, { query });
 }
 
-/** Start gateway/tunnel and wire status to tray + renderer IPC */
-function startServicesWithStatus(win: BrowserWindow): void {
+/** Start gateway/tunnel, wire status to tray + renderer IPC, call onReady once gateway is healthy */
+function startServicesWithStatus(win: BrowserWindow, onReady?: () => void): void {
+  let readyFired = false;
+  const fireReady = () => {
+    if (readyFired) return;
+    readyFired = true;
+    onReady?.();
+  };
+
   // Forward gateway status to renderer + tray
   gateway.onStatus((status, detail) => {
     tray.updateGateway(status);
     if (!win.isDestroyed()) {
       win.webContents.send(IPC.GATEWAY_STATUS, status, detail);
     }
-    // Auto-start tunnel once gateway is healthy
-    if (status === "running" && tunnel.hasToken()) {
-      tunnel.start();
+    // Auto-start tunnel + notify UI once gateway is healthy
+    if (status === "running") {
+      fireReady();
+      if (tunnel.hasToken()) {
+        tunnel.start();
+      }
     }
   });
 
@@ -153,6 +164,9 @@ function startServicesWithStatus(win: BrowserWindow): void {
       win.webContents.send(IPC.TUNNEL_STATUS, status, detail);
     }
   });
+
+  // Fallback: load UI after 15s even if gateway hasn't started
+  setTimeout(fireReady, 15_000);
 
   gateway.start();
 }
@@ -215,15 +229,17 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Enable DevTools with F12 or Ctrl+Shift+I
-  mainWindow.webContents.on("before-input-event", (_event, input) => {
-    if (
-      input.key === "F12" ||
-      (input.control && input.shift && input.key.toLowerCase() === "i")
-    ) {
-      mainWindow?.webContents.toggleDevTools();
-    }
-  });
+  // Enable DevTools with F12 or Ctrl+Shift+I (dev builds only)
+  if (!IS_PRODUCTION) {
+    mainWindow.webContents.on("before-input-event", (_event, input) => {
+      if (
+        input.key === "F12" ||
+        (input.control && input.shift && input.key.toLowerCase() === "i")
+      ) {
+        mainWindow?.webContents.toggleDevTools();
+      }
+    });
+  }
 
   // Tunnel provision IPC: client-web calls this after auto-provisioning via operismb
   // Returns true only when cloudflared is connected (or false on timeout/error)
@@ -283,10 +299,17 @@ app.whenReady().then(async () => {
   }
   onboardMgr.ensureElectronConfig();
   onboardMgr.ensureAgentAuthStore();
+  // Seed default cron jobs on first run (before gateway starts)
+  const cronPresetPath = resolveCronPresetPath();
+  if (cronPresetPath) {
+    onboardMgr.seedDefaultCronJobs(cronPresetPath);
+  }
   const gatewayToken = onboardMgr.readGatewayToken();
   gateway.gatewayToken = gatewayToken;
-  startServicesWithStatus(mainWindow);
-  loadClientWeb(mainWindow, gatewayToken);
+  // Delay UI loading until gateway is healthy (prevents WS backoff accumulation)
+  startServicesWithStatus(mainWindow, () => {
+    loadClientWeb(mainWindow!, onboardMgr.readGatewayToken());
+  });
 });
 
 // Second instance: show existing window

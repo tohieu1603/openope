@@ -8,7 +8,9 @@ import { apiRequest } from "./auth-api";
 // Types
 export interface TokenBalance {
   balance: number;
-  userId: string;
+  paid: number;
+  free: number;
+  next_free_reset_at: number;
 }
 
 export interface TokenTransaction {
@@ -34,13 +36,8 @@ export async function getTokenBalance(): Promise<TokenBalance> {
 }
 
 // Get transaction history
-export async function getTransactions(
-  page = 1,
-  limit = 20,
-): Promise<TransactionsResponse> {
-  return apiRequest<TransactionsResponse>(
-    `/tokens/transactions?page=${page}&limit=${limit}`,
-  );
+export async function getTransactions(page = 1, limit = 20): Promise<TransactionsResponse> {
+  return apiRequest<TransactionsResponse>(`/tokens/transactions?page=${page}&limit=${limit}`);
 }
 
 // Admin: Credit tokens to user
@@ -49,13 +46,10 @@ export async function adminCreditTokens(
   amount: number,
   description: string,
 ): Promise<{ success: boolean; newBalance: number }> {
-  return apiRequest<{ success: boolean; newBalance: number }>(
-    "/tokens/admin/credit",
-    {
-      method: "POST",
-      body: JSON.stringify({ userId, amount, description }),
-    },
-  );
+  return apiRequest<{ success: boolean; newBalance: number }>("/tokens/admin/credit", {
+    method: "POST",
+    body: JSON.stringify({ userId, amount, description }),
+  });
 }
 
 // Admin: Debit tokens from user
@@ -64,13 +58,10 @@ export async function adminDebitTokens(
   amount: number,
   description: string,
 ): Promise<{ success: boolean; newBalance: number }> {
-  return apiRequest<{ success: boolean; newBalance: number }>(
-    "/tokens/admin/debit",
-    {
-      method: "POST",
-      body: JSON.stringify({ userId, amount, description }),
-    },
-  );
+  return apiRequest<{ success: boolean; newBalance: number }>("/tokens/admin/debit", {
+    method: "POST",
+    body: JSON.stringify({ userId, amount, description }),
+  });
 }
 
 // Admin: Set exact balance
@@ -79,11 +70,8 @@ export async function adminAdjustTokens(
   newBalance: number,
   description: string,
 ): Promise<{ success: boolean; newBalance: number }> {
-  return apiRequest<{ success: boolean; newBalance: number }>(
-    "/tokens/admin/adjust",
-    {
-      method: "POST",
-      body: JSON.stringify({ userId, newBalance, description }),
-    },
-  );
+  return apiRequest<{ success: boolean; newBalance: number }>("/tokens/admin/adjust", {
+    method: "POST",
+    body: JSON.stringify({ userId, newBalance, description }),
+  });
 }

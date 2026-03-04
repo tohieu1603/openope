@@ -123,6 +123,7 @@ export interface ChatProps {
   onImageSelect: (files: FileList) => void;
   onImageRemove: (index: number) => void;
   onScroll?: (e: Event) => void;
+  gatewayReady?: boolean;
   // Sidebar props
   conversations?: Conversation[];
   conversationsLoading?: boolean;
@@ -205,6 +206,7 @@ export function renderChat(props: ChatProps) {
     onImageSelect,
     onImageRemove,
     onScroll,
+    gatewayReady = true,
     conversations = [],
     conversationsLoading = false,
     currentConversationId = null,
@@ -220,6 +222,7 @@ export function renderChat(props: ChatProps) {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (!gatewayReady) return;
       if (!isLoggedIn) {
         onLoginClick();
       } else if (draft.trim()) {
@@ -234,6 +237,7 @@ export function renderChat(props: ChatProps) {
   };
 
   const handleSendClick = () => {
+    if (!gatewayReady) return;
     if (!isLoggedIn) {
       onLoginClick();
     } else {
@@ -1458,7 +1462,7 @@ export function renderChat(props: ChatProps) {
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
-                      placeholder="${t("chatPlaceholder")}"
+                      placeholder="${!gatewayReady ? "Đang chờ gateway khởi động..." : t("chatPlaceholder")}"
                       .value=${draft}
                       rows="1"
                       @input=${(e: InputEvent) => {
@@ -1469,7 +1473,7 @@ export function renderChat(props: ChatProps) {
                       }}
                       @keydown=${handleKeyDown}
                       @paste=${handlePaste}
-                      ?disabled=${sending}
+                      ?disabled=${sending || !gatewayReady}
                     ></textarea>
                     ${
                       pendingImages.length > 0
@@ -1523,8 +1527,8 @@ export function renderChat(props: ChatProps) {
                           type="button"
                           class="gc-send-btn"
                           @click=${handleSendClick}
-                          ?disabled=${(!draft.trim() && pendingImages.length === 0) || sending}
-                          title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
+                          ?disabled=${(!draft.trim() && pendingImages.length === 0) || sending || !gatewayReady}
+                          title=${!gatewayReady ? "Đang chờ gateway..." : isLoggedIn ? t("chatSend") : t("chatSignIn")}
                         >
                           ${icons.arrowUp}
                         </button>
@@ -1654,7 +1658,7 @@ export function renderChat(props: ChatProps) {
                   <div class="gc-input-box">
                     <textarea
                       class="gc-input"
-                      placeholder="${t("chatPlaceholder")}"
+                      placeholder="${!gatewayReady ? "Đang chờ gateway khởi động..." : t("chatPlaceholder")}"
                       .value=${draft}
                       rows="1"
                       @input=${(e: InputEvent) => {
@@ -1665,7 +1669,7 @@ export function renderChat(props: ChatProps) {
                       }}
                       @keydown=${handleKeyDown}
                       @paste=${handlePaste}
-                      ?disabled=${sending}
+                      ?disabled=${sending || !gatewayReady}
                     ></textarea>
                     ${
                       pendingImages.length > 0
@@ -1729,8 +1733,8 @@ export function renderChat(props: ChatProps) {
                               type="button"
                               class="gc-send-btn"
                               @click=${handleSendClick}
-                              ?disabled=${!draft.trim() && pendingImages.length === 0}
-                              title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
+                              ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
+                              title=${!gatewayReady ? "Đang chờ gateway..." : isLoggedIn ? t("chatSend") : t("chatSignIn")}
                             >
                               ${icons.arrowUp}
                             </button>`

@@ -3,7 +3,11 @@ import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { loadConfig } from "../config/config.js";
 import { resolveAgentMainSessionKey } from "../config/sessions.js";
 import { runCronIsolatedAgentTurn } from "../cron/isolated-agent.js";
-import { appendCronRunLog, resolveCronRunLogPath } from "../cron/run-log.js";
+import {
+  appendCronRunLog,
+  resolveCronRunLogPath,
+  type CronRunLogActivity,
+} from "../cron/run-log.js";
 import { CronService } from "../cron/service.js";
 import { resolveCronStorePath } from "../cron/store.js";
 import { runHeartbeatOnce } from "../infra/heartbeat-runner.js";
@@ -25,7 +29,7 @@ export function buildGatewayCronService(params: {
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
 }): GatewayCronState {
   const cronLogger = getChildLogger({ module: "cron" });
-  const storePath = resolveCronStorePath(params.cfg.cron?.store);
+  const storePath = resolveCronStorePath(params.cfg.cron?.store, params.cfg);
   const cronEnabled = process.env.OPENCLAW_SKIP_CRON !== "1" && params.cfg.cron?.enabled !== false;
 
   const resolveCronAgent = (requested?: string | null) => {
@@ -42,6 +46,19 @@ export function buildGatewayCronService(params: {
     const agentId = hasAgent ? normalized : resolveDefaultAgentId(runtimeConfig);
     return { agentId, cfg: runtimeConfig };
   };
+
+  // Track tool activities per running job so we can persist them in the run log.
+  const jobActivities = new Map<
+    string,
+    Array<{
+      id: string;
+      name: string;
+      detail?: string;
+      startedAtMs: number;
+      durationMs?: number;
+      isError?: boolean;
+    }>
+  >();
 
   const cron = new CronService({
     storePath,
@@ -63,13 +80,14 @@ export function buildGatewayCronService(params: {
         deps: { ...params.deps, runtime: defaultRuntime },
       });
     },
-    runIsolatedAgentJob: async ({ job, message, onProgress, onActivity }) => {
+    runIsolatedAgentJob: async ({ job, message, signal, onProgress, onActivity }) => {
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(job.agentId);
       return await runCronIsolatedAgentTurn({
         cfg: runtimeConfig,
         deps: params.deps,
         job,
         message,
+        signal,
         agentId,
         sessionKey: `cron:${job.id}`,
         lane: "cron",
@@ -80,7 +98,39 @@ export function buildGatewayCronService(params: {
     log: getChildLogger({ module: "cron", storePath }),
     onEvent: (evt) => {
       params.broadcast("cron", evt, { dropIfSlow: true });
+
+      // Accumulate tool activities per running job
+      if (evt.action === "started") {
+        jobActivities.set(evt.jobId, []);
+      } else if (evt.action === "activity" && evt.activity?.kind === "tool") {
+        const list = jobActivities.get(evt.jobId);
+        if (list && evt.activity.phase === "start") {
+          list.push({
+            id: evt.activity.id,
+            name: evt.activity.name ?? "unknown",
+            detail: evt.activity.detail,
+            startedAtMs: Date.now(),
+          });
+        } else if (list && evt.activity.phase === "result") {
+          const entry = list.find((a) => a.id === evt.activity!.id);
+          if (entry) {
+            entry.durationMs = Date.now() - entry.startedAtMs;
+            entry.isError = evt.activity.isError;
+          }
+        }
+      }
+
       if (evt.action === "finished") {
+        // Collect accumulated activities for this run
+        const rawActivities = jobActivities.get(evt.jobId) ?? [];
+        jobActivities.delete(evt.jobId);
+        const activities: CronRunLogActivity[] = rawActivities.map((a) => ({
+          name: a.name,
+          ...(a.detail ? { detail: a.detail } : {}),
+          durationMs: a.durationMs ?? Math.max(0, Date.now() - a.startedAtMs),
+          ...(a.isError ? { isError: true } : {}),
+        }));
+
         const logPath = resolveCronRunLogPath({
           storePath,
           jobId: evt.jobId,
@@ -95,6 +145,7 @@ export function buildGatewayCronService(params: {
           runAtMs: evt.runAtMs,
           durationMs: evt.durationMs,
           nextRunAtMs: evt.nextRunAtMs,
+          ...(activities.length > 0 ? { activities } : {}),
         }).catch((err) => {
           cronLogger.warn({ err: String(err), logPath }, "cron: run log append failed");
         });

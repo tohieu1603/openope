@@ -87,6 +87,10 @@ export async function executeJob(
   job.state.lastError = undefined;
   emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
 
+  // Create an AbortController so external callers can cancel this running job.
+  const abortController = new AbortController();
+  state.runningAbortControllers.set(job.id, abortController);
+
   let deleted = false;
 
   const finish = async (
@@ -196,16 +200,41 @@ export async function executeJob(
       return;
     }
 
-    const res = await state.deps.runIsolatedAgentJob({
-      job,
-      message: job.payload.message,
-      onProgress: (step, detail) => {
-        emit(state, { jobId: job.id, action: "progress", step, stepDetail: detail });
-      },
-      onActivity: (activity) => {
-        emit(state, { jobId: job.id, action: "activity", activity });
-      },
+    // Check if already cancelled before starting the agent
+    if (abortController.signal.aborted) {
+      await finish("error", "Job cancelled");
+      return;
+    }
+
+    // Race the agent execution against the abort signal so cancel actually stops it
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (abortController.signal.aborted) {
+        reject(new DOMException("Job cancelled", "AbortError"));
+        return;
+      }
+      abortController.signal.addEventListener(
+        "abort",
+        () => {
+          reject(new DOMException("Job cancelled", "AbortError"));
+        },
+        { once: true },
+      );
     });
+
+    const res = await Promise.race([
+      state.deps.runIsolatedAgentJob({
+        job,
+        message: job.payload.message,
+        signal: abortController.signal,
+        onProgress: (step, detail) => {
+          emit(state, { jobId: job.id, action: "progress", step, stepDetail: detail });
+        },
+        onActivity: (activity) => {
+          emit(state, { jobId: job.id, action: "activity", activity });
+        },
+      }),
+      abortPromise,
+    ]);
 
     // Post a short summary back to the main session so the user sees
     // the cron result without opening the isolated session.
@@ -229,8 +258,10 @@ export async function executeJob(
       await finish("error", res.error ?? "cron job failed", res.summary, res.usage);
     }
   } catch (err) {
-    await finish("error", String(err));
+    const isCancelled = abortController.signal.aborted;
+    await finish("error", isCancelled ? "Job cancelled" : String(err));
   } finally {
+    state.runningAbortControllers.delete(job.id);
     job.updatedAtMs = nowMs;
     if (!opts.forced && job.enabled && !deleted) {
       // Keep nextRunAtMs in sync in case the schedule advanced during a long run.

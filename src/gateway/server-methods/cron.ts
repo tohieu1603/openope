@@ -192,6 +192,20 @@ export const cronHandlers: GatewayRequestHandlers = {
     const result = await context.cron.run(jobId, p.mode);
     respond(true, result, undefined);
   },
+  "cron.cancel": async ({ params, respond, context }) => {
+    const p = params as { id?: string; jobId?: string } | null;
+    const jobId = p?.id ?? p?.jobId;
+    if (!jobId) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid cron.cancel params: missing id"),
+      );
+      return;
+    }
+    const result = context.cron.cancel(jobId);
+    respond(true, result, undefined);
+  },
   "cron.runs": async ({ params, respond, context }) => {
     if (!validateCronRunsParams(params)) {
       respond(

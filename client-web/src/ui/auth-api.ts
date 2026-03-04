@@ -140,6 +140,7 @@ declare global {
       provisionTunnel?: (token: string) => Promise<boolean>;
       hasTunnelToken?: () => Promise<boolean>;
       getGatewayConfig?: () => Promise<{ gatewayToken: string; hooksToken: string } | null>;
+      onGatewayStatus?: (callback: (status: string, detail?: string) => void) => () => void;
       [key: string]: unknown;
     };
   }

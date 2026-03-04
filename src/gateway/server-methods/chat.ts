@@ -10,6 +10,7 @@ import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
+import { resolveQueueSettings } from "../../auto-reply/reply/queue/settings.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -427,21 +428,28 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    // Abort any in-flight runs for this session before starting a new one.
-    // Without this, previous agents keep running and their responses still get delivered.
-    abortChatRunsForSessionKey(
-      {
-        chatAbortControllers: context.chatAbortControllers,
-        chatRunBuffers: context.chatRunBuffers,
-        chatDeltaSentAt: context.chatDeltaSentAt,
-        chatAbortedRuns: context.chatAbortedRuns,
-        removeChatRun: context.removeChatRun,
-        agentRunSeq: context.agentRunSeq,
-        broadcast: context.broadcast,
-        nodeSendToSession: context.nodeSendToSession,
-      },
-      { sessionKey: p.sessionKey, stopReason: "superseded" },
-    );
+    // Only abort in-flight runs when queue mode is "interrupt".
+    // Other modes (collect, followup, steer, etc.) let the pipeline handle concurrency.
+    const queueSettings = resolveQueueSettings({
+      cfg,
+      channel: INTERNAL_MESSAGE_CHANNEL,
+      sessionEntry: entry,
+    });
+    if (queueSettings.mode === "interrupt") {
+      abortChatRunsForSessionKey(
+        {
+          chatAbortControllers: context.chatAbortControllers,
+          chatRunBuffers: context.chatRunBuffers,
+          chatDeltaSentAt: context.chatDeltaSentAt,
+          chatAbortedRuns: context.chatAbortedRuns,
+          removeChatRun: context.removeChatRun,
+          agentRunSeq: context.agentRunSeq,
+          broadcast: context.broadcast,
+          nodeSendToSession: context.nodeSendToSession,
+        },
+        { sessionKey: p.sessionKey, stopReason: "superseded" },
+      );
+    }
 
     try {
       const abortController = new AbortController();

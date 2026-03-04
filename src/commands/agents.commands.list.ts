@@ -36,7 +36,7 @@ function formatSummary(summary: AgentSummary) {
   const identityLine = identityParts.length > 0 ? identityParts.join(" ") : null;
   const identitySource =
     summary.identitySource === "identity"
-      ? "IDENTITY.md"
+      ? "DANH_TINH.md"
       : summary.identitySource === "config"
         ? "config"
         : null;

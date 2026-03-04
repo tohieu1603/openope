@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { listChannelPlugins } from "../../channels/plugins/index.js";
@@ -12,6 +13,7 @@ import {
 } from "../../config/config.js";
 import { applyLegacyMigrations } from "../../config/legacy.js";
 import { applyMergePatch } from "../../config/merge-patch.js";
+import { resolveUserDataDir, STATE_DIR } from "../../config/paths.js";
 import {
   redactConfigObject,
   redactConfigSnapshot,
@@ -24,7 +26,9 @@ import {
   writeRestartSentinel,
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { migrateUserDataDirs, resetUserDataMigration } from "../../infra/state-migrations.js";
 import { loadOpenClawPlugins } from "../../plugins/loader.js";
+import { resolveUserPath } from "../../utils.js";
 import {
   ErrorCodes,
   errorShape,
@@ -456,5 +460,66 @@ export const configHandlers: GatewayRequestHandlers = {
       },
       undefined,
     );
+  },
+
+  "config.userDataDir.set": async ({ params, respond }) => {
+    const { path: rawPath, baseHash } = params as { path?: string; baseHash?: string };
+    if (!rawPath?.trim()) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "path is required"));
+      return;
+    }
+
+    // Validate baseHash
+    const snapshot = await readConfigFileSnapshot();
+    if (!requireConfigBaseHash({ baseHash }, snapshot, respond)) return;
+
+    // Resolve and validate path
+    const resolvedPath = resolveUserPath(rawPath.trim());
+    if (!path.isAbsolute(resolvedPath)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "path must be absolute"));
+      return;
+    }
+    // Reject system-critical paths (Windows root, system32, etc.)
+    const normalized = path.resolve(resolvedPath).toLowerCase();
+    const blocked = ["c:\\windows", "c:\\program files", "c:\\program files (x86)", "c:\\programdata"];
+    if (blocked.some(b => normalized === b || normalized.startsWith(b + path.sep))) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "cannot use system directory"));
+      return;
+    }
+
+    // Check not same as current
+    const cfg = loadConfig();
+    const currentUserDataDir = resolveUserDataDir(cfg);
+    if (currentUserDataDir && path.resolve(resolvedPath) === path.resolve(currentUserDataDir)) {
+      respond(true, { migrated: [], message: "Already using this path" });
+      return;
+    }
+
+    // Run migration
+    resetUserDataMigration();
+    const migration = migrateUserDataDirs({
+      stateDir: STATE_DIR,
+      userDataDir: resolvedPath,
+    });
+
+    // Write to config
+    cfg.userDataDir = resolvedPath;
+    await writeConfigFile(cfg);
+
+    // Graceful restart
+    const restartDelayMs = 3000;
+    const restart = scheduleGatewaySigusr1Restart({
+      delayMs: restartDelayMs,
+      reason: "config.userDataDir.set",
+    });
+
+    respond(true, {
+      userDataDir: resolvedPath,
+      migrated: migration.migrated,
+      skipped: migration.skipped,
+      warnings: migration.warnings,
+      restartScheduled: restart.scheduled,
+      restartDelayMs,
+    });
   },
 };

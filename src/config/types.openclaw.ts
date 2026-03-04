@@ -26,6 +26,8 @@ import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
 
 export type OpenClawConfig = {
+  /** User data directory for workspace, skills, cron. Default: ~/Desktop/OperisAgent/ */
+  userDataDir?: string;
   meta?: {
     /** Last OpenClaw version that wrote this config. */
     lastTouchedVersion?: string;

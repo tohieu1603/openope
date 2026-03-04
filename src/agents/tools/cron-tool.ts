@@ -321,7 +321,7 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
           ) {
             const payload = (job as { payload: { kind: string; model?: string } }).payload;
             if (!payload.model) {
-              payload.model = "byteplus/kimi-k2.5";
+              payload.model = "operis/operis-multi";
             }
           }
 

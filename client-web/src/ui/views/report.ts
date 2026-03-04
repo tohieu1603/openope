@@ -24,9 +24,9 @@ export interface ReportProps {
 }
 
 const TYPE_LABELS: Record<ReportType, string> = {
-  bug: "Lỗi",
-  feedback: "Phản hồi",
-  suggestion: "Đề xuất",
+  bug: "Báo lỗi",
+  feedback: "Góp ý",
+  suggestion: "Ý tưởng",
 };
 
 const STATUS_LABELS: Record<ReportStatus, string> = {
@@ -81,8 +81,13 @@ function renderForm(props: ReportProps) {
 
   return html`
     <div class="rp-panel">
-      <div class="rp-panel-title">Gửi báo cáo mới</div>
-      <div class="rp-panel-sub">Báo lỗi, phản hồi hoặc đề xuất cải tiến hệ thống.</div>
+      <div class="rp-panel-title">Đóng góp ý kiến</div>
+      <div class="rp-panel-sub">Mỗi ý kiến của bạn đều giúp chúng mình phát triển sản phẩm tốt hơn.</div>
+      <ul class="rp-hint-list">
+        <li>Gặp lỗi? Mô tả để chúng mình sửa nhanh nhất.</li>
+        <li>Có ý tưởng hay? Chia sẻ để cùng xây dựng.</li>
+        <li>Muốn góp ý? Mọi phản hồi đều được lắng nghe.</li>
+      </ul>
 
       <div class="rp-form-grid">
         <label class="rp-field">
@@ -92,9 +97,9 @@ function renderForm(props: ReportProps) {
             .value=${form.type}
             @change=${(e: Event) => onFormChange({ type: (e.target as HTMLSelectElement).value as ReportType })}
           >
-            <option value="bug">Lỗi (Bug)</option>
-            <option value="feedback">Phản hồi</option>
-            <option value="suggestion">Đề xuất</option>
+            <option value="bug">Báo lỗi</option>
+            <option value="feedback">Góp ý</option>
+            <option value="suggestion">Ý tưởng mới</option>
           </select>
         </label>
 
@@ -103,7 +108,7 @@ function renderForm(props: ReportProps) {
           <input
             type="text"
             class="rp-input"
-            placeholder="Mô tả ngắn gọn vấn đề..."
+            placeholder="Tóm tắt ngắn gọn..."
             .value=${form.subject}
             @input=${(e: Event) => onFormChange({ subject: (e.target as HTMLInputElement).value })}
             ?disabled=${submitting}
@@ -116,7 +121,7 @@ function renderForm(props: ReportProps) {
         <textarea
           class="rp-input rp-textarea"
           rows="4"
-          placeholder="Mô tả chi tiết vấn đề, các bước để tái hiện lỗi..."
+          placeholder="Mô tả chi tiết hơn — các bước tái hiện lỗi, bối cảnh sử dụng, hoặc hình dung về tính năng mong muốn..."
           .value=${form.content}
           @input=${(e: Event) => onFormChange({ content: (e.target as HTMLTextAreaElement).value })}
           ?disabled=${submitting}
@@ -129,7 +134,7 @@ function renderForm(props: ReportProps) {
           @click=${onSubmit}
           ?disabled=${submitting || !form.subject.trim() || !form.content.trim()}
         >
-          ${submitting ? "Đang gửi…" : "Gửi báo cáo"}
+          ${submitting ? "Đang gửi…" : "Gửi góp ý"}
         </button>
       </div>
     </div>
@@ -180,8 +185,8 @@ function renderEmpty() {
   return html`
     <div class="rp-empty">
       <div class="rp-empty-icon">${icons.flag}</div>
-      <div class="rp-empty-title">Chưa có báo cáo nào</div>
-      <div class="rp-empty-sub">Gửi báo cáo đầu tiên bằng form phía trên.</div>
+      <div class="rp-empty-title">Chưa có ý kiến nào</div>
+      <div class="rp-empty-sub">Bạn có thể là người đầu tiên đóng góp — mọi ý kiến đều có giá trị!</div>
     </div>
   `;
 }
@@ -201,8 +206,8 @@ export function renderReportView(props: ReportProps) {
         <div class="rp-panel">
           <div class="rp-panel-header">
             <div>
-              <div class="rp-panel-title">Báo cáo đã gửi</div>
-              <div class="rp-panel-sub">${reports.length} báo cáo</div>
+              <div class="rp-panel-title">Ý kiến đã gửi</div>
+              <div class="rp-panel-sub">${reports.length} ý kiến</div>
             </div>
             <button class="rp-btn rp-btn-ghost" @click=${onRefresh} ?disabled=${loading}>
               <span class="rp-btn-icon">${icons.refresh}</span>
@@ -215,7 +220,7 @@ export function renderReportView(props: ReportProps) {
           ${
             loading && reports.length === 0
               ? html`
-                  <div class="rp-loading">Đang tải báo cáo…</div>
+                  <div class="rp-loading">Đang tải…</div>
                 `
               : reports.length === 0
                 ? renderEmpty()
@@ -227,9 +232,28 @@ export function renderReportView(props: ReportProps) {
 
     <style>
       /* Layout */
+      .rp-hint-list {
+        margin: 8px 0 16px;
+        padding-left: 18px;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.7;
+        list-style: none;
+      }
+      .rp-hint-list li {
+        position: relative;
+        padding-left: 6px;
+      }
+      .rp-hint-list li::before {
+        content: "→";
+        position: absolute;
+        left: -16px;
+        color: var(--accent);
+        font-weight: 500;
+      }
       .rp-layout {
         display: grid;
-        grid-template-columns: 380px 1fr;
+        grid-template-columns: 420px 1fr;
         gap: 20px;
         padding: 0 4px;
         min-height: 0;

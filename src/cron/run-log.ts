@@ -1,6 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+export type CronRunLogActivity = {
+  name: string;
+  detail?: string;
+  durationMs: number;
+  isError?: boolean;
+};
+
 export type CronRunLogEntry = {
   ts: number;
   jobId: string;
@@ -11,6 +18,8 @@ export type CronRunLogEntry = {
   runAtMs?: number;
   durationMs?: number;
   nextRunAtMs?: number;
+  /** Tool call activities recorded during the run. */
+  activities?: CronRunLogActivity[];
 };
 
 export function resolveCronRunLogPath(params: { storePath: string; jobId: string }) {

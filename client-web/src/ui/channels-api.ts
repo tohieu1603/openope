@@ -9,7 +9,7 @@ import { apiRequest } from "./auth-api";
 export type ChannelId = "whatsapp" | "telegram" | "zalo";
 
 // Channels not yet available for connection (button disabled)
-export const DISABLED_CHANNELS: ChannelId[] = ["whatsapp"];
+export const DISABLED_CHANNELS: ChannelId[] = ["whatsapp", "telegram"];
 
 export interface ChannelStatus {
   id: ChannelId;

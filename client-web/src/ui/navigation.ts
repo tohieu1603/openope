@@ -66,9 +66,9 @@ export const NAV_ITEMS: Array<{
   },
   {
     tab: "report",
-    label: "Report",
+    label: "Góp ý",
     icon: "flag",
-    description: "Báo cáo lỗi và phản hồi",
+    description: "Đóng góp ý kiến cải thiện hệ thống",
     section: "main",
   },
   // Agent section

@@ -3,7 +3,7 @@
  * Creates minimal gateway config on first run; ensures Electron-specific
  * settings on every startup.
  *
- * BytePlus provider preset is always bundled and deep-merged on first run.
+ * Operis provider preset is always bundled and deep-merged on first run.
  */
 import path from "node:path";
 import fs from "node:fs";
@@ -22,6 +22,24 @@ export class OnboardManager {
     return path.join(this.stateDir, "operis.json");
   }
 
+  /** Path to installer seed file (written by NSIS during install) */
+  private get seedFilePath(): string {
+    return path.join(this.stateDir, "installer-seed.json");
+  }
+
+  /** Read and consume installer seed file (userDataDir from NSIS). */
+  private consumeInstallerSeed(): { userDataDir?: string } {
+    try {
+      if (!fs.existsSync(this.seedFilePath)) return {};
+      const raw = fs.readFileSync(this.seedFilePath, "utf-8");
+      const seed = JSON.parse(raw);
+      fs.unlinkSync(this.seedFilePath);
+      return { userDataDir: typeof seed.userDataDir === "string" ? seed.userDataDir : undefined };
+    } catch {
+      return {};
+    }
+  }
+
   /** Check if Operis config already exists. */
   isConfigured(): boolean {
     return fs.existsSync(this.configFilePath);
@@ -37,6 +55,9 @@ export class OnboardManager {
       fs.mkdirSync(this.stateDir, { recursive: true });
     }
 
+    // Read installer seed (userDataDir from NSIS)
+    const seed = this.consumeInstallerSeed();
+
     const randomHex = (bytes: number) =>
       Array.from({ length: bytes }, () =>
         Math.floor(Math.random() * 256).toString(16).padStart(2, "0"),
@@ -44,18 +65,18 @@ export class OnboardManager {
     const gatewayToken = randomHex(24);
     const hooksToken = randomHex(24);
 
-    const config = {
+    const config: Record<string, unknown> = {
       gateway: {
         mode: "local",
         auth: { mode: "token", token: gatewayToken },
         port: 18789,
         bind: "loopback",
         http: { endpoints: { chatCompletions: { enabled: true } } },
-        controlUi: { enabled: false, allowedOrigins: ["file://"] },
+        controlUi: { enabled: true, allowedOrigins: ["file://"] },
       },
       hooks: { enabled: true, token: hooksToken },
       auth: { profiles: {} },
-      browser: { defaultProfile: "openclaw" },
+      browser: { defaultProfile: "operis", noSandbox: true },
       plugins: {
         entries: {
           zalozcajs: { enabled: true },
@@ -65,6 +86,11 @@ export class OnboardManager {
         zalozcajs: { enabled: true, dmPolicy: "open" },
       },
     };
+
+    // Include userDataDir from installer seed
+    if (seed.userDataDir) {
+      config.userDataDir = seed.userDataDir;
+    }
 
     fs.writeFileSync(this.configFilePath, JSON.stringify(config, null, 2), "utf-8");
   }
@@ -151,6 +177,49 @@ export class OnboardManager {
   }
 
   /**
+   * Seed default cron jobs if none exist yet.
+   * Copies cron-jobs-preset.json → ~/.operis/cron/jobs.json on first run.
+   * Idempotent: skips if jobs.json already exists and is non-empty.
+   */
+  seedDefaultCronJobs(presetPath: string): void {
+    try {
+      const cronDir = path.join(this.stateDir, "cron");
+      const jobsPath = path.join(cronDir, "jobs.json");
+
+      // Skip if jobs.json already exists with content
+      if (fs.existsSync(jobsPath)) {
+        const raw = fs.readFileSync(jobsPath, "utf-8").trim();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed?.jobs) && parsed.jobs.length > 0) return;
+          } catch { /* invalid JSON — overwrite with preset */ }
+        }
+      }
+
+      if (!fs.existsSync(presetPath)) return;
+
+      // Read preset and stamp timestamps + generate unique IDs
+      const presetRaw = fs.readFileSync(presetPath, "utf-8");
+      const preset = JSON.parse(presetRaw);
+      const now = Date.now();
+      if (Array.isArray(preset?.jobs)) {
+        for (const job of preset.jobs) {
+          if (!job.createdAtMs) job.createdAtMs = now;
+          if (!job.updatedAtMs) job.updatedAtMs = now;
+        }
+      }
+
+      if (!fs.existsSync(cronDir)) {
+        fs.mkdirSync(cronDir, { recursive: true });
+      }
+      fs.writeFileSync(jobsPath, JSON.stringify(preset, null, 2), "utf-8");
+    } catch (err) {
+      console.error("[onboard] Failed to seed default cron jobs:", err);
+    }
+  }
+
+  /**
    * Ensure gateway config has Electron-specific settings (idempotent).
    * Called after onboard and on every app startup.
    */
@@ -159,6 +228,13 @@ export class OnboardManager {
       const raw = fs.readFileSync(this.configFilePath, "utf-8");
       const config = JSON.parse(raw);
       let modified = false;
+
+      // Consume installer seed if present (upgrade/reinstall)
+      const seed = this.consumeInstallerSeed();
+      if (seed.userDataDir && !config.userDataDir) {
+        config.userDataDir = seed.userDataDir;
+        modified = true;
+      }
 
       // Enable chatCompletions endpoint
       config.gateway ??= {};
@@ -172,8 +248,8 @@ export class OnboardManager {
 
       // Disable control UI served by gateway (Electron loads UI from local file://)
       config.gateway.controlUi ??= {};
-      if (config.gateway.controlUi.enabled !== false) {
-        config.gateway.controlUi.enabled = false;
+      if (config.gateway.controlUi.enabled !== true) {
+        config.gateway.controlUi.enabled = true;
         modified = true;
       }
       const origins = config.gateway.controlUi.allowedOrigins ?? [];
@@ -198,10 +274,10 @@ export class OnboardManager {
         modified = true;
       }
 
-      // Use independent openclaw browser (agent launches its own Chrome via CDP)
+      // Use independent operis browser profile (agent launches its own Chrome via CDP)
       config.browser ??= {};
-      if (config.browser.defaultProfile !== "openclaw") {
-        config.browser.defaultProfile = "openclaw";
+      if (config.browser.defaultProfile !== "operis") {
+        config.browser.defaultProfile = "operis";
         modified = true;
       }
 

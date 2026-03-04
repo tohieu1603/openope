@@ -1,0 +1,36 @@
+{
+  "models": {
+    "providers": {
+      "operis": {
+        "baseUrl": "https://admin.operis.vn/api/v1/operis",
+        "apiKey": "sk_test_anthropic_proxy_2026",
+        "api": "openai-completions",
+        "models": [
+          { "id": "operis-multi", "name": "operis-multi", "input": ["text", "image"] }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "operis/operis-multi"
+      },
+      "maxConcurrent": 4
+    },
+    "list": [
+      {
+        "id": "main",
+        "model": "operis/operis-multi"
+      }
+    ]
+  },
+  "auth": {
+    "profiles": {
+      "operis:default": {
+        "provider": "operis",
+        "mode": "api_key"
+      }
+    }
+  }
+}

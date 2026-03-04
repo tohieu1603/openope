@@ -118,7 +118,10 @@ export class GatewayClient {
   private connect() {
     if (this.closed) return;
     this.ws = new WebSocket(this.opts.url);
-    this.ws.onopen = () => this.queueConnect();
+    this.ws.onopen = () => {
+      this.backoffMs = 800; // reset backoff: server is reachable
+      this.queueConnect();
+    };
     this.ws.onmessage = (ev) => this.handleMessage(String(ev.data ?? ""));
     this.ws.onclose = (ev) => {
       const reason = String(ev.reason ?? "");
@@ -166,7 +169,8 @@ export class GatewayClient {
         deviceId: deviceIdentity.deviceId,
         role: ROLE,
       })?.token;
-      authToken = storedToken ?? this.opts.token;
+      // Prefer fresh URL token over stored device token (may be stale from previous session)
+      authToken = this.opts.token ?? storedToken;
       canFallbackToShared = Boolean(storedToken && this.opts.token);
     }
 

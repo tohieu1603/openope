@@ -198,7 +198,7 @@ export function formToCronPayload(form: WorkflowFormState) {
     const agentPayload: AgentTurnPayload = {
       kind: "agentTurn",
       message: promptText,
-      model: "byteplus/kimi-k2.5",
+      model: "operis/operis-multi",
     };
 
     // Delivery settings go INSIDE payload for agentTurn

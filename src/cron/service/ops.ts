@@ -138,6 +138,16 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
   });
 }
 
+/** Cancel a currently running job by aborting its AbortController. Does not require the lock. */
+export function cancel(state: CronServiceState, id: string) {
+  const controller = state.runningAbortControllers.get(id);
+  if (!controller) {
+    return { ok: false, reason: "not-running" as const };
+  }
+  controller.abort();
+  return { ok: true } as const;
+}
+
 export function wakeNow(
   state: CronServiceState,
   opts: { mode: "now" | "next-heartbeat"; text: string },

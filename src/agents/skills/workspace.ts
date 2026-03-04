@@ -14,6 +14,7 @@ import type {
   SkillSnapshot,
 } from "./types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { resolveUserDataDir } from "../../config/paths.js";
 import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import { shouldIncludeSkill } from "./config.js";
@@ -120,7 +121,9 @@ function loadSkillEntries(
     return [];
   };
 
-  const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
+  const userDataDir = resolveUserDataDir(opts?.config ?? {});
+  const managedSkillsDir = opts?.managedSkillsDir
+    ?? (userDataDir ? path.join(userDataDir, "skills") : path.join(CONFIG_DIR, "skills"));
   const workspaceSkillsDir = path.join(workspaceDir, "skills");
   const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
   const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
@@ -136,23 +139,23 @@ function loadSkillEntries(
   const bundledSkills = bundledSkillsDir
     ? loadSkills({
         dir: bundledSkillsDir,
-        source: "openclaw-bundled",
+        source: "operis-bundled",
       })
     : [];
   const extraSkills = mergedExtraDirs.flatMap((dir) => {
     const resolved = resolveUserPath(dir);
     return loadSkills({
       dir: resolved,
-      source: "openclaw-extra",
+      source: "operis-extra",
     });
   });
   const managedSkills = loadSkills({
     dir: managedSkillsDir,
-    source: "openclaw-managed",
+    source: "operis-managed",
   });
   const workspaceSkills = loadSkills({
     dir: workspaceSkillsDir,
-    source: "openclaw-workspace",
+    source: "operis-workspace",
   });
 
   const merged = new Map<string, Skill>();

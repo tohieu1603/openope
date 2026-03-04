@@ -2,7 +2,6 @@ import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AgentDefaultsConfig } from "../../config/types.js";
 import type { CronActivity, CronProgressStep } from "../service/state.js";
-import { onAgentEvent } from "../../infra/agent-events.js";
 import type { CronJob } from "../types.js";
 import {
   resolveAgentConfig,
@@ -43,6 +42,7 @@ import {
 } from "../../auto-reply/thinking.js";
 import { createOutboundSendDeps, type CliDeps } from "../../cli/outbound-send-deps.js";
 import { resolveSessionTranscriptPath, updateSessionStore } from "../../config/sessions.js";
+import { onAgentEvent } from "../../infra/agent-events.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
@@ -139,6 +139,7 @@ export async function runCronIsolatedAgentTurn(params: {
   deps: CliDeps;
   job: CronJob;
   message: string;
+  signal?: AbortSignal;
   sessionKey: string;
   agentId?: string;
   lane?: string;
@@ -388,7 +389,13 @@ export async function runCronIsolatedAgentTurn(params: {
       ? onAgentEvent((evt) => {
           if (evt.runId !== runId) return;
           if (evt.stream === "tool") {
-            const d = evt.data as { phase?: string; name?: string; toolCallId?: string; isError?: boolean; args?: unknown };
+            const d = evt.data as {
+              phase?: string;
+              name?: string;
+              toolCallId?: string;
+              isError?: boolean;
+              args?: unknown;
+            };
             if (d.phase === "start" || d.phase === "result") {
               params.onActivity!({
                 kind: "tool",
@@ -415,6 +422,11 @@ export async function runCronIsolatedAgentTurn(params: {
           }
         })
       : undefined;
+
+    // Check for cancellation before starting agent
+    if (params.signal?.aborted) {
+      return { status: "error", error: "Job cancelled" };
+    }
 
     params.onProgress?.("initializing", "Session & model resolved");
     const messageChannel = resolvedDelivery.channel;
@@ -462,6 +474,7 @@ export async function runCronIsolatedAgentTurn(params: {
           runId: cronSession.sessionEntry.sessionId,
           requireExplicitMessageTarget: true,
           disableMessageTool: deliveryRequested,
+          abortSignal: params.signal,
         });
       },
     });

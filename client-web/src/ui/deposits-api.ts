@@ -22,9 +22,11 @@ export interface PricingTier {
   id: string;
   name: string;
   price: number; // VND
-  tokens: number;
+  tokens: number; // -1 = unlimited, 0 = contact
   bonus: number;
   popular?: boolean;
+  unlimited?: boolean; // tokens === -1
+  contactOnly?: boolean; // tokens === 0 && price === 0
 }
 
 // Backend response format
@@ -96,8 +98,10 @@ export interface DepositOrder {
 export interface CreateDepositRequest {
   // Option 1: By tier ID (e.g., "tier_starter", "tier_pro")
   tierId?: string;
-  // Option 2: By VND amount
-  amount?: number;
+  // Option 2: By token amount (integer, minimum 100,000)
+  tokenAmount?: number;
+  // Option 3: By VND amount (backend converts to tokens using base rate)
+  amountVnd?: number;
 }
 
 export interface DepositHistoryResponse {
@@ -140,6 +144,8 @@ export async function getPricing(): Promise<PricingResponse> {
       tokens: pkg.tokens,
       bonus: pkg.bonus ?? 0,
       popular: pkg.popular,
+      unlimited: pkg.tokens === -1,
+      contactOnly: pkg.tokens === 0 && pkg.priceVnd === 0,
     })),
     currency: response.currency,
     pricePerMillion: response.pricePerMillion,
@@ -226,8 +232,10 @@ export async function createDeposit(request: CreateDepositRequest): Promise<Depo
   const body: Record<string, unknown> = {};
   if (request.tierId) {
     body.tierId = request.tierId;
-  } else if (request.amount) {
-    body.amount = request.amount;
+  } else if (request.tokenAmount) {
+    body.tokenAmount = request.tokenAmount;
+  } else if (request.amountVnd) {
+    body.amountVnd = request.amountVnd;
   }
 
   const response = await apiRequest<BackendDepositOrder>("/deposits", {
