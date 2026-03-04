@@ -509,77 +509,8 @@ export function renderSettings(props: SettingsProps) {
             <div class="st-row-body">
               <span class="st-row-title">Phiên đăng nhập</span>
             </div>
-            <div class="st-card-body">
-              <div class="st-list">
-                <div class="st-item">
-                  <div class="st-item-info">
-                    <div class="st-item-label">Thông báo email</div>
-                    <div class="st-item-desc">Nhận thông báo qua email</div>
-                  </div>
-                  <div class="st-item-action">
-                    <div class="st-toggle active"></div>
-                  </div>
-                </div>
-
-                <div class="st-item">
-                  <div class="st-item-info">
-                    <div class="st-item-label">Thông báo workflow</div>
-                    <div class="st-item-desc">Nhận thông báo khi workflow hoàn thành</div>
-                  </div>
-                  <div class="st-item-action">
-                    <div class="st-toggle active"></div>
-                  </div>
-                </div>
-
-                <div class="st-item">
-                  <div class="st-item-info">
-                    <div class="st-item-label">Ngôn ngữ</div>
-                    <div class="st-item-desc">Tiếng Việt</div>
-                  </div>
-                  <div class="st-item-action">
-                    <button class="st-btn" disabled>Thay đổi</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Quick Actions Card -->
-          <div class="st-card">
-            <div class="st-card-header">
-              <div class="st-card-title">${icons.zap} Truy cập nhanh</div>
-            </div>
-            <div class="st-card-body">
-              <div class="st-quick-grid">
-                <div class="st-quick-card" @click=${() => onNavigate("billing")}>
-                  <div class="st-quick-icon billing">${icons.creditCard}</div>
-                  <div class="st-quick-content">
-                    <div class="st-quick-title">Thanh toán</div>
-                    <div class="st-quick-desc">Nạp token & lịch sử</div>
-                  </div>
-                </div>
-                <div class="st-quick-card" @click=${() => onNavigate("workflow")}>
-                  <div class="st-quick-icon workflow">${icons.workflow}</div>
-                  <div class="st-quick-content">
-                    <div class="st-quick-title">Việc định kỳ</div>
-                    <div class="st-quick-desc">Tự động hóa tác vụ theo lịch</div>
-                  </div>
-                </div>
-                <div class="st-quick-card" @click=${() => onNavigate("docs")}>
-                  <div class="st-quick-icon docs">${icons.book}</div>
-                  <div class="st-quick-content">
-                    <div class="st-quick-title">Tài liệu</div>
-                    <div class="st-quick-desc">Hướng dẫn sử dụng</div>
-                  </div>
-                </div>
-                <div class="st-quick-card" @click=${() => onNavigate("chat")}>
-                  <div class="st-quick-icon chat">${icons.messageSquare}</div>
-                  <div class="st-quick-content">
-                    <div class="st-quick-title">Chat với AI</div>
-                    <div class="st-quick-desc">Bắt đầu trò chuyện</div>
-                  </div>
-                </div>
-              </div>
+            <div class="st-row-end">
+              <button class="st-btn" disabled>Xem</button>
             </div>
           </div>
         </div>
