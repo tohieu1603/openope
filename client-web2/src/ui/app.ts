@@ -465,7 +465,6 @@ export class OperisApp extends LitElement {
   private toolEventUnsubscribe: (() => void) | null = null;
   private gatewayStatusUnsubscribe: (() => void) | null = null;
   private reconnectUnsubscribe: (() => void) | null = null;
-  private gatewayStatusUnsubscribe: (() => void) | null = null;
 
   createRenderRoot() {
     return this;

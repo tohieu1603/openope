@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { Zalo, ThreadType } from "zca-js";
 import type { ZcaJsFriend, ZcaJsGroup, ZcaJsMessage, ZcaJsUserInfo } from "./types.js";
@@ -141,6 +142,83 @@ export async function loginWithQR(accountId: string): Promise<ZcaJsApiInstance> 
   return instance;
 }
 
+/**
+ * Gateway-friendly QR login: splits login into start (QR) + wait (completion).
+ * Returns a qrPromise that resolves with the base64 QR data URL,
+ * and a loginPromise that resolves when login completes.
+ */
+export function loginWithQRGateway(accountId: string): {
+  qrPromise: Promise<string | null>;
+  loginPromise: Promise<ZcaJsApiInstance>;
+} {
+  const path = resolveCredentialsPath(accountId);
+  const zalo = new Zalo({ logging: true });
+  let capturedCreds: Credentials | null = null;
+
+  let resolveQr: (value: string | null) => void;
+  const qrPromise = new Promise<string | null>((resolve) => {
+    resolveQr = resolve;
+  });
+
+  let qrResolved = false;
+
+  const loginPromise = zalo
+    .loginQR({}, async (event: unknown) => {
+      if (!event || typeof event !== "object") return;
+      const ev = event as {
+        type?: number;
+        data?: Record<string, unknown>;
+        actions?: Record<string, unknown>;
+      };
+
+      // QRCodeGenerated: save to temp file, read as base64
+      if (ev.actions && typeof (ev.actions as Record<string, unknown>).saveToFile === "function") {
+        const saveToFile = (ev.actions as { saveToFile: (path?: string) => Promise<void> })
+          .saveToFile;
+        const qrFile = join(tmpdir(), `zalozcajs-qr-${Date.now()}.png`);
+        try {
+          await saveToFile(qrFile);
+          const buffer = await fs.readFile(qrFile);
+          const base64 = buffer.toString("base64");
+          if (!qrResolved) {
+            qrResolved = true;
+            resolveQr(`data:image/png;base64,${base64}`);
+          }
+          // Clean up temp file
+          fs.unlink(qrFile).catch(() => {});
+        } catch {
+          if (!qrResolved) {
+            qrResolved = true;
+            resolveQr(null);
+          }
+        }
+      }
+
+      // GotLoginInfo: capture credentials
+      if (ev.data && typeof ev.data === "object") {
+        const data = ev.data;
+        if (data.imei && data.cookie && data.userAgent) {
+          capturedCreds = { ...data };
+        }
+      }
+    })
+    .then(async (api) => {
+      if (capturedCreds) {
+        await saveCredentials(path, capturedCreds);
+      }
+      // Resolve QR if it never fired
+      if (!qrResolved) {
+        qrResolved = true;
+        resolveQr(null);
+      }
+      const instance: ZcaJsApiInstance = { api, credentialsPath: path };
+      apiInstances.set(path, instance);
+      return instance;
+    });
+
+  return { qrPromise, loginPromise };
+}
+
 export function disconnectInstance(credentialsPath: string): void {
   const path = isAbsolute(credentialsPath)
     ? credentialsPath
@@ -266,19 +344,45 @@ export function startListener(
         data: Record<string, unknown>;
       };
       const data = msg.data;
-      const content = typeof data.content === "string" ? data.content : "";
-      if (!content.trim()) return;
+
+      // Extract text content and image URLs
+      let content = "";
+      let imageUrls: string[] | undefined;
+
+      if (typeof data.content === "string") {
+        content = data.content;
+      } else if (data.content && typeof data.content === "object") {
+        // Attachment message (image, file, link, etc.)
+        const attachment = data.content as Record<string, unknown>;
+        // href = full image URL, thumb = thumbnail URL
+        const href = attachment.href ? String(attachment.href) : undefined;
+        const thumb = attachment.thumb ? String(attachment.thumb) : undefined;
+        const title = attachment.title ? String(attachment.title) : undefined;
+        const description = attachment.description ? String(attachment.description) : undefined;
+
+        if (href) {
+          imageUrls = [href];
+        } else if (thumb) {
+          imageUrls = [thumb];
+        }
+        // Use title/description as text content for the message
+        content = [title, description].filter(Boolean).join("\n").trim();
+      }
+
+      // Skip messages with no text and no images
+      if (!content.trim() && !imageUrls?.length) return;
 
       onMessage({
         threadId: msg.threadId,
         msgId: String(data.msgId ?? data.cliMsgId ?? ""),
-        content,
+        content: content || (imageUrls?.length ? "<image>" : ""),
         timestamp: Number(data.ts ?? Date.now()),
         isGroup: msg.type === ThreadType.Group,
         isSelf: msg.isSelf,
         senderName: data.dName ? String(data.dName) : undefined,
         senderId: data.uidFrom ? String(data.uidFrom) : undefined,
         groupName: undefined,
+        imageUrls,
       });
     } catch (err) {
       onError?.(err instanceof Error ? err : new Error(String(err)));

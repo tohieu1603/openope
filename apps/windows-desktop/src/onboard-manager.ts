@@ -79,11 +79,23 @@ export class OnboardManager {
       browser: { defaultProfile: "operis", noSandbox: true },
       plugins: {
         entries: {
+          telegram: { enabled: true },
           zalozcajs: { enabled: true },
         },
       },
       channels: {
-        zalozcajs: { enabled: true, dmPolicy: "open" },
+        telegram: {
+          dmPolicy: "open",
+          botToken: "",
+          allowFrom: ["*"],
+          groupPolicy: "allowlist",
+          streamMode: "partial",
+        },
+        zalozcajs: {
+          enabled: true,
+          dmPolicy: "open",
+          allowFrom: ["*"],
+        },
       },
     };
 
@@ -293,17 +305,47 @@ export class OnboardManager {
         modified = true;
       }
 
-      // Enable zalozcajs plugin (bundled Zalo personal account via zca-js)
+      // Enable plugins (telegram + zalozcajs)
       config.plugins ??= {};
       config.plugins.entries ??= {};
+      config.plugins.entries.telegram ??= {};
+      if (config.plugins.entries.telegram.enabled !== true) {
+        config.plugins.entries.telegram.enabled = true;
+        modified = true;
+      }
       config.plugins.entries.zalozcajs ??= {};
       if (config.plugins.entries.zalozcajs.enabled !== true) {
         config.plugins.entries.zalozcajs.enabled = true;
         modified = true;
       }
 
-      // Enable zalozcajs channel with open DM policy
+      // Enable channels (telegram + zalozcajs)
       config.channels ??= {};
+
+      // Telegram channel defaults (user fills botToken in settings)
+      config.channels.telegram ??= {};
+      if (!config.channels.telegram.dmPolicy) {
+        config.channels.telegram.dmPolicy = "open";
+        modified = true;
+      }
+      if (config.channels.telegram.botToken === undefined) {
+        config.channels.telegram.botToken = "";
+        modified = true;
+      }
+      if (!config.channels.telegram.allowFrom) {
+        config.channels.telegram.allowFrom = ["*"];
+        modified = true;
+      }
+      if (!config.channels.telegram.groupPolicy) {
+        config.channels.telegram.groupPolicy = "allowlist";
+        modified = true;
+      }
+      if (!config.channels.telegram.streamMode) {
+        config.channels.telegram.streamMode = "partial";
+        modified = true;
+      }
+
+      // Zalozcajs channel
       config.channels.zalozcajs ??= {};
       if (config.channels.zalozcajs.enabled !== true) {
         config.channels.zalozcajs.enabled = true;
@@ -311,6 +353,10 @@ export class OnboardManager {
       }
       if (!config.channels.zalozcajs.dmPolicy) {
         config.channels.zalozcajs.dmPolicy = "open";
+        modified = true;
+      }
+      if (!config.channels.zalozcajs.allowFrom) {
+        config.channels.zalozcajs.allowFrom = ["*"];
         modified = true;
       }
 
