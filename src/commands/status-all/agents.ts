@@ -28,7 +28,7 @@ export async function getAgentLocalStatuses(cfg: OpenClawConfig) {
         }
       })();
       const bootstrapPending =
-        workspaceDir != null ? await fileExists(path.join(workspaceDir, "BOOTSTRAP.md")) : null;
+        workspaceDir != null ? await fileExists(path.join(workspaceDir, "KHOI_TAO.md")) : null;
       const sessionsPath = resolveStorePath(cfg.session?.store, {
         agentId: agent.id,
       });
