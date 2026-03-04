@@ -107,6 +107,7 @@ import { renderWorkflow } from "./views/workflow";
 import {
   listWorkflows,
   createWorkflow,
+  updateWorkflow,
   toggleWorkflow,
   runWorkflow,
   deleteWorkflow,
@@ -291,6 +292,7 @@ export class OperisApp extends LitElement {
   @state() selectedWorkflowId: string | null = null;
   @state() progressMap: Map<string, CronProgressState> = new Map();
   @state() workflowShowForm = false;
+  @state() editingWorkflowId: string | null = null;
   @state() workflowModalRun: import("./workflow-api").WorkflowRun | null = null;
   private progressTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1488,11 +1490,11 @@ export class OperisApp extends LitElement {
       pullAndSyncAuthProfiles();
       // Start cloudflared and wait for tunnel connection before proceeding
       await provisionAndStartTunnel(result.tunnel?.tunnelToken);
-      // Redirect with gateway token so WS client can pick it up
-      if (result.user.gateway_token) {
-        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
-        return;
-      }
+      // Gateway token redirect — disabled: local gateway auto-authorizes localhost
+      // if (result.user.gateway_token) {
+      //   window.location.href = `/`;
+      //   return;
+      // }
       // Reset chat state for fresh load
       this.chatInitializing = true;
       this.setTab("chat");
@@ -1913,18 +1915,51 @@ export class OperisApp extends LitElement {
     this.workflowForm = { ...this.workflowForm, ...patch };
   }
 
+  private handleWorkflowEdit(workflow: Workflow) {
+    this.editingWorkflowId = workflow.id;
+    this.workflowForm = {
+      ...DEFAULT_WORKFLOW_FORM,
+      name: workflow.name,
+      description: workflow.description || "",
+      enabled: workflow.enabled,
+      agentId: workflow.agentId || "",
+      scheduleKind: workflow.schedule.kind,
+      everyAmount: workflow.schedule.everyAmount ?? 1,
+      everyUnit: workflow.schedule.everyUnit ?? "days",
+      atDatetime: workflow.schedule.atDatetime ?? "",
+      cronExpr: workflow.schedule.cronExpr ?? "0 9 * * *",
+      cronTz: workflow.schedule.cronTz ?? "",
+      sessionTarget: workflow.sessionTarget ?? "isolated",
+      wakeMode: workflow.wakeMode ?? "now",
+      payloadKind: workflow.payloadKind ?? "agentTurn",
+      timeout: workflow.timeout ?? 300,
+      prompt: workflow.prompt,
+    };
+    this.workflowShowForm = true;
+  }
+
   private async handleWorkflowSubmit() {
     if (this.workflowSaving) return;
     this.workflowSaving = true;
     try {
-      await createWorkflow(this.workflowForm);
-      showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
+      if (this.editingWorkflowId) {
+        await updateWorkflow(this.editingWorkflowId, this.workflowForm);
+        showToast(`Đã cập nhật "${this.workflowForm.name}"`, "success");
+      } else {
+        await createWorkflow(this.workflowForm);
+        showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
+      }
       this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+      this.editingWorkflowId = null;
       this.workflowShowForm = false;
-      // Silent background refresh - no loading indicator
       this.loadWorkflows(true);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Không thể tạo workflow";
+      const msg =
+        err instanceof Error
+          ? err.message
+          : this.editingWorkflowId
+            ? "Không thể cập nhật workflow"
+            : "Không thể tạo workflow";
       showToast(msg, "error");
       this.workflowError = msg;
     } finally {
@@ -3696,6 +3731,7 @@ export class OperisApp extends LitElement {
           onToggle: (w) => this.handleWorkflowToggle(w),
           onRun: (w) => this.handleWorkflowRun(w),
           onCancel: (w) => this.handleWorkflowCancel(w),
+          onEdit: (w) => this.handleWorkflowEdit(w),
           onDelete: (w) => this.handleWorkflowDelete(w),
           onToggleDetails: (id: string) => {
             this.workflowExpandedId = this.workflowExpandedId === id ? null : id;
@@ -3717,9 +3753,14 @@ export class OperisApp extends LitElement {
           runs: this.workflowRuns,
           runsLoading: this.workflowRunsLoading,
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
+          editingWorkflowId: this.editingWorkflowId,
           showForm: this.workflowShowForm,
           onToggleForm: () => {
             this.workflowShowForm = !this.workflowShowForm;
+            if (this.workflowShowForm) {
+              this.editingWorkflowId = null;
+              this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+            }
           },
           modalRun: this.workflowModalRun,
           onOpenRunDetail: (run) => {

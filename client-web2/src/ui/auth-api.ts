@@ -52,31 +52,31 @@ export async function apiRequest<T>(
   }
 }
 
-// Gateway token storage (stays in localStorage — not auth tokens)
-const GATEWAY_TOKEN_KEY = "operis_gateway_token";
-const GATEWAY_URL_KEY = "operis_gateway_url";
+// Gateway token storage — disabled: local gateway auto-authorizes localhost
+// const GATEWAY_TOKEN_KEY = "operis_gateway_token";
+// const GATEWAY_URL_KEY = "operis_gateway_url";
 
-export function getStoredGatewayToken(): string | null {
-  return localStorage.getItem(GATEWAY_TOKEN_KEY);
-}
+// export function getStoredGatewayToken(): string | null {
+//   return localStorage.getItem(GATEWAY_TOKEN_KEY);
+// }
 
-export function getStoredGatewayUrl(): string | null {
-  return localStorage.getItem(GATEWAY_URL_KEY);
-}
+// export function getStoredGatewayUrl(): string | null {
+//   return localStorage.getItem(GATEWAY_URL_KEY);
+// }
 
-function storeGatewayConfig(user: AuthUser): void {
-  if (user.gateway_token) {
-    localStorage.setItem(GATEWAY_TOKEN_KEY, user.gateway_token);
-  }
-  if (user.gateway_url) {
-    localStorage.setItem(GATEWAY_URL_KEY, user.gateway_url);
-  }
-}
+// function storeGatewayConfig(user: AuthUser): void {
+//   if (user.gateway_token) {
+//     localStorage.setItem(GATEWAY_TOKEN_KEY, user.gateway_token);
+//   }
+//   if (user.gateway_url) {
+//     localStorage.setItem(GATEWAY_URL_KEY, user.gateway_url);
+//   }
+// }
 
-export function clearGatewayConfig(): void {
-  localStorage.removeItem(GATEWAY_TOKEN_KEY);
-  localStorage.removeItem(GATEWAY_URL_KEY);
-}
+// export function clearGatewayConfig(): void {
+//   localStorage.removeItem(GATEWAY_TOKEN_KEY);
+//   localStorage.removeItem(GATEWAY_URL_KEY);
+// }
 
 // Auth API functions
 export async function login(email: string, password: string): Promise<AuthResult> {
@@ -87,7 +87,7 @@ export async function login(email: string, password: string): Promise<AuthResult
     });
 
     // Server sets HttpOnly cookies via Set-Cookie — no client-side token storage
-    storeGatewayConfig(response.data.user);
+    // storeGatewayConfig(response.data.user);
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -103,7 +103,7 @@ export async function register(email: string, password: string, name: string): P
     });
 
     // Server sets HttpOnly cookies via Set-Cookie — no client-side token storage
-    storeGatewayConfig(response.data.user);
+    // storeGatewayConfig(response.data.user);
     return response.data;
   } catch (error) {
     throw new Error(getErrorMessage(error));
@@ -122,12 +122,12 @@ export async function logout(): Promise<void> {
   } catch {
     // Ignore logout errors
   }
-  clearGatewayConfig();
+  // clearGatewayConfig();
 }
 
 export async function getMe(): Promise<AuthUser> {
   const response = await apiClient.get<AuthUser>("/auth/me");
-  storeGatewayConfig(response.data);
+  // storeGatewayConfig(response.data);
   return response.data;
 }
 

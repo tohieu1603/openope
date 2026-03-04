@@ -19,7 +19,8 @@ import {
 } from "./workflow-helpers";
 
 export function renderFormCard(props: WorkflowProps) {
-  const { form, saving, onFormChange, onSubmit } = props;
+  const { form, saving, onFormChange, onSubmit, editingWorkflowId } = props;
+  const isEditing = !!editingWorkflowId;
   const isValid =
     form.name.trim() &&
     form.prompt.trim() &&
@@ -29,8 +30,8 @@ export function renderFormCard(props: WorkflowProps) {
 
   return html`
     <div class="wf-card-panel">
-      <div class="wf-card-title">Tạo Việc Định Kỳ</div>
-      <div class="wf-card-sub">Tạo công việc tự động theo lịch.</div>
+      <div class="wf-card-title">${isEditing ? "Sửa Việc Định Kỳ" : "Tạo Việc Định Kỳ"}</div>
+      <div class="wf-card-sub">${isEditing ? "Chỉnh sửa công việc đã tạo." : "Tạo công việc tự động theo lịch."}</div>
 
       <!-- Basic Info -->
       <div class="wf-form-grid">
@@ -250,7 +251,7 @@ export function renderFormCard(props: WorkflowProps) {
           ?disabled=${saving || !isValid}
           @click=${onSubmit}
         >
-          ${saving ? "Đang tạo…" : "Tạo việc định kỳ"}
+          ${saving ? (isEditing ? "Đang lưu…" : "Đang tạo…") : isEditing ? "Lưu thay đổi" : "Tạo việc định kỳ"}
         </button>
       </div>
     </div>

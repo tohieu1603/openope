@@ -53,28 +53,28 @@ export async function apiRequest<T>(
 }
 
 // Gateway token storage (stays in localStorage — not auth tokens)
-const GATEWAY_TOKEN_KEY = "operis_gateway_token";
+// const GATEWAY_TOKEN_KEY = "operis_gateway_token";
 const GATEWAY_URL_KEY = "operis_gateway_url";
 
-export function getStoredGatewayToken(): string | null {
-  return localStorage.getItem(GATEWAY_TOKEN_KEY);
-}
+// export function getStoredGatewayToken(): string | null {
+//   return localStorage.getItem(GATEWAY_TOKEN_KEY);
+// }
 
 export function getStoredGatewayUrl(): string | null {
   return localStorage.getItem(GATEWAY_URL_KEY);
 }
 
 function storeGatewayConfig(user: AuthUser): void {
-  if (user.gateway_token) {
-    localStorage.setItem(GATEWAY_TOKEN_KEY, user.gateway_token);
-  }
+  // if (user.gateway_token) {
+  //   localStorage.setItem(GATEWAY_TOKEN_KEY, user.gateway_token);
+  // }
   if (user.gateway_url) {
     localStorage.setItem(GATEWAY_URL_KEY, user.gateway_url);
   }
 }
 
 export function clearGatewayConfig(): void {
-  localStorage.removeItem(GATEWAY_TOKEN_KEY);
+  // localStorage.removeItem(GATEWAY_TOKEN_KEY);
   localStorage.removeItem(GATEWAY_URL_KEY);
 }
 
