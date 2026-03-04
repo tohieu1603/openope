@@ -228,7 +228,7 @@ describe("runOnboardingWizard", () => {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   });
 
-  it("offers TUI hatch even without BOOTSTRAP.md", async () => {
+  it("offers TUI hatch even without KHOI_TAO.md", async () => {
     runTui.mockClear();
 
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-onboard-"));
