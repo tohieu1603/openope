@@ -98,6 +98,12 @@ export class GatewayClient {
   private backoffMs = 800;
   private _connected = false;
   private _hasConnectedOnce = false;
+  // Heartbeat stall detection (like TUI lastTick monitor)
+  private lastMessageAt = 0;
+  private stallCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly STALL_THRESHOLD_MS = 90_000; // 90s without any message = stall
+  // Seq gap detection (like TUI onGap callback)
+  private lastSeq = 0;
 
   constructor(private opts: GatewayClientOptions) {}
 
@@ -108,6 +114,7 @@ export class GatewayClient {
 
   stop() {
     this.closed = true;
+    this.stopStallCheck();
     this.ws?.close();
     this.ws = null;
     this._connected = false;
@@ -122,7 +129,8 @@ export class GatewayClient {
     if (this.closed) return;
     this.ws = new WebSocket(this.opts.url);
     this.ws.onopen = () => {
-      this.backoffMs = 800; // reset backoff: server is reachable
+      // Don't reset backoff here — only reset after successful HelloOk (line 271).
+      // Resetting on TCP open causes rapid reconnection loops if server rejects auth.
       this.queueConnect();
     };
     this.ws.onmessage = (ev) => this.handleMessage(String(ev.data ?? ""));
@@ -130,6 +138,7 @@ export class GatewayClient {
       const reason = String(ev.reason ?? "");
       this.ws = null;
       this._connected = false;
+      this.stopStallCheck();
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
       this.scheduleReconnect();
@@ -137,6 +146,28 @@ export class GatewayClient {
     this.ws.onerror = () => {
       // ignored; close handler will fire
     };
+  }
+
+  /** Periodically check for stalled connections (no messages for 90s). */
+  private startStallCheck() {
+    this.stopStallCheck();
+    this.stallCheckTimer = setInterval(() => {
+      if (!this._connected || !this.ws) return;
+      const elapsed = Date.now() - this.lastMessageAt;
+      if (elapsed > GatewayClient.STALL_THRESHOLD_MS) {
+        console.warn(
+          `[gateway] connection stall detected (${Math.round(elapsed / 1000)}s), reconnecting`,
+        );
+        this.ws.close(4009, "stall detected");
+      }
+    }, 30_000);
+  }
+
+  private stopStallCheck() {
+    if (this.stallCheckTimer) {
+      clearInterval(this.stallCheckTimer);
+      this.stallCheckTimer = null;
+    }
   }
 
   private scheduleReconnect() {
@@ -244,6 +275,9 @@ export class GatewayClient {
         const isReconnect = this._hasConnectedOnce;
         this._connected = true;
         this._hasConnectedOnce = true;
+        this.lastMessageAt = Date.now();
+        this.lastSeq = 0; // reset seq tracking on new connection
+        this.startStallCheck();
         this.opts.onHello?.(hello);
         this.opts.onConnected?.();
         if (isReconnect) this.opts.onReconnected?.();
@@ -257,6 +291,8 @@ export class GatewayClient {
   }
 
   private handleMessage(raw: string) {
+    this.lastMessageAt = Date.now();
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -267,6 +303,21 @@ export class GatewayClient {
     const frame = parsed as { type?: unknown };
     if (frame.type === "event") {
       const evt = parsed as GatewayEventFrame;
+      // Seq gap detection: warn + reload if events were dropped
+      if (typeof evt.seq === "number" && evt.seq > 0) {
+        if (this.lastSeq > 0 && evt.seq > this.lastSeq + 1) {
+          const gap = evt.seq - this.lastSeq - 1;
+          console.warn(
+            `[gateway] seq gap detected: expected ${this.lastSeq + 1}, got ${evt.seq} (${gap} events dropped)`,
+          );
+          this.opts.onEvent?.({
+            type: "event",
+            event: "seq.gap",
+            payload: { expected: this.lastSeq + 1, got: evt.seq, gap },
+          });
+        }
+        this.lastSeq = evt.seq;
+      }
       if (evt.event === "connect.challenge") {
         const payload = evt.payload as { nonce?: unknown } | undefined;
         const nonce = payload && typeof payload.nonce === "string" ? payload.nonce : null;
@@ -593,18 +644,34 @@ export function getGatewayClient(): GatewayClient {
         console.log(`[gateway] closed: ${code} ${reason}`);
       },
       onEvent: (evt) => {
+        // Seq gap: reload chat to sync missed events
+        if (evt.event === "seq.gap") {
+          for (const listener of reconnectListeners) {
+            try {
+              listener();
+            } catch {}
+          }
+          return;
+        }
         // Handle cron events
         if (evt.event === "cron" && evt.payload) {
           notifyCronListeners(evt.payload as CronEvent);
         }
-        // Handle chat streaming events
+        // Handle chat streaming events (validate required fields)
         if (evt.event === "chat" && evt.payload) {
-          notifyChatStreamListeners(evt.payload as ChatStreamEvent);
+          const cp = evt.payload as Record<string, unknown>;
+          if (typeof cp.runId === "string" && typeof cp.state === "string") {
+            notifyChatStreamListeners(evt.payload as ChatStreamEvent);
+          }
         }
         // Handle agent events (tool + lifecycle + compaction streams)
         if (evt.event === "agent" && evt.payload) {
-          const p = evt.payload as { stream?: string; data?: Record<string, unknown> };
-          if (p.stream === "tool") {
+          const p = evt.payload as {
+            stream?: string;
+            data?: Record<string, unknown>;
+            runId?: string;
+          };
+          if (p.stream === "tool" && typeof p.runId === "string") {
             notifyToolListeners(evt.payload as ToolEvent);
           } else if (p.stream === "lifecycle") {
             notifyLifecycleListeners(evt.payload as LifecycleEvent);

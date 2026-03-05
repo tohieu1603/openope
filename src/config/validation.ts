@@ -177,11 +177,12 @@ export function validateConfigObjectWithPlugins(raw: unknown):
     }
   }
 
+  // Missing plugins are warnings so the gateway can still start
   const entries = pluginsConfig?.entries;
   if (entries && isRecord(entries)) {
     for (const pluginId of Object.keys(entries)) {
       if (!knownIds.has(pluginId)) {
-        issues.push({
+        warnings.push({
           path: `plugins.entries.${pluginId}`,
           message: `plugin not found: ${pluginId}`,
         });
@@ -195,7 +196,7 @@ export function validateConfigObjectWithPlugins(raw: unknown):
       continue;
     }
     if (!knownIds.has(pluginId)) {
-      issues.push({
+      warnings.push({
         path: "plugins.allow",
         message: `plugin not found: ${pluginId}`,
       });
@@ -208,7 +209,7 @@ export function validateConfigObjectWithPlugins(raw: unknown):
       continue;
     }
     if (!knownIds.has(pluginId)) {
-      issues.push({
+      warnings.push({
         path: "plugins.deny",
         message: `plugin not found: ${pluginId}`,
       });
@@ -217,7 +218,7 @@ export function validateConfigObjectWithPlugins(raw: unknown):
 
   const memorySlot = normalizedPlugins.slots.memory;
   if (typeof memorySlot === "string" && memorySlot.trim() && !knownIds.has(memorySlot)) {
-    issues.push({
+    warnings.push({
       path: "plugins.slots.memory",
       message: `plugin not found: ${memorySlot}`,
     });

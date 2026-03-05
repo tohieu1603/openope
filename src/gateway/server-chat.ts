@@ -25,27 +25,16 @@ function readLastAssistantUsage(sessionKey: string):
   | undefined {
   try {
     const { entry } = loadSessionEntry(sessionKey);
-    console.log(
-      `[usage] session=${sessionKey} hasEntry=${!!entry} sessionId=${entry?.sessionId ?? "none"} sessionFile=${entry?.sessionFile ?? "none"}`,
-    );
     if (!entry?.sessionId) return undefined;
 
     // Use resolveSessionFilePath to handle missing sessionFile (falls back to sessionId-based path)
     const transcriptFile = resolveSessionFilePath(entry.sessionId, entry);
-    console.log(`[usage] resolved transcript: ${transcriptFile}`);
-    if (!fs.existsSync(transcriptFile)) {
-      console.log(`[usage] transcript not found at: ${transcriptFile}`);
-      return undefined;
-    }
+    if (!fs.existsSync(transcriptFile)) return undefined;
 
     const content = fs.readFileSync(transcriptFile, "utf-8").trim();
-    if (!content) {
-      console.log("[usage] transcript empty");
-      return undefined;
-    }
+    if (!content) return undefined;
 
     const lines = content.split("\n");
-    console.log(`[usage] transcript lines=${lines.length}`);
     // Scan from end to find last assistant message with real usage
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
@@ -72,9 +61,6 @@ function readLastAssistantUsage(sessionKey: string):
           const prompt_tokens = input + cacheRead + cacheWrite;
           const completion_tokens = output;
           const total_tokens = prompt_tokens + completion_tokens;
-          console.log(
-            `[usage] found: input=${input} output=${output} cacheRead=${cacheRead} cacheWrite=${cacheWrite} total=${total_tokens}`,
-          );
           return {
             input,
             output,
@@ -86,18 +72,12 @@ function readLastAssistantUsage(sessionKey: string):
             total_tokens,
           };
         }
-        if (msg.role === "assistant") {
-          console.log(
-            `[usage] assistant msg at line ${i} hasUsage=${!!msg.usage} usageType=${typeof msg.usage}`,
-          );
-        }
       } catch {
         /* skip invalid lines */
       }
     }
-    console.log("[usage] no assistant message with usage found in transcript");
-  } catch (err) {
-    console.log(`[usage] error: ${err}`);
+  } catch {
+    /* ignore */
   }
   return undefined;
 }

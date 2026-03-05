@@ -13,22 +13,20 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
     onCancel,
     onDelete,
     onLoadRuns,
-    onToggleDetails,
+    onOpenWorkflowDetail,
     onSelectWorkflow,
-    expandedWorkflowId,
     selectedWorkflowId,
     saving,
   } = props;
   const lastRun = formatLastRun(workflow);
   const isSelected = selectedWorkflowId === workflow.id;
-  const isExpanded = expandedWorkflowId === workflow.id;
   const statusClass = lastRun.status === "ok" ? "success" : lastRun.status;
 
   return html`
     <div
       class="wf-card ${workflow.enabled ? "" : "wf-card-paused"} ${
         isRunning ? "wf-card-running" : ""
-      } ${isSelected ? "wf-card-selected" : ""} ${isExpanded ? "wf-card-expanded" : ""}"
+      } ${isSelected ? "wf-card-selected" : ""}"
     >
       <div class="wf-card-main" @click=${() => onSelectWorkflow?.(isSelected ? null : workflow.id)} style="cursor:pointer">
         <div
@@ -89,7 +87,7 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
             }
           </div>
           ${
-            !isExpanded && workflow.prompt
+            workflow.prompt
               ? html`<div class="wf-card-prompt wf-md">${renderMd(
                   workflow.prompt.length > 200
                     ? workflow.prompt.slice(0, 200) + "..."
@@ -99,80 +97,14 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
           }
         </div>
       </div>
-      ${
-        isExpanded
-          ? html`
-            <div class="wf-card-details">
-              <div class="wf-details-grid">
-                <div class="wf-detail-item">
-                  <span class="wf-detail-label">Phiên</span>
-                  <span class="wf-detail-value"
-                    >${workflow.sessionTarget === "main" ? "Phiên chính" : "Riêng biệt"}</span
-                  >
-                </div>
-                <div class="wf-detail-item">
-                  <span class="wf-detail-label">Cách đánh thức</span>
-                  <span class="wf-detail-value"
-                    >${workflow.wakeMode === "now" ? "Ngay lập tức" : "Heartbeat tiếp"}</span
-                  >
-                </div>
-                <div class="wf-detail-item">
-                  <span class="wf-detail-label">Loại payload</span>
-                  <span class="wf-detail-value"
-                    >${
-                      workflow.payloadKind === "agentTurn" ? "Gửi tin nhắn" : "Sự kiện hệ thống"
-                    }</span
-                  >
-                </div>
-                ${
-                  workflow.lastRunAt
-                    ? html`
-                      <div class="wf-detail-item">
-                        <span class="wf-detail-label">Chạy lần cuối</span>
-                        <span class="wf-detail-value"
-                          >${formatMs(workflow.lastRunAt)}</span
-                        >
-                      </div>
-                    `
-                    : nothing
-                }
-                ${
-                  workflow.nextRunAt
-                    ? html`
-                      <div class="wf-detail-item">
-                        <span class="wf-detail-label">Chạy tiếp theo</span>
-                        <span class="wf-detail-value"
-                          >${formatMs(workflow.nextRunAt)}</span
-                        >
-                      </div>
-                    `
-                    : nothing
-                }
-              </div>
-              ${
-                workflow.prompt
-                  ? html`
-                    <div class="wf-detail-prompt">
-                      <span class="wf-detail-label">Nội dung</span>
-                      <div class="wf-detail-prompt-text wf-md">
-                        ${renderMd(workflow.prompt)}
-                      </div>
-                    </div>
-                  `
-                  : nothing
-              }
-            </div>
-          `
-          : nothing
-      }
       <div class="wf-card-actions">
         <button
-          class="wf-action ${isExpanded ? "wf-action-active" : ""}"
-          @click=${() => onToggleDetails?.(workflow.id)}
+          class="wf-action"
+          @click=${() => onOpenWorkflowDetail?.(workflow)}
           ?disabled=${isRunning}
         >
-          ${icons.chevronDown}
-          <span>${isExpanded ? "Thu gọn" : "Chi tiết"}</span>
+          ${icons.fileText}
+          <span>Chi tiết</span>
         </button>
         <button
           class="wf-action"
@@ -230,6 +162,120 @@ export function renderWorkflowCard(workflow: Workflow, props: WorkflowProps, isR
         >
           ${icons.trash}
         </button>
+      </div>
+    </div>
+  `;
+}
+
+/** Modal showing full workflow details */
+export function renderWorkflowDetailModal(workflow: Workflow, onClose: () => void) {
+  const statusLabel = workflow.enabled ? "Hoạt động" : "Tạm dừng";
+  const statusClass = workflow.enabled ? "wf-modal-icon-ok" : "wf-modal-icon-cancel";
+  return html`
+    <div class="wf-modal-backdrop" @click=${onClose}>
+      <div class="wf-modal wf-modal--detail" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="wf-modal-header">
+          <div class="wf-modal-header-left">
+            <div class="wf-modal-icon ${statusClass}">
+              ${icons.workflow}
+            </div>
+            <div class="wf-modal-header-text">
+              <h3 class="wf-modal-title">${workflow.name}</h3>
+              ${workflow.description ? html`<div class="wf-modal-meta">${workflow.description}</div>` : nothing}
+            </div>
+          </div>
+          <button class="wf-modal-close" @click=${onClose}>${icons.x}</button>
+        </div>
+
+        <div class="wf-modal-body">
+          <div class="wf-details-grid">
+            <div class="wf-detail-item">
+              <span class="wf-detail-label">Trạng thái</span>
+              <span class="wf-detail-value">${statusLabel}</span>
+            </div>
+            <div class="wf-detail-item">
+              <span class="wf-detail-label">Lịch trình</span>
+              <span class="wf-detail-value">${formatSchedule(workflow.schedule)}</span>
+            </div>
+            <div class="wf-detail-item">
+              <span class="wf-detail-label">Phiên</span>
+              <span class="wf-detail-value">${workflow.sessionTarget === "main" ? "Phiên chính" : "Riêng biệt"}</span>
+            </div>
+            <div class="wf-detail-item">
+              <span class="wf-detail-label">Cách đánh thức</span>
+              <span class="wf-detail-value">${workflow.wakeMode === "now" ? "Ngay lập tức" : "Heartbeat tiếp"}</span>
+            </div>
+            <div class="wf-detail-item">
+              <span class="wf-detail-label">Loại payload</span>
+              <span class="wf-detail-value">${workflow.payloadKind === "agentTurn" ? "Gửi tin nhắn" : "Sự kiện hệ thống"}</span>
+            </div>
+            ${
+              workflow.agentId
+                ? html`
+              <div class="wf-detail-item">
+                <span class="wf-detail-label">Nhân viên</span>
+                <span class="wf-detail-value mono">${workflow.agentId}</span>
+              </div>
+            `
+                : nothing
+            }
+            ${
+              workflow.timeout
+                ? html`
+              <div class="wf-detail-item">
+                <span class="wf-detail-label">Timeout</span>
+                <span class="wf-detail-value">${Math.round(workflow.timeout / 1000)}s</span>
+              </div>
+            `
+                : nothing
+            }
+            ${
+              workflow.lastRunAt
+                ? html`
+              <div class="wf-detail-item">
+                <span class="wf-detail-label">Chạy lần cuối</span>
+                <span class="wf-detail-value">${formatMs(workflow.lastRunAt)}</span>
+              </div>
+            `
+                : nothing
+            }
+            ${
+              workflow.nextRunAt
+                ? html`
+              <div class="wf-detail-item">
+                <span class="wf-detail-label">Chạy tiếp theo</span>
+                <span class="wf-detail-value">${formatMs(workflow.nextRunAt)} (${formatRelativeTimeFromNow(workflow.nextRunAt)})</span>
+              </div>
+            `
+                : nothing
+            }
+            ${
+              workflow.createdAtMs
+                ? html`
+              <div class="wf-detail-item">
+                <span class="wf-detail-label">Tạo lúc</span>
+                <span class="wf-detail-value">${formatMs(workflow.createdAtMs)}</span>
+              </div>
+            `
+                : nothing
+            }
+          </div>
+
+          ${
+            workflow.prompt
+              ? html`
+            <div class="wf-detail-prompt" style="margin-top: 16px;">
+              <span class="wf-detail-label">Nội dung gửi cho AI</span>
+              <div class="wf-detail-prompt-text wf-md">${renderMd(workflow.prompt)}</div>
+            </div>
+          `
+              : nothing
+          }
+        </div>
+
+        <div class="wf-modal-footer">
+          <button class="wf-modal-close-btn" @click=${onClose}>Đóng</button>
+        </div>
       </div>
     </div>
   `;

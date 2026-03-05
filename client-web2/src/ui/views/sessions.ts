@@ -63,10 +63,10 @@ function tokenPercent(row: GatewaySessionRow): number {
   return Math.min(100, Math.round((row.totalTokens / row.contextTokens) * 100));
 }
 
+/** Strip UUID suffixes from session keys for display */
 function shortName(key: string): string {
-  if (key.startsWith("agent:main:")) return key.slice(11);
-  if (key.startsWith("agent:")) return key.slice(6);
-  return key;
+  // Remove UUID patterns (8-4-4-4-12 hex) from the key
+  return key.replace(/:?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "");
 }
 
 // Determine if session is "alive" (updated within last 5 min)
@@ -564,7 +564,7 @@ function renderCard(
   const thinkLevels = resolveThinkLevelOptions(row.modelProvider);
   const verbose = row.verboseLevel ?? "";
   const reasoning = row.reasoningLevel ?? "";
-  const name = shortName(row.displayName ?? row.key);
+  const name = row.label || shortName(row.key);
   const canLink = row.kind !== "global";
   const pct = tokenPercent(row);
   const alive = isAlive(row);
@@ -602,7 +602,7 @@ function renderCard(
 
       <!-- Label -->
       <input class="ses-label-input" .value=${row.label ?? ""} ?disabled=${disabled}
-        placeholder="Thêm nhãn..."
+        placeholder="Tên cuộc hội thoại"
         @change=${(e: Event) => {
           const value = (e.target as HTMLInputElement).value.trim();
           onPatch(row.key, { label: value || null });
@@ -620,41 +620,7 @@ function renderCard(
         </div>
       </div>
 
-      <!-- Controls -->
-      <div class="ses-controls">
-        <div class="ses-control">
-          <span class="ses-control-label">Suy nghĩ</span>
-          <select .value=${thinking} ?disabled=${disabled}
-            @change=${(e: Event) => {
-              const value = (e.target as HTMLSelectElement).value;
-              onPatch(row.key, {
-                thinkingLevel: resolveThinkLevelPatchValue(value, isBinaryThinking),
-              });
-            }}>
-            ${thinkLevels.map((l) => html`<option value=${l}>${l || "kế thừa"}</option>`)}
-          </select>
-        </div>
-        <div class="ses-control">
-          <span class="ses-control-label">Chi tiết</span>
-          <select .value=${verbose} ?disabled=${disabled}
-            @change=${(e: Event) => {
-              const value = (e.target as HTMLSelectElement).value;
-              onPatch(row.key, { verboseLevel: value || null });
-            }}>
-            ${VERBOSE_LEVELS.map((l) => html`<option value=${l.value}>${l.label}</option>`)}
-          </select>
-        </div>
-        <div class="ses-control">
-          <span class="ses-control-label">Lập luận</span>
-          <select .value=${reasoning} ?disabled=${disabled}
-            @change=${(e: Event) => {
-              const value = (e.target as HTMLSelectElement).value;
-              onPatch(row.key, { reasoningLevel: value || null });
-            }}>
-            ${REASONING_LEVELS.map((l) => html`<option value=${l}>${l || "kế thừa"}</option>`)}
-          </select>
-        </div>
-      </div>
+      <!-- Controls hidden -->
 
       <!-- Footer -->
       <div class="ses-card-footer">
