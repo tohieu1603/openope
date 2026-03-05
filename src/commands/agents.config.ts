@@ -180,7 +180,28 @@ export function pruneAgentConfig(
   const id = normalizeAgentId(agentId);
   const agents = listAgentEntries(cfg);
   const nextAgentsList = agents.filter((entry) => normalizeAgentId(entry.id) !== id);
-  const nextAgents = nextAgentsList.length > 0 ? nextAgentsList : undefined;
+
+  // Clean up deleted agentId from all other agents' subagents.allowAgents
+  const cleanedAgentsList = nextAgentsList.map((entry) => {
+    const allow = entry.subagents?.allowAgents;
+    if (!allow || allow.length === 0) return entry;
+    const filtered = allow.filter(
+      (v) => v.trim() === "*" || normalizeAgentId(v) !== id,
+    );
+    if (filtered.length === allow.length) return entry;
+    if (filtered.length === 0) {
+      const { allowAgents: _, ...restSub } = entry.subagents ?? {};
+      const hasSub = Object.keys(restSub).length > 0;
+      if (!hasSub) {
+        const { subagents: __, ...restEntry } = entry;
+        return restEntry as typeof entry;
+      }
+      return { ...entry, subagents: restSub };
+    }
+    return { ...entry, subagents: { ...entry.subagents, allowAgents: filtered } };
+  });
+
+  const nextAgents = cleanedAgentsList.length > 0 ? cleanedAgentsList : undefined;
 
   const bindings = cfg.bindings ?? [];
   const filteredBindings = bindings.filter((binding) => normalizeAgentId(binding.agentId) !== id);

@@ -67,6 +67,10 @@ export type AgentConfig = {
 export type AgentsConfig = {
   defaults?: AgentDefaultsConfig;
   list?: AgentConfig[];
+  limits?: {
+    /** Maximum number of agents allowed. Default: 10 */
+    maxAgents?: number;
+  };
 };
 
 export type AgentBinding = {
