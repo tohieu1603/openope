@@ -26,7 +26,7 @@ export function createAgentsListTool(opts?: {
   return {
     label: "Agents",
     name: "agents_list",
-    description: "List agent ids you can target with sessions_spawn (based on allowlists). Xem danh sách nhân viên/agent có thể giao việc.",
+    description: "List agent ids you can target with sessions_spawn (based on allowlists).",
     parameters: AgentsListToolSchema,
     execute: async () => {
       const cfg = loadConfig();

@@ -182,7 +182,8 @@ export function resolveAgentWorkspaceDir(cfg: OpenClawConfig, agentId: string) {
     }
     return DEFAULT_AGENT_WORKSPACE_DIR;
   }
-  const base = userDataDir ?? resolveStateDir(process.env, os.homedir);
+  const defaultUserDataDir = path.join(os.homedir(), "Desktop", "OperisAgent");
+  const base = userDataDir ?? defaultUserDataDir;
   return path.join(base, `workspace-${id}`);
 }
 
