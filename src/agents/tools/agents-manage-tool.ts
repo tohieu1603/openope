@@ -1,6 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
 import { loadConfig } from "../../config/config.js";
+import { DEFAULT_AGENT_ID, normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import { listAgentIds } from "../agent-scope.js";
 import { stringEnum } from "../schema/typebox.js";
 import type { AnyAgentTool } from "./common.js";
@@ -55,7 +56,10 @@ export function createAgentsManageTool(opts?: {
           });
         }
 
-        const createParams: Record<string, unknown> = { name };
+        const requesterAgentId = opts?.agentSessionKey
+          ? normalizeAgentId(parseAgentSessionKey(opts.agentSessionKey)?.agentId ?? DEFAULT_AGENT_ID)
+          : DEFAULT_AGENT_ID;
+        const createParams: Record<string, unknown> = { name, requesterAgentId };
         const workspace = readStringParam(params, "workspace");
         const emoji = readStringParam(params, "emoji");
         const avatar = readStringParam(params, "avatar");

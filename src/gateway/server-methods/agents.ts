@@ -5,6 +5,7 @@ import {
   listAgentIds,
   resolveAgentDir,
   resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
 import {
   DEFAULT_AGENTS_FILENAME,
@@ -237,6 +238,34 @@ export const agentsHandlers: GatewayRequestHandlers = {
     await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
 
     await writeConfigFile(nextConfig);
+
+    // Auto-add new agent to requester + main agent's subagents.allowAgents
+    const defaultAgentId = resolveDefaultAgentId(nextConfig);
+    const requesterRaw = String(params.requesterAgentId ?? "").trim();
+    const requesterAgent = requesterRaw ? normalizeAgentId(requesterRaw) : defaultAgentId;
+    const agentsToUpdate = new Set([defaultAgentId, requesterAgent]);
+    agentsToUpdate.delete(agentId); // don't update the newly created agent itself
+
+    let allowConfigChanged = false;
+    for (const targetId of agentsToUpdate) {
+      const entries = listAgentEntries(nextConfig);
+      const idx = findAgentEntryIndex(entries, targetId);
+      if (idx < 0) continue;
+      const entry = entries[idx];
+      const currentAllow = entry.subagents?.allowAgents ?? [];
+      if (currentAllow.some((v) => v.trim() === "*" || normalizeAgentId(v) === agentId)) continue;
+      const updatedEntry = {
+        ...entry,
+        subagents: { ...entry.subagents, allowAgents: [...currentAllow, agentId] },
+      };
+      const nextList = [...entries];
+      nextList[idx] = updatedEntry;
+      nextConfig = { ...nextConfig, agents: { ...nextConfig.agents, list: nextList } };
+      allowConfigChanged = true;
+    }
+    if (allowConfigChanged) {
+      await writeConfigFile(nextConfig);
+    }
 
     // Always write Name to IDENTITY.md; optionally include emoji/avatar.
     const safeName = sanitizeIdentityLine(rawName);
