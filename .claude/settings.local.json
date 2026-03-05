@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(node scripts/bundle-gateway.js)",
+      "Bash(pnpm build:electron)",
+      "Bash(pnpm build:installer-ws)"
     ]
   }
 }

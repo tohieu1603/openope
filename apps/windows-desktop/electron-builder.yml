@@ -44,8 +44,8 @@ extraResources:
   # ESM package.json for gateway
   - from: "resources/gateway-package.json"
     to: "gateway/package.json"
-  # Client-web UI build (must be "control-ui" so gateway resolveControlUiRootSync finds it)
-  - from: "../../dist/control-ui"
+  # Client-web2 UI build (mapped to "control-ui" so gateway resolveControlUiRootSync finds it)
+  - from: "../../dist/control-ui2"
     to: "control-ui"
     filter:
       - "**/*"

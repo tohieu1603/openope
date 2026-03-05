@@ -42,7 +42,7 @@ extraResources:
       - "!**/*.map"
   - from: "resources/gateway-package.json"
     to: "gateway/package.json"
-  - from: "../../dist/control-ui"
+  - from: "../../dist/control-ui2"
     to: "control-ui"
     filter:
       - "**/*"
