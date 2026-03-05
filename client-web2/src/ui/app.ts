@@ -887,9 +887,18 @@ export class OperisApp extends LitElement {
       return;
     }
 
-    // Auto-assign chatRunId if we receive events without an active run (like TUI)
+    // Auto-assign chatRunId only for delta events (not final/error/aborted).
+    // A late final from a duplicate broadcast must NOT re-assign chatRunId after it was cleared.
     if (!this.chatRunId) {
-      this.chatRunId = evt.runId;
+      if (evt.state === "delta") {
+        this.chatRunId = evt.runId;
+      } else {
+        // final/error/aborted without active run — just reload history, don't track
+        if (evt.state === "final" || evt.state === "error") {
+          this.loadChatMessagesFromGateway();
+        }
+        return;
+      }
     }
 
     if (evt.state === "delta" && evt.message?.content) {
