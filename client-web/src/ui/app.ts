@@ -1069,7 +1069,7 @@ export class OperisApp extends LitElement {
       await provisionAndStartTunnel(result.tunnel?.tunnelToken);
       // Redirect with gateway token so WS client can pick it up
       if (result.user.gateway_token) {
-        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
+        window.location.href = `/`;
         return;
       }
       // Reset chat state for fresh load
@@ -2014,7 +2014,10 @@ export class OperisApp extends LitElement {
         restartScheduled: res.restartScheduled,
       };
       if (res.restartScheduled) {
-        showToast(`Đã cập nhật. Gateway khởi động lại trong ${res.restartDelayMs / 1000}s`, "success");
+        showToast(
+          `Đã cập nhật. Gateway khởi động lại trong ${res.restartDelayMs / 1000}s`,
+          "success",
+        );
       } else {
         showToast("Đã cập nhật thư mục lưu trữ", "success");
       }
@@ -3153,10 +3156,16 @@ export class OperisApp extends LitElement {
           runsLoading: this.workflowRunsLoading,
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
           showForm: this.workflowShowForm,
-          onToggleForm: () => { this.workflowShowForm = !this.workflowShowForm; },
+          onToggleForm: () => {
+            this.workflowShowForm = !this.workflowShowForm;
+          },
           modalRun: this.workflowModalRun,
-          onOpenRunDetail: (run: WorkflowRun) => { this.workflowModalRun = run; },
-          onCloseRunDetail: () => { this.workflowModalRun = null; },
+          onOpenRunDetail: (run: WorkflowRun) => {
+            this.workflowModalRun = run;
+          },
+          onCloseRunDetail: () => {
+            this.workflowModalRun = null;
+          },
         });
       case "docs":
         return renderDocs({
@@ -3221,7 +3230,9 @@ export class OperisApp extends LitElement {
           newDataDir: this.settingsNewDataDir,
           dataDirSaving: this.settingsDataDirSaving,
           dataDirResult: this.settingsDataDirResult,
-          onNewDataDirChange: (v: string) => { this.settingsNewDataDir = v; },
+          onNewDataDirChange: (v: string) => {
+            this.settingsNewDataDir = v;
+          },
           onSaveDataDir: () => this.handleChangeDataDir(),
           // Navigation
           onNavigate: (tab) => this.setTab(tab as Tab),
@@ -3482,20 +3493,29 @@ export class OperisApp extends LitElement {
               : nothing
           }
 
-          ${this.settings.isLoggedIn && this.gatewayStatus !== "running" && this.gatewayStatus !== "unknown"
-            ? html`
+          ${
+            this.settings.isLoggedIn &&
+            this.gatewayStatus !== "running" &&
+            this.gatewayStatus !== "unknown"
+              ? html`
               <div class="gw-banner gw-banner--${this.gatewayStatus}">
                 <span class="gw-banner__icon">
                   ${this.gatewayStatus === "error" ? "\u26A0" : "\u27F3"}
                 </span>
                 <span class="gw-banner__text">
-                  ${this.gatewayStatus === "starting" ? "Đang khởi động gateway..."
-                    : this.gatewayStatus === "stopped" ? "Gateway đã dừng"
-                    : this.gatewayStatus === "error" ? "Lỗi khởi động gateway"
-                    : "Đang kết nối..."}
+                  ${
+                    this.gatewayStatus === "starting"
+                      ? "Đang khởi động gateway..."
+                      : this.gatewayStatus === "stopped"
+                        ? "Gateway đã dừng"
+                        : this.gatewayStatus === "error"
+                          ? "Lỗi khởi động gateway"
+                          : "Đang kết nối..."
+                  }
                 </span>
               </div>`
-            : nothing}
+              : nothing
+          }
 
           ${this.renderContent()}
         </main>

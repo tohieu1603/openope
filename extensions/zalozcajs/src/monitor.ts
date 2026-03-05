@@ -112,8 +112,9 @@ async function processMessage(
   runtime: RuntimeEnv,
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void,
 ): Promise<void> {
-  const { threadId, content, timestamp, isGroup, senderId, senderName, groupName } = message;
-  if (!content?.trim()) {
+  const { threadId, content, timestamp, isGroup, senderId, senderName, groupName, imageUrls } =
+    message;
+  if (!content?.trim() && !imageUrls?.length) {
     return;
   }
 
@@ -256,6 +257,32 @@ async function processMessage(
     body: rawBody,
   });
 
+  // Download inbound images if present
+  let mediaPaths: string[] | undefined;
+  let mediaUrls: string[] | undefined;
+  let mediaTypes: string[] | undefined;
+  if (imageUrls?.length) {
+    const downloaded: Array<{ path: string; url: string; contentType?: string }> = [];
+    for (const url of imageUrls) {
+      try {
+        const fetched = await core.channel.media.fetchRemoteMedia({ url });
+        const saved = await core.channel.media.saveMediaBuffer(
+          fetched.buffer,
+          fetched.contentType,
+          "inbound",
+        );
+        downloaded.push({ path: saved.path, url, contentType: saved.contentType });
+      } catch (err) {
+        logVerbose(core, runtime, `zalozcajs: failed to download image: ${String(err)}`);
+      }
+    }
+    if (downloaded.length > 0) {
+      mediaPaths = downloaded.map((d) => d.path);
+      mediaUrls = downloaded.map((d) => d.url);
+      mediaTypes = downloaded.map((d) => d.contentType).filter(Boolean) as string[];
+    }
+  }
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: rawBody,
@@ -274,6 +301,12 @@ async function processMessage(
     MessageSid: message.msgId ?? `${timestamp}`,
     OriginatingChannel: "zalozcajs",
     OriginatingTo: `zalozcajs:${chatId}`,
+    MediaPath: mediaPaths?.[0],
+    MediaUrl: mediaUrls?.[0],
+    MediaType: mediaTypes?.[0],
+    MediaPaths: mediaPaths,
+    MediaUrls: mediaUrls,
+    MediaTypes: mediaTypes,
   });
 
   await core.channel.session.recordInboundSession({

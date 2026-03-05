@@ -75,23 +75,16 @@ export const NAV_ITEMS: Array<{
   // Agent section
   {
     tab: "agents",
-    label: "Agents",
+    label: "Nhân viên",
     icon: "folder",
-    description: "Quản lý agents và workspace",
+    description: "Quản lý nhân viên và workspace",
     section: "agent",
   },
   {
     tab: "skills",
-    label: "Skills",
+    label: "Kĩ năng",
     icon: "zap",
-    description: "Quản lý skills và cài đặt",
-    section: "agent",
-  },
-  {
-    tab: "nodes",
-    label: "Nodes",
-    icon: "cpu",
-    description: "Thiết bị và node kết nối",
+    description: "Quản lý kĩ năng và cài đặt",
     section: "agent",
   },
   // Account section

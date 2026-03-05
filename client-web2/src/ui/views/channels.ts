@@ -251,6 +251,7 @@ export function renderChannels(props: ChannelsProps) {
       `
           : nothing
       }
+
     </div>
   `;
 }

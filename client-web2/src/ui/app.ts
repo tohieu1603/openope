@@ -38,7 +38,10 @@ import {
 } from "./auth-api";
 import {
   getChannelsStatus,
-  connectChannel,
+  isChannelConfigured,
+  saveTelegramBotToken,
+  startZaloQrLogin,
+  waitZaloQrLogin,
   disconnectChannel,
   CHANNEL_DEFINITIONS,
   type ChannelStatus,
@@ -106,6 +109,7 @@ import { renderWorkflow } from "./views/workflow";
 import {
   listWorkflows,
   createWorkflow,
+  updateWorkflow,
   toggleWorkflow,
   runWorkflow,
   deleteWorkflow,
@@ -121,7 +125,6 @@ import "./components/operis-modal";
 import "./components/operis-datetime-picker";
 import "./components/operis-confirm";
 import { DEFAULT_WORKFLOW_FORM } from "./workflow-types";
-import { getZaloStatus } from "./zalo-api";
 
 // Get page title
 function titleForTab(tab: Tab): string {
@@ -135,8 +138,8 @@ function titleForTab(tab: Tab): string {
     channels: "Kênh Kết Nối",
     settings: "Cài Đặt",
     login: "Đăng Nhập",
-    agents: "Agents",
-    skills: "Skills",
+    agents: "Nhân Viên",
+    skills: "Kĩ Năng",
     nodes: "Nodes",
     sessions: "Nhật Ký Phiên",
     report: "Góp Ý",
@@ -156,8 +159,8 @@ function subtitleForTab(tab: Tab): string {
     channels: "Kết nối ứng dụng nhắn tin",
     settings: "Cài đặt tài khoản và tùy chọn",
     login: "Truy cập tài khoản của bạn",
-    agents: "Quản lý agents và workspace",
-    skills: "Quản lý skills và cài đặt",
+    agents: "Quản lý nhân viên và workspace",
+    skills: "Quản lý kĩ năng và cài đặt",
     nodes: "Thiết bị và node kết nối",
     sessions: "Xem và quản lý các phiên hoạt động.",
     report: "Ý kiến của bạn giúp chúng mình phát triển tốt hơn",
@@ -291,6 +294,7 @@ export class OperisApp extends LitElement {
   @state() selectedWorkflowId: string | null = null;
   @state() progressMap: Map<string, CronProgressState> = new Map();
   @state() workflowShowForm = false;
+  @state() editingWorkflowId: string | null = null;
   @state() workflowModalRun: import("./workflow-api").WorkflowRun | null = null;
   private progressTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -340,7 +344,10 @@ export class OperisApp extends LitElement {
   @state() channelsConnecting: ChannelId | null = null;
   @state() zaloQrBase64: string | null = null;
   @state() zaloQrStatus: string | null = null;
-  private zaloPollingTimer: ReturnType<typeof setInterval> | null = null;
+  @state() telegramTokenModal = false;
+  @state() telegramTokenValue = "";
+  @state() telegramTokenSaving = false;
+  @state() telegramTokenError: string | null = null;
 
   // Settings state
   @state() userProfile: UserProfile | null = null;
@@ -1400,16 +1407,20 @@ export class OperisApp extends LitElement {
 
   private async scrollChatToBottom() {
     await this.updateComplete;
-    await new Promise((r) => requestAnimationFrame(r));
 
     const messagesEl = this.renderRoot.querySelector(".gc-messages") as HTMLElement;
     if (!messagesEl) return;
+
+    // Hide messages to prevent flash at top while positioning scroll
+    messagesEl.style.visibility = "hidden";
+    await new Promise((r) => requestAnimationFrame(r));
 
     const userMessages = messagesEl.querySelectorAll(".gc-message--user");
     const lastUserMsg = userMessages[userMessages.length - 1] as HTMLElement;
 
     if (!lastUserMsg) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      messagesEl.style.visibility = "";
       return;
     }
 
@@ -1431,6 +1442,15 @@ export class OperisApp extends LitElement {
       const neededTotal = messagesEl.scrollTop + messagesEl.clientHeight;
       spacer.style.height = `${Math.max(0, neededTotal - contentWithoutSpacer)}px`;
     }
+
+    // Reveal messages after scroll is positioned
+    messagesEl.style.visibility = "";
+
+    // Auto-focus the chat input
+    const input = this.renderRoot.querySelector(
+      ".gc-input-bottom .gc-input",
+    ) as HTMLTextAreaElement;
+    input?.focus();
   }
 
   private setTheme(mode: ThemeMode, context?: ThemeTransitionContext) {
@@ -1476,11 +1496,11 @@ export class OperisApp extends LitElement {
       pullAndSyncAuthProfiles();
       // Start cloudflared and wait for tunnel connection before proceeding
       await provisionAndStartTunnel(result.tunnel?.tunnelToken);
-      // Redirect with gateway token so WS client can pick it up
-      if (result.user.gateway_token) {
-        window.location.href = `/?token=${encodeURIComponent(result.user.gateway_token)}`;
-        return;
-      }
+      // Gateway token redirect — disabled: local gateway auto-authorizes localhost
+      // if (result.user.gateway_token) {
+      //   window.location.href = `/`;
+      //   return;
+      // }
       // Reset chat state for fresh load
       this.chatInitializing = true;
       this.setTab("chat");
@@ -1756,6 +1776,13 @@ export class OperisApp extends LitElement {
         })
         .filter((m) => m.content);
 
+      // Preserve scroll position on non-initial reloads (avoid jumping to top)
+      const messagesEl = !isInitialLoad
+        ? (this.renderRoot.querySelector(".gc-messages") as HTMLElement)
+        : null;
+      const prevScrollTop = messagesEl?.scrollTop ?? 0;
+      const prevScrollHeight = messagesEl?.scrollHeight ?? 0;
+
       // Gateway is source of truth — always replace local state
       this.chatMessages = parsed;
       // Store thinking level from session (used in chat.send)
@@ -1763,6 +1790,16 @@ export class OperisApp extends LitElement {
         this.chatThinkingLevel = res.thinkingLevel;
       }
       this.cacheChatMessages();
+
+      // Restore scroll position after re-render (non-initial reloads only)
+      if (messagesEl) {
+        await this.updateComplete;
+        requestAnimationFrame(() => {
+          // If new messages were added, adjust scroll to keep same view
+          const delta = messagesEl.scrollHeight - prevScrollHeight;
+          messagesEl.scrollTop = prevScrollTop + delta;
+        });
+      }
     } catch (err) {
       console.warn("[chat] Failed to load messages from gateway:", err);
       // If gateway failed and we have no messages, try cache as fallback
@@ -1884,18 +1921,51 @@ export class OperisApp extends LitElement {
     this.workflowForm = { ...this.workflowForm, ...patch };
   }
 
+  private handleWorkflowEdit(workflow: Workflow) {
+    this.editingWorkflowId = workflow.id;
+    this.workflowForm = {
+      ...DEFAULT_WORKFLOW_FORM,
+      name: workflow.name,
+      description: workflow.description || "",
+      enabled: workflow.enabled,
+      agentId: workflow.agentId || "",
+      scheduleKind: workflow.schedule.kind,
+      everyAmount: workflow.schedule.everyAmount ?? 1,
+      everyUnit: workflow.schedule.everyUnit ?? "days",
+      atDatetime: workflow.schedule.atDatetime ?? "",
+      cronExpr: workflow.schedule.cronExpr ?? "0 9 * * *",
+      cronTz: workflow.schedule.cronTz ?? "",
+      sessionTarget: workflow.sessionTarget ?? "isolated",
+      wakeMode: workflow.wakeMode ?? "now",
+      payloadKind: workflow.payloadKind ?? "agentTurn",
+      timeout: workflow.timeout ?? 300,
+      prompt: workflow.prompt,
+    };
+    this.workflowShowForm = true;
+  }
+
   private async handleWorkflowSubmit() {
     if (this.workflowSaving) return;
     this.workflowSaving = true;
     try {
-      await createWorkflow(this.workflowForm);
-      showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
+      if (this.editingWorkflowId) {
+        await updateWorkflow(this.editingWorkflowId, this.workflowForm);
+        showToast(`Đã cập nhật "${this.workflowForm.name}"`, "success");
+      } else {
+        await createWorkflow(this.workflowForm);
+        showToast(`Đã tạo workflow "${this.workflowForm.name}"`, "success");
+      }
       this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+      this.editingWorkflowId = null;
       this.workflowShowForm = false;
-      // Silent background refresh - no loading indicator
       this.loadWorkflows(true);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Không thể tạo workflow";
+      const msg =
+        err instanceof Error
+          ? err.message
+          : this.editingWorkflowId
+            ? "Không thể cập nhật workflow"
+            : "Không thể tạo workflow";
       showToast(msg, "error");
       this.workflowError = msg;
     } finally {
@@ -2330,15 +2400,33 @@ export class OperisApp extends LitElement {
     this.channelsConnecting = channelId;
     this.channelsError = null;
     try {
-      const result = await connectChannel(channelId);
-      console.log("[channels] connect result:", channelId);
-
-      // Zalo: start QR polling flow
-      if (channelId === "zalo" && result.sessionToken) {
+      if (channelId === "zalo") {
+        // Zalo: QR login via gateway WS
         this.zaloQrStatus = "pending";
         this.zaloQrBase64 = null;
-        this.startZaloPolling(result.sessionToken);
-        return; // Don't clear channelsConnecting yet — QR modal stays open
+        const startResult = await startZaloQrLogin({ force: true });
+        console.log("[channels] zalo QR start:", startResult.message);
+        if (startResult.qrDataUrl) {
+          this.zaloQrBase64 = startResult.qrDataUrl;
+          this.zaloQrStatus = "qr_ready";
+        }
+        // Wait for login completion in background
+        this.startZaloLoginWait();
+        return; // Don't clear channelsConnecting — QR modal stays open
+      }
+
+      if (channelId === "telegram") {
+        // Check if telegram is already configured (has bot token)
+        const configured = await isChannelConfigured("telegram");
+        if (!configured) {
+          // Show bot token input modal
+          this.telegramTokenModal = true;
+          this.telegramTokenValue = "";
+          this.telegramTokenError = null;
+          this.telegramTokenSaving = false;
+          this.channelsConnecting = null;
+          return;
+        }
       }
 
       await this.loadChannels();
@@ -2347,51 +2435,59 @@ export class OperisApp extends LitElement {
       console.error("[channels] connect error:", err);
       this.channelsError = err instanceof Error ? err.message : "Không thể kết nối kênh";
       showToast(err instanceof Error ? err.message : "Không thể kết nối kênh", "error");
-    } finally {
-      if (this.zaloQrStatus === null) {
-        this.channelsConnecting = null;
-      }
+      this.zaloQrStatus = null;
+      this.zaloQrBase64 = null;
+      this.channelsConnecting = null;
     }
   }
 
-  private startZaloPolling(sessionToken: string) {
-    // Only clear previous timer, don't reset QR state
-    if (this.zaloPollingTimer) {
-      clearInterval(this.zaloPollingTimer);
-      this.zaloPollingTimer = null;
+  private async handleTelegramTokenSave() {
+    const token = this.telegramTokenValue.trim();
+    if (!token) return;
+    this.telegramTokenSaving = true;
+    this.telegramTokenError = null;
+    try {
+      await saveTelegramBotToken(token);
+      this.telegramTokenModal = false;
+      this.telegramTokenValue = "";
+      showToast("Bot token đã lưu — đang kết nối Telegram...", "success");
+      // Wait briefly for gateway restart then reload status
+      setTimeout(() => this.loadChannels(), 3000);
+    } catch (err) {
+      this.telegramTokenError = err instanceof Error ? err.message : "Không thể lưu bot token";
+    } finally {
+      this.telegramTokenSaving = false;
     }
-    this.zaloPollingTimer = setInterval(async () => {
-      try {
-        const status = await getZaloStatus(sessionToken);
-        this.zaloQrStatus = status.status;
+  }
 
-        if (status.qrBase64) {
-          this.zaloQrBase64 = status.qrBase64;
-        }
+  private handleTelegramTokenCancel() {
+    this.telegramTokenModal = false;
+    this.telegramTokenValue = "";
+    this.telegramTokenError = null;
+    this.channelsConnecting = null;
+  }
 
-        // Terminal states
-        if (status.status === "success") {
-          this.stopZaloPolling();
-          this.channelsConnecting = null;
-          await this.loadChannels();
-        } else if (status.status === "error") {
-          this.stopZaloPolling();
-          this.channelsConnecting = null;
-          this.channelsError = status.error || "Kết nối Zalo thất bại";
-        }
-      } catch {
+  private async startZaloLoginWait() {
+    try {
+      const result = await waitZaloQrLogin({ timeoutMs: 120_000 });
+      if (result.connected) {
         this.stopZaloPolling();
         this.channelsConnecting = null;
-        this.channelsError = "Mất kết nối khi chờ quét mã QR";
+        showToast("Đã kết nối Zalo", "success");
+        await this.loadChannels();
+      } else {
+        this.stopZaloPolling();
+        this.channelsConnecting = null;
+        this.channelsError = result.message || "Kết nối Zalo thất bại";
       }
-    }, 2000);
+    } catch {
+      this.stopZaloPolling();
+      this.channelsConnecting = null;
+      this.channelsError = "Mất kết nối khi chờ quét mã QR";
+    }
   }
 
   private stopZaloPolling() {
-    if (this.zaloPollingTimer) {
-      clearInterval(this.zaloPollingTimer);
-      this.zaloPollingTimer = null;
-    }
     this.zaloQrBase64 = null;
     this.zaloQrStatus = null;
   }
@@ -2545,7 +2641,7 @@ export class OperisApp extends LitElement {
         }
       }
     } catch (err) {
-      this.agentsError = err instanceof Error ? err.message : "Không thể tải agents";
+      this.agentsError = err instanceof Error ? err.message : "Không thể tải nhân viên";
     } finally {
       this.agentsLoading = false;
     }
@@ -2759,7 +2855,7 @@ export class OperisApp extends LitElement {
         this.agentSkillsAgentId = agentId;
       }
     } catch (err) {
-      this.agentSkillsError = err instanceof Error ? err.message : "Không thể tải skills";
+      this.agentSkillsError = err instanceof Error ? err.message : "Không thể tải kĩ năng";
     } finally {
       this.agentSkillsLoading = false;
     }
@@ -3436,8 +3532,8 @@ export class OperisApp extends LitElement {
       channels: "Kênh",
       settings: "Cài đặt",
       login: "Đăng nhập",
-      agents: "Agents",
-      skills: "Skills",
+      agents: "Nhân viên",
+      skills: "Kĩ năng",
       nodes: "Nodes",
       sessions: "Nhật ký phiên",
       report: "Góp ý",
@@ -3681,6 +3777,7 @@ export class OperisApp extends LitElement {
           onToggle: (w) => this.handleWorkflowToggle(w),
           onRun: (w) => this.handleWorkflowRun(w),
           onCancel: (w) => this.handleWorkflowCancel(w),
+          onEdit: (w) => this.handleWorkflowEdit(w),
           onDelete: (w) => this.handleWorkflowDelete(w),
           onToggleDetails: (id: string) => {
             this.workflowExpandedId = this.workflowExpandedId === id ? null : id;
@@ -3702,9 +3799,14 @@ export class OperisApp extends LitElement {
           runs: this.workflowRuns,
           runsLoading: this.workflowRunsLoading,
           onLoadRuns: (id: string | null) => this.loadWorkflowRuns(id),
+          editingWorkflowId: this.editingWorkflowId,
           showForm: this.workflowShowForm,
           onToggleForm: () => {
             this.workflowShowForm = !this.workflowShowForm;
+            if (this.workflowShowForm) {
+              this.editingWorkflowId = null;
+              this.workflowForm = { ...DEFAULT_WORKFLOW_FORM };
+            }
           },
           modalRun: this.workflowModalRun,
           onOpenRunDetail: (run) => {
@@ -3955,11 +4057,13 @@ export class OperisApp extends LitElement {
           onPatch: (key, patch) => this.handleSessionsPatch(key, patch),
           onDelete: (key) => this.handleSessionsDelete(key),
           onOpenSession: (key) => {
-            this.chatConversationId = key === "main" ? null : key;
+            const fullKey = this.normalizeSessionKey(key);
+            this.chatConversationId = fullKey === "agent:main:main" ? null : fullKey;
             this.chatMessages = [];
             this.chatStreamingText = "";
             this.chatToolCalls = [];
-            this.persistSessionKey(key);
+            this.chatInitializing = true;
+            this.persistSessionKey(fullKey);
             this.setTab("chat");
           },
         });
@@ -4067,24 +4171,94 @@ export class OperisApp extends LitElement {
               : nothing
           }
 
-          ${this.settings.isLoggedIn && this.gatewayStatus !== "running" && this.gatewayStatus !== "unknown"
-            ? html`
+          ${
+            this.settings.isLoggedIn &&
+            this.gatewayStatus !== "running" &&
+            this.gatewayStatus !== "unknown"
+              ? html`
               <div class="gw-banner gw-banner--${this.gatewayStatus}">
                 <span class="gw-banner__icon">
                   ${this.gatewayStatus === "error" ? "\u26A0" : "\u27F3"}
                 </span>
                 <span class="gw-banner__text">
-                  ${this.gatewayStatus === "starting" ? "Đang khởi động gateway..."
-                    : this.gatewayStatus === "stopped" ? "Gateway đã dừng"
-                    : this.gatewayStatus === "error" ? "Lỗi khởi động gateway"
-                    : "Đang kết nối..."}
+                  ${
+                    this.gatewayStatus === "starting"
+                      ? "Đang khởi động gateway..."
+                      : this.gatewayStatus === "stopped"
+                        ? "Gateway đã dừng"
+                        : this.gatewayStatus === "error"
+                          ? "Lỗi khởi động gateway"
+                          : "Đang kết nối..."
+                  }
                 </span>
               </div>`
-            : nothing}
+              : nothing
+          }
 
           ${this.renderContent()}
         </main>
 
+        ${this.renderTelegramTokenModal()}
+      </div>
+    `;
+  }
+
+  private renderTelegramTokenModal() {
+    if (!this.telegramTokenModal) return nothing;
+    return html`
+      <style>
+        .tg-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .tg-modal { background: var(--card); border-radius: var(--radius-lg); padding: 24px; width: 420px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .tg-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .tg-modal-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-strong); }
+        .tg-close-btn { background: none; border: none; font-size: 24px; color: var(--muted); cursor: pointer; padding: 0 4px; line-height: 1; }
+        .tg-close-btn:hover { color: var(--text-strong); }
+        .tg-instruction { font-size: 14px; color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
+        .tg-instruction a { color: #0088cc; text-decoration: none; }
+        .tg-instruction a:hover { text-decoration: underline; }
+        .tg-instruction code { background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+        .tg-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 14px; font-family: monospace; box-sizing: border-box; }
+        .tg-input:focus { outline: none; border-color: #0088cc; box-shadow: 0 0 0 2px rgba(0, 136, 204, 0.2); }
+        .tg-input.tg-err { border-color: #ef4444; }
+        .tg-error-msg { font-size: 13px; color: #ef4444; margin: 8px 0 0; }
+        .tg-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+        .tg-actions .btn { min-width: 80px; }
+      </style>
+      <div class="tg-overlay" @click=${() => this.handleTelegramTokenCancel()}>
+        <div class="tg-modal" @click=${(e: Event) => e.stopPropagation()}>
+          <div class="tg-modal-header">
+            <h3>Kết nối Telegram</h3>
+            <button class="tg-close-btn" @click=${() => this.handleTelegramTokenCancel()}>&times;</button>
+          </div>
+          <p class="tg-instruction">
+            Nhập Bot Token từ
+            <a href="https://t.me/BotFather" target="_blank">@BotFather</a>
+            trên Telegram. Tạo bot mới bằng lệnh <code>/newbot</code> để lấy token.
+          </p>
+          <input
+            class="tg-input ${this.telegramTokenError ? "tg-err" : ""}"
+            type="text"
+            placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+            .value=${this.telegramTokenValue}
+            @input=${(e: Event) => (this.telegramTokenValue = (e.target as HTMLInputElement).value)}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !this.telegramTokenSaving) this.handleTelegramTokenSave(); }}
+            ?disabled=${this.telegramTokenSaving}
+          />
+          ${this.telegramTokenError ? html`<p class="tg-error-msg">${this.telegramTokenError}</p>` : nothing}
+          <div class="tg-actions">
+            <button class="btn btn-secondary" @click=${() => this.handleTelegramTokenCancel()} ?disabled=${this.telegramTokenSaving}>
+              Hủy
+            </button>
+            <button
+              class="btn btn-primary"
+              style="background: #0088cc; border-color: #0088cc;"
+              @click=${() => this.handleTelegramTokenSave()}
+              ?disabled=${this.telegramTokenSaving || !this.telegramTokenValue.trim()}
+            >
+              ${this.telegramTokenSaving ? "Đang lưu..." : "Lưu & Kết nối"}
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }

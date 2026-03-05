@@ -80,6 +80,15 @@ function renderMarkdown(content: string): ReturnType<typeof unsafeHTML> {
   htmlContent = htmlContent.replace(/<table/g, '<div class="gc-table-wrap"><table');
   htmlContent = htmlContent.replace(/<\/table>/g, "</table></div>");
 
+  // 5. Wrap <pre> blocks with copy button
+  const copySvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const checkSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  htmlContent = htmlContent.replace(
+    /<pre>/g,
+    `<div class="gc-code-wrap"><button class="gc-code-copy" title="Sao chép" onclick="var t=this.parentElement.querySelector('pre').textContent;navigator.clipboard.writeText(t).then(()=>{this.innerHTML='${checkSvg.replace(/'/g, "\\'")}';this.classList.add('gc-code-copy--done');setTimeout(()=>{this.innerHTML='${copySvg.replace(/'/g, "\\'")}';this.classList.remove('gc-code-copy--done')},1500)})">${copySvg}</button><pre>`,
+  );
+  htmlContent = htmlContent.replace(/<\/pre>/g, "</pre></div>");
+
   return unsafeHTML(htmlContent);
 }
 
@@ -302,6 +311,24 @@ export function renderChat(props: ChatProps) {
   } = props;
   const isEmpty = messages.length === 0;
   const displayName = username || "Bạn";
+
+  /** Scroll detection: show scroll-to-bottom button when user scrolls up */
+  const handleScrollCheck = (e: Event) => {
+    onScroll?.(e);
+    const el = e.target as HTMLElement;
+    const btn = el.parentElement?.querySelector(".gc-scroll-bottom") as HTMLElement;
+    if (!btn) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    btn.classList.toggle("gc-scroll-bottom--visible", distFromBottom > 200);
+  };
+
+  const handleScrollToBottom = (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    const messagesEl = btn.parentElement?.querySelector(".gc-messages") as HTMLElement;
+    if (messagesEl) {
+      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
+    }
+  };
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -853,6 +880,9 @@ export function renderChat(props: ChatProps) {
         display: flex;
         gap: 16px;
         max-width: 800px;
+      }
+      /* Only animate newly added messages, not all on re-render */
+      .gc-message.gc-message--new {
         animation: gc-msg-in 0.3s ease-out;
       }
       @keyframes gc-msg-in {
@@ -868,6 +898,45 @@ export function renderChat(props: ChatProps) {
       }
       .gc-message--assistant {
         align-self: flex-start;
+      }
+
+      /* Scroll-to-bottom floating button */
+      .gc-scroll-bottom {
+        position: absolute;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%) scale(0.8);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 10;
+      }
+      .gc-scroll-bottom.gc-scroll-bottom--visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(-50%) scale(1);
+      }
+      .gc-scroll-bottom:hover {
+        background: var(--bg-hover);
+        border-color: var(--border-strong);
+      }
+      .gc-scroll-bottom svg {
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
       }
 
       /* Dynamic spacer - height controlled by JS */
@@ -1064,8 +1133,42 @@ export function renderChat(props: ChatProps) {
       }
 
       /* ── Code blocks inside chat bubbles ── */
-      .gc-bubble pre {
+      .gc-bubble .gc-code-wrap {
+        position: relative;
         margin: 12px 0;
+      }
+      .gc-bubble .gc-code-copy {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--muted);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s ease, color 0.15s ease;
+        z-index: 1;
+        padding: 0;
+      }
+      .gc-bubble .gc-code-wrap:hover .gc-code-copy {
+        opacity: 1;
+      }
+      .gc-bubble .gc-code-copy:hover {
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+      .gc-bubble .gc-code-copy.gc-code-copy--done {
+        opacity: 1;
+        color: var(--success, #22c55e);
+      }
+      .gc-bubble pre {
+        margin: 0;
         padding: 14px 16px;
         background: var(--bg-muted, var(--secondary));
         border: 1px solid var(--border);
@@ -1583,11 +1686,16 @@ export function renderChat(props: ChatProps) {
             >
               ${
                 gatewaySessions.length > 0
-                  ? gatewaySessions.map((s) => {
+                  ? html`${gatewaySessions.map((s) => {
                       const { label, description } = formatSessionDisplay(s);
                       const text = description ? `${label} — ${description}` : label;
                       return html`<option value=${s.key} ?selected=${s.key === sessionKey}>${text}</option>`;
-                    })
+                    })}${
+                      // If current session isn't in the web-chat list, add it as an extra option
+                      !gatewaySessions.some((s) => s.key === sessionKey)
+                        ? html`<option value=${sessionKey} selected>${sessionKey.replace(/^agent:main:/, "")}</option>`
+                        : nothing
+                    }`
                   : html`<option value=${sessionKey} selected>${sessionKey.split(":").pop() || sessionKey}</option>`
               }
             </select>
@@ -1701,13 +1809,6 @@ export function renderChat(props: ChatProps) {
                       <div class="gc-actions-right">
                         <button
                           type="button"
-                          class="gc-action-btn"
-                          title="Nhập giọng nói"
-                        >
-                          ${icons.mic}
-                        </button>
-                        <button
-                          type="button"
                           class="gc-send-btn"
                           @click=${handleSendClick}
                           ?disabled=${(!draft.trim() && pendingImages.length === 0) || sending || !gatewayReady}
@@ -1739,10 +1840,13 @@ export function renderChat(props: ChatProps) {
             : html`
               <!-- Chat Messages -->
               <div class="gc-messages-container">
-                <div class="gc-messages" @scroll=${onScroll}>
+                <button class="gc-scroll-bottom" @click=${handleScrollToBottom} title="Cuộn xuống">
+                  ${icons.chevronDown}
+                </button>
+                <div class="gc-messages" @scroll=${handleScrollCheck}>
                   ${messages.map(
-                    (msg) => html`
-                      <div class="gc-message gc-message--${msg.role}">
+                    (msg, i) => html`
+                      <div class="gc-message gc-message--${msg.role}${i === messages.length - 1 ? " gc-message--new" : ""}">
                         <div class="gc-avatar gc-avatar--${msg.role}">
                           ${msg.role === "user" ? icons.user : icons.sparkles}
                         </div>
@@ -1885,7 +1989,7 @@ export function renderChat(props: ChatProps) {
                 queue.length > 0
                   ? html`
                 <div class="gc-queue" role="status" aria-live="polite">
-                  <span class="gc-queue__title">Queued (${queue.length})</span>
+                  <span class="gc-queue__title">Hàng chờ (${queue.length})</span>
                   <div class="gc-queue__list">
                     ${queue.map(
                       (item) => html`
@@ -1975,13 +2079,6 @@ export function renderChat(props: ChatProps) {
                         </button>
                       </div>
                       <div class="gc-actions-right">
-                        <button
-                          type="button"
-                          class="gc-action-btn"
-                          title="Nhập giọng nói"
-                        >
-                          ${icons.mic}
-                        </button>
                         ${
                           sending
                             ? html`
@@ -1990,14 +2087,14 @@ export function renderChat(props: ChatProps) {
                             class="gc-stop-btn"
                             @click=${onStop}
                             title="Dừng"
-                          >Stop</button>
+                          >Dừng</button>
                           <button
                             type="button"
                             class="gc-queue-btn"
                             @click=${handleSendClick}
                             ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
                             title="Thêm vào hàng chờ"
-                          >Queue ${icons.arrowUp}</button>
+                          >Chờ ${icons.arrowUp}</button>
                         `
                             : html`
                           <button
@@ -2005,7 +2102,7 @@ export function renderChat(props: ChatProps) {
                             class="gc-send-btn"
                             @click=${handleSendClick}
                             ?disabled=${(!draft.trim() && pendingImages.length === 0) || !gatewayReady}
-                            title=${isLoggedIn ? t("chatSend") : t("chatSignIn")}
+                            title=${!gatewayReady ? "Đang chờ gateway..." : isLoggedIn ? t("chatSend") : t("chatSignIn")}
                           >${icons.arrowUp}</button>
                         `
                         }

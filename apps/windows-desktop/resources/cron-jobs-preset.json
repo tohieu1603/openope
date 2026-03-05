@@ -15,7 +15,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 600
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}
@@ -34,7 +34,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 600
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}
@@ -53,7 +53,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 600
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}
@@ -72,7 +72,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 900
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}
@@ -91,7 +91,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 1800
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}
@@ -110,7 +110,7 @@
         "model": "operis/operis-multi",
         "timeoutSeconds": 1800
       },
-      "delivery": { "mode": "announce" },
+      "delivery": { "mode": "none" },
       "createdAtMs": 0,
       "updatedAtMs": 0,
       "state": {}

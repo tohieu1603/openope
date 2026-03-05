@@ -30,6 +30,8 @@ export type ZcaJsMessage = {
   senderName?: string;
   senderId?: string;
   groupName?: string;
+  /** Image/media URLs extracted from attachment messages */
+  imageUrls?: string[];
 };
 
 export type ZalozcajsAccountConfig = {

@@ -37,7 +37,9 @@ import {
   getAllGroups,
   getSelfInfo,
   loginWithQR,
+  loginWithQRGateway,
   disconnectInstance,
+  resolveCredentialsPath,
 } from "./zcajs-client.js";
 
 const meta = {
@@ -106,7 +108,7 @@ export const zalozcajsDock: ChannelDock = {
   id: "zalozcajs",
   capabilities: {
     chatTypes: ["direct", "group"],
-    media: false, // zca-js doesn't natively support media URL sending
+    media: true,
     blockStreaming: true,
   },
   outbound: { textChunkLimit: 2000 },
@@ -137,13 +139,14 @@ export const zalozcajsPlugin: ChannelPlugin<ResolvedZalozcajsAccount> = {
   onboarding: zalozcajsOnboardingAdapter,
   capabilities: {
     chatTypes: ["direct", "group"],
-    media: false,
+    media: true,
     reactions: true,
     threads: false,
     polls: false,
     nativeCommands: false,
     blockStreaming: true,
   },
+  gatewayMethods: ["web.login.start", "web.login.wait"],
   reload: { configPrefixes: ["channels.zalozcajs"] },
   configSchema: buildChannelConfigSchema(ZalozcajsConfigSchema),
   config: {
@@ -526,41 +529,103 @@ export const zalozcajsPlugin: ChannelPlugin<ResolvedZalozcajsAccount> = {
       };
     },
   },
-  gateway: {
-    startAccount: async (ctx) => {
-      const account = ctx.account;
-      let userLabel = "";
-      try {
-        const userInfo = await getZcaJsUserInfo(account.credentialsPath);
-        if (userInfo?.displayName) {
-          userLabel = ` (${userInfo.displayName})`;
+  gateway: (() => {
+    // Track ongoing QR login state for loginWithQrStart/loginWithQrWait
+    let pendingLogin: {
+      loginPromise: Promise<unknown>;
+      accountId: string;
+    } | null = null;
+
+    return {
+      startAccount: async (
+        ctx: import("openclaw/plugin-sdk").ChannelGatewayContext<ResolvedZalozcajsAccount>,
+      ) => {
+        const account = ctx.account;
+        let userLabel = "";
+        try {
+          const userInfo = await getZcaJsUserInfo(account.credentialsPath);
+          if (userInfo?.displayName) {
+            userLabel = ` (${userInfo.displayName})`;
+          }
+          ctx.setStatus({
+            accountId: account.accountId,
+            user: userInfo,
+          });
+        } catch {
+          // ignore probe errors
         }
-        ctx.setStatus({
-          accountId: account.accountId,
-          user: userInfo,
+        ctx.log?.info(`[${account.accountId}] starting zalozcajs provider${userLabel}`);
+        const { monitorZalozcajsProvider } = await import("./monitor.js");
+        return monitorZalozcajsProvider({
+          account,
+          config: ctx.cfg,
+          runtime: ctx.runtime,
+          abortSignal: ctx.abortSignal,
+          statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
         });
-      } catch {
-        // ignore probe errors
-      }
-      ctx.log?.info(`[${account.accountId}] starting zalozcajs provider${userLabel}`);
-      const { monitorZalozcajsProvider } = await import("./monitor.js");
-      return monitorZalozcajsProvider({
-        account,
-        config: ctx.cfg,
-        runtime: ctx.runtime,
-        abortSignal: ctx.abortSignal,
-        statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
-      });
-    },
-    logoutAccount: async (ctx) => {
-      disconnectInstance(ctx.account.credentialsPath);
-      return {
-        cleared: true,
-        loggedOut: true,
-        message: "Disconnected and credentials cleared",
-      };
-    },
-  },
+      },
+      loginWithQrStart: async (params: {
+        accountId?: string;
+        force?: boolean;
+        timeoutMs?: number;
+        verbose?: boolean;
+      }) => {
+        const accountId = params.accountId || "default";
+        // Disconnect any existing session if force
+        if (params.force) {
+          const credPath = resolveCredentialsPath(accountId);
+          disconnectInstance(credPath);
+        }
+        const { qrPromise, loginPromise } = loginWithQRGateway(accountId);
+        pendingLogin = { loginPromise, accountId };
+        const qrDataUrl = await qrPromise;
+        if (qrDataUrl) {
+          return { qrDataUrl, message: "Scan QR code with Zalo app" };
+        }
+        return { message: "QR login started but QR code not available" };
+      },
+      loginWithQrWait: async (params: { accountId?: string; timeoutMs?: number }) => {
+        if (!pendingLogin) {
+          return { connected: false, message: "No pending login. Call web.login.start first." };
+        }
+        try {
+          const timeoutMs = params.timeoutMs ?? 120_000;
+          const result = await Promise.race([
+            pendingLogin.loginPromise.then(() => ({
+              connected: true,
+              message: "Login successful",
+            })),
+            new Promise<{ connected: boolean; message: string }>((resolve) =>
+              setTimeout(
+                () => resolve({ connected: false, message: "Login timed out" }),
+                timeoutMs,
+              ),
+            ),
+          ]);
+          if (result.connected) {
+            pendingLogin = null;
+          }
+          return result;
+        } catch (err) {
+          pendingLogin = null;
+          return {
+            connected: false,
+            message: `Login failed: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      },
+      logoutAccount: async (
+        ctx: import("openclaw/plugin-sdk").ChannelLogoutContext<ResolvedZalozcajsAccount>,
+      ) => {
+        disconnectInstance(ctx.account.credentialsPath);
+        return {
+          cleared: true,
+          loggedOut: true,
+          message: "Disconnected and credentials cleared",
+        };
+      },
+    };
+  })(),
 };
 
 export type { ResolvedZalozcajsAccount };

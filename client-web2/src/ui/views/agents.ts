@@ -116,7 +116,7 @@ const TOOL_SECTIONS = [
       { id: "sessions_list", label: "sessions_list", description: "List sessions" },
       { id: "sessions_history", label: "sessions_history", description: "Session history" },
       { id: "sessions_send", label: "sessions_send", description: "Send to session" },
-      { id: "sessions_spawn", label: "sessions_spawn", description: "Spawn sub-agent" },
+      { id: "sessions_spawn", label: "sessions_spawn", description: "Tạo nhân viên phụ" },
       { id: "session_status", label: "session_status", description: "Session status" },
     ],
   },
@@ -148,8 +148,8 @@ const TOOL_SECTIONS = [
   },
   {
     id: "agents",
-    label: "Agents",
-    tools: [{ id: "agents_list", label: "agents_list", description: "List agents" }],
+    label: "Nhân viên",
+    tools: [{ id: "agents_list", label: "agents_list", description: "Danh sách nhân viên" }],
   },
   {
     id: "media",
@@ -1422,8 +1422,8 @@ export function renderAgents(props: AgentsProps) {
       <section class="card agents-sidebar">
         <div class="row" style="justify-content: space-between;">
           <div>
-            <div class="card-title">Agents</div>
-            <div class="card-sub">${agents.length} configured.</div>
+            <div class="card-title">Nhân viên</div>
+            <div class="card-sub">${agents.length} đã cấu hình.</div>
           </div>
           <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
             ${props.loading ? "Loading…" : "Refresh"}
@@ -1438,7 +1438,7 @@ export function renderAgents(props: AgentsProps) {
           ${
             agents.length === 0
               ? html`
-                  <div class="muted">No agents found.</div>
+                  <div class="muted">Không tìm thấy nhân viên.</div>
                 `
               : agents.map((agent) => {
                   const badge = agentBadgeText(agent.id, defaultId);
@@ -1600,7 +1600,7 @@ function renderAgentHeader(
 ) {
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
-  const subtitle = agent.identity?.theme?.trim() || "Agent workspace and routing.";
+  const subtitle = agent.identity?.theme?.trim() || "Nhân viên workspace và routing.";
   const emoji = resolveAgentEmoji(agent, agentIdentity);
   return html`
     <section class="card agent-header">
@@ -1749,7 +1749,7 @@ function renderAgentOverview(params: {
 function renderAgentContextCard(context: AgentContext, subtitle: string) {
   return html`
     <section class="card">
-      <div class="card-title">Agent Context</div>
+      <div class="card-title">Thông tin nhân viên</div>
       <div class="card-sub">${subtitle}</div>
       <div class="agents-overview-grid" style="margin-top: 16px;">
         <div class="agent-kv"><div class="label">Workspace</div><div class="mono">${context.workspace}</div></div>
@@ -2141,7 +2141,7 @@ function renderAgentTools(params: {
   const globalTools = config.globalTools ?? {};
   const profile = agentTools.profile ?? globalTools.profile ?? "full";
   const profileSource = agentTools.profile
-    ? "agent override"
+    ? "nhân viên override"
     : globalTools.profile
       ? "global default"
       : "default";
