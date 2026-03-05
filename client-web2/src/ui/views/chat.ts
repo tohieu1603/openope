@@ -236,7 +236,7 @@ export function renderChat(props: ChatProps) {
                       input.value = "";
                     }}
                   />
-                  <div class="gc-input-box">
+                  <div class="gc-input-box ${sending ? "gc-input-box--active" : ""}">
                     <textarea
                       class="gc-input"
                       placeholder="${!gatewayReady ? "Đang chờ gateway khởi động..." : t("chatPlaceholder")}"
@@ -527,7 +527,7 @@ export function renderChat(props: ChatProps) {
                       input.value = "";
                     }}
                   />
-                  <div class="gc-input-box">
+                  <div class="gc-input-box ${sending ? "gc-input-box--active" : ""}">
                     <textarea
                       class="gc-input"
                       placeholder="${!gatewayReady ? "Đang chờ gateway khởi động..." : t("chatPlaceholder")}"

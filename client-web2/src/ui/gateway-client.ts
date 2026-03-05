@@ -689,6 +689,15 @@ export function getGatewayClient(): GatewayClient {
   return client;
 }
 
+/** Debug: force WS disconnect to test reconnect behavior. Call from console: window.__forceDisconnect() */
+export function forceDisconnectForDebug() {
+  if (client) {
+    console.warn("[gateway] forcing WS disconnect for debug");
+    (client as unknown as { ws: WebSocket | null }).ws?.close(4000, "debug disconnect");
+  }
+}
+(window as unknown as Record<string, unknown>).__forceDisconnect = forceDisconnectForDebug;
+
 export function stopGatewayClient() {
   if (client) {
     client.stop();

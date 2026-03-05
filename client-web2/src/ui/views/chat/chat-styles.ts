@@ -101,6 +101,20 @@ export const chatStylesHtml = html`
       border-color: var(--border-strong);
       box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
     }
+    .gc-input-box--active {
+      animation: gc-pulse-border 2s ease-in-out infinite;
+    }
+    @keyframes gc-pulse-border {
+      0%,
+      100% {
+        border-color: var(--border);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+      }
+      50% {
+        border-color: #ef4444;
+        box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.3);
+      }
+    }
 
     .gc-input {
       width: 100%;

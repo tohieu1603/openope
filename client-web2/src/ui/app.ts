@@ -209,8 +209,6 @@ export class OperisApp extends LitElement {
   @state() chatCompactionActive = false;
   private compactionClearTimer: ReturnType<typeof setTimeout> | null = null;
   private compactionEventUnsubscribe: (() => void) | null = null;
-  // Streaming timeout watchdog — clears chatSending if no delta arrives within 45s
-  private streamingWatchdog: ReturnType<typeof setTimeout> | null = null;
   // Chat sidebar state
   @state() chatConversations: Conversation[] = [];
   @state() chatConversationsLoading = false;
@@ -541,16 +539,21 @@ export class OperisApp extends LitElement {
     // Reload current tab data when gateway WS reconnects after a drop
     // (Original: onHello silently resets orphaned chat run state, then refreshes active tab)
     this.reconnectUnsubscribe = onGatewayReconnect(() => {
-      // Reset orphaned chat run state (any in-flight run's final event was lost during disconnect)
-      this.chatRunId = null;
+      console.log(
+        "[chat] WS reconnected — chatRunId:",
+        this.chatRunId,
+        "chatSending:",
+        this.chatSending,
+      );
+      // Keep chatRunId alive across reconnects — the gateway agent may still be running.
+      // Stream events will resume on the new WS connection and auto-assign chatRunId if needed.
+      // Only clear transient streaming state, not the run tracking.
       this.chatStreamingText = "";
       this.chatStreamingRunId = null;
       this.chatToolCalls = [];
-      this.chatSending = false;
-      // Clear run tracking maps (like TUI syncSessionKey on reconnect)
+      // Clear dedup maps so re-delivered events are not dropped
       this.finalizedRuns.clear();
       this.sessionRuns.clear();
-      this.localRunIds.clear();
       this.loadTabData(this.tab);
     });
 
@@ -889,9 +892,6 @@ export class OperisApp extends LitElement {
       this.chatRunId = evt.runId;
     }
 
-    // Any stream event means connection is alive — reset watchdog
-    this.clearStreamingWatchdog();
-
     if (evt.state === "delta" && evt.message?.content) {
       const text = evt.message.content
         .filter((block) => block.type === "text" && block.text)
@@ -906,6 +906,7 @@ export class OperisApp extends LitElement {
     } else if (evt.state === "final") {
       this.handleChatFinal(evt, dedupKey);
     } else if (evt.state === "aborted") {
+      console.log("[chat] stream aborted — runId:", evt.runId);
       this.noteFinalizedRun(dedupKey);
       this.chatRunId = null;
       this.chatStreamingText = "";
@@ -918,6 +919,7 @@ export class OperisApp extends LitElement {
       }
       this.flushChatQueue();
     } else if (evt.state === "error") {
+      console.log("[chat] stream error — runId:", evt.runId, "msg:", evt.errorMessage);
       const errorMsg = evt.errorMessage || "Có lỗi xảy ra khi xử lý tin nhắn";
       this.chatMessages = [
         ...this.chatMessages,
@@ -952,6 +954,7 @@ export class OperisApp extends LitElement {
 
   /** Handle final chat event — append message, reset state, flush queue (like TUI). */
   private handleChatFinal(evt: ChatStreamEvent, dedupKey?: string) {
+    console.log("[chat] stream final — runId:", evt.runId);
     const finalText =
       evt.message?.content
         ?.filter((block) => block.type === "text" && block.text)
@@ -1043,38 +1046,6 @@ export class OperisApp extends LitElement {
       return true;
     } catch {
       return false;
-    }
-  }
-
-  // --- Streaming watchdog (detect hung runs — no events within 45s) ---
-
-  private startStreamingWatchdog() {
-    this.clearStreamingWatchdog();
-    this.streamingWatchdog = setTimeout(() => {
-      if (!this.chatSending && !this.chatRunId) return;
-      console.warn("[chat] streaming watchdog fired — no events within 45s, resetting");
-      this.chatError = "Không nhận được phản hồi (timeout)";
-      this.chatMessages = [
-        ...this.chatMessages,
-        {
-          role: "assistant",
-          content: "⚠️ Không nhận được phản hồi (timeout)",
-          timestamp: new Date(),
-        },
-      ];
-      this.chatRunId = null;
-      this.chatStreamingText = "";
-      this.chatStreamingRunId = null;
-      this.chatToolCalls = [];
-      this.chatSending = false;
-      this.flushChatQueue();
-    }, 45_000);
-  }
-
-  private clearStreamingWatchdog() {
-    if (this.streamingWatchdog) {
-      clearTimeout(this.streamingWatchdog);
-      this.streamingWatchdog = null;
     }
   }
 
@@ -1297,8 +1268,6 @@ export class OperisApp extends LitElement {
       clearInterval(this.progressTimer);
       this.progressTimer = null;
     }
-    // Clean up chat timers
-    this.clearStreamingWatchdog();
     if (this.compactionClearTimer) {
       clearTimeout(this.compactionClearTimer);
       this.compactionClearTimer = null;
@@ -1703,8 +1672,6 @@ export class OperisApp extends LitElement {
         30_000,
       );
       // chat.send returns immediately. Streaming via handleChatStreamEvent.
-      // Start watchdog: if no stream event arrives within 45s, treat as hung
-      this.startStreamingWatchdog();
     } catch (err) {
       // Only clear chatSending on request failure — no WS events will arrive.
       // On success, chatSending stays true until handleChatStreamEvent receives
