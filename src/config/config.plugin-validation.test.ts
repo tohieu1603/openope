@@ -51,7 +51,7 @@ describe("config plugin validation", () => {
     });
   });
 
-  it("rejects missing plugin ids in entries", async () => {
+  it("warns (not errors) for missing plugin ids in entries", async () => {
     await withTempHome(async (home) => {
       process.env.OPENCLAW_STATE_DIR = path.join(home, ".openclaw");
       vi.resetModules();
@@ -60,9 +60,9 @@ describe("config plugin validation", () => {
         agents: { list: [{ id: "pi" }] },
         plugins: { enabled: false, entries: { "missing-plugin": { enabled: true } } },
       });
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.issues).toContainEqual({
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.warnings).toContainEqual({
           path: "plugins.entries.missing-plugin",
           message: "plugin not found: missing-plugin",
         });
@@ -70,7 +70,7 @@ describe("config plugin validation", () => {
     });
   });
 
-  it("rejects missing plugin ids in allow/deny/slots", async () => {
+  it("warns (not errors) for missing plugin ids in allow/deny/slots", async () => {
     await withTempHome(async (home) => {
       process.env.OPENCLAW_STATE_DIR = path.join(home, ".openclaw");
       vi.resetModules();
@@ -84,9 +84,9 @@ describe("config plugin validation", () => {
           slots: { memory: "missing-slot" },
         },
       });
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.issues).toEqual(
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.warnings).toEqual(
           expect.arrayContaining([
             { path: "plugins.allow", message: "plugin not found: missing-allow" },
             { path: "plugins.deny", message: "plugin not found: missing-deny" },

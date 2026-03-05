@@ -3,7 +3,7 @@ import type { WorkflowRun, WorkflowStatus } from "../workflow-api";
 import type { Workflow, WorkflowFormState, CronProgressState } from "../workflow-types";
 import { t } from "../i18n";
 import { icons } from "../icons";
-import { renderWorkflowCard } from "./workflow-card";
+import { renderWorkflowCard, renderWorkflowDetailModal } from "./workflow-card";
 import { renderFormCard } from "./workflow-form-card";
 import { renderProgressTimeline } from "./workflow-progress-timeline";
 import { renderRunItem, renderRunDetailModal } from "./workflow-run-history";
@@ -16,7 +16,6 @@ export interface WorkflowProps {
   error: string | null;
   form: WorkflowFormState;
   saving: boolean;
-  expandedWorkflowId?: string | null;
   runningWorkflowIds?: Set<string>;
   // Scheduler status
   status?: WorkflowStatus | null;
@@ -40,7 +39,9 @@ export interface WorkflowProps {
   onCancel?: (workflow: Workflow) => void;
   onEdit?: (workflow: Workflow) => void;
   onDelete: (workflow: Workflow) => void;
-  onToggleDetails?: (workflowId: string) => void;
+  onOpenWorkflowDetail?: (workflow: Workflow) => void;
+  onCloseWorkflowDetail?: () => void;
+  detailWorkflow?: Workflow | null;
   onLoadRuns?: (workflowId: string | null) => void;
   onSelectWorkflow?: (workflowId: string | null) => void;
   showForm?: boolean;
@@ -129,6 +130,13 @@ export function renderWorkflow(props: WorkflowProps) {
               </div>
             </div>
           `
+    }
+
+    <!-- Workflow detail modal -->
+    ${
+      props.detailWorkflow && props.onCloseWorkflowDetail
+        ? renderWorkflowDetailModal(props.detailWorkflow, props.onCloseWorkflowDetail)
+        : nothing
     }
 
     <!-- Run detail modal -->
