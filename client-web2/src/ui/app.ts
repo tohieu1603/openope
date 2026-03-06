@@ -363,6 +363,7 @@ export class OperisApp extends LitElement {
     "overview";
   // Agent config state
   @state() agentConfigForm: Record<string, unknown> | null = null;
+  @state() agentConfigBaseHash: string | null = null;
   @state() agentConfigLoading = false;
   @state() agentConfigSaving = false;
   @state() agentConfigDirty = false;
