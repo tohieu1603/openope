@@ -97,6 +97,57 @@ function resolveUniqueSkillCommandName(base: string, used: Set<string>): string 
   return fallback;
 }
 
+/**
+ * Scan a skills directory and auto-fix SKILL.md files missing YAML frontmatter.
+ * Infers `name` from parent directory name and `description` from first heading or paragraph.
+ * This ensures loadSkillsFromDir() can discover all skills even if created without frontmatter.
+ */
+function autoFixMissingFrontmatter(skillsDir: string): void {
+  try {
+    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillMd = path.join(skillsDir, entry.name, "SKILL.md");
+      let content: string;
+      try {
+        content = fs.readFileSync(skillMd, "utf-8");
+      } catch {
+        continue; // no SKILL.md in this subdirectory
+      }
+      const trimmed = content.trimStart();
+      if (trimmed.startsWith("---")) continue; // already has frontmatter
+
+      // Infer name from directory name
+      const name = entry.name;
+      // Infer description from first non-empty non-heading line, or first heading text
+      const lines = trimmed.split("\n");
+      let description = `Skill ${name}`;
+      for (const line of lines) {
+        const stripped = line.trim();
+        if (!stripped) continue;
+        const headingMatch = stripped.match(/^#+\s+(?:SKILL:\s*)?(.+)/);
+        if (headingMatch) {
+          // Skip generic "# SKILL: name" headings, look for descriptive content
+          continue;
+        }
+        if (stripped.startsWith("##")) {
+          // Skip section headings like "## Mô tả"
+          continue;
+        }
+        // First real content line is the description
+        description = stripped.slice(0, 200);
+        break;
+      }
+
+      const frontmatter = `---\nname: ${name}\ndescription: ${description}\n---\n\n`;
+      fs.writeFileSync(skillMd, frontmatter + content, "utf-8");
+      skillsLogger.info(`Auto-added frontmatter to ${skillMd}`, { name, description });
+    }
+  } catch {
+    // Directory doesn't exist or unreadable — skip silently
+  }
+}
+
 function loadSkillEntries(
   workspaceDir: string,
   opts?: {
@@ -135,6 +186,13 @@ function loadSkillEntries(
     config: opts?.config,
   });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
+
+  // Auto-fix SKILL.md files missing frontmatter before loading (workspace + managed + extra)
+  autoFixMissingFrontmatter(workspaceSkillsDir);
+  autoFixMissingFrontmatter(managedSkillsDir);
+  for (const dir of mergedExtraDirs) {
+    autoFixMissingFrontmatter(resolveUserPath(dir));
+  }
 
   const bundledSkills = bundledSkillsDir
     ? loadSkills({

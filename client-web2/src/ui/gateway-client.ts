@@ -210,12 +210,14 @@ export class GatewayBrowserClient {
 
     if (isSecureContext) {
       deviceIdentity = await loadOrCreateDeviceIdentity();
-      const storedToken = loadDeviceAuthToken({
-        deviceId: deviceIdentity.deviceId,
-        role,
-      })?.token;
-      authToken = storedToken ?? this.opts.token;
-      canFallbackToShared = Boolean(storedToken && this.opts.token);
+      // Only use stored device token when no URL token is available
+      if (!authToken) {
+        const storedToken = loadDeviceAuthToken({
+          deviceId: deviceIdentity.deviceId,
+          role,
+        })?.token;
+        authToken = storedToken;
+      }
     }
     const auth =
       authToken || this.opts.password
@@ -299,7 +301,8 @@ export class GatewayBrowserClient {
         } else {
           this.pendingConnectError = undefined;
         }
-        if (canFallbackToShared && deviceIdentity) {
+        // Always clear stale device token on connect failure
+        if (deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
