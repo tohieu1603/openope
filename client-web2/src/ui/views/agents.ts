@@ -12,6 +12,8 @@ import type {
   SkillStatusEntry,
   SkillStatusReport,
 } from "../agent-types";
+import type { AgentBinding } from "../app-agents-actions";
+import { getAgentBindings, getBindingsFromConfig } from "../app-agents-actions";
 import { formatCronPayload, formatCronSchedule, formatNextRun } from "../cron-presenter";
 import { formatAgo, formatMs } from "../format-utils";
 import { expandToolGroups, normalizeToolName, resolveToolProfilePolicy } from "../tool-policy";
@@ -66,6 +68,8 @@ export type AgentsProps = {
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
   onChannelsRefresh: () => void;
+  onAddBinding: (agentId: string, channelId: string, accountId?: string) => void;
+  onRemoveBinding: (bindingIndex: number) => void;
   onCronRefresh: () => void;
   onSkillsFilterChange: (next: string) => void;
   onSkillsRefresh: () => void;
@@ -1564,7 +1568,13 @@ export function renderAgents(props: AgentsProps) {
                     loading: props.channelsLoading,
                     error: props.channelsError,
                     lastSuccess: props.channelsLastSuccess,
+                    configDirty: props.configDirty,
+                    configSaving: props.configSaving,
                     onRefresh: props.onChannelsRefresh,
+                    onAddBinding: props.onAddBinding,
+                    onRemoveBinding: props.onRemoveBinding,
+                    onConfigSave: props.onConfigSave,
+                    onConfigReload: props.onConfigReload,
                   })
                 : nothing
             }
@@ -1624,6 +1634,7 @@ function renderAgentTabs(active: AgentsPanel, onSelect: (panel: AgentsPanel) => 
     { id: "files", label: "Files" },
     { id: "tools", label: "Tools" },
     { id: "skills", label: "Skills" },
+    { id: "channels", label: "Channels" },
   ];
   return html`
     <div class="agent-tabs">
@@ -1817,7 +1828,13 @@ function renderAgentChannels(params: {
   loading: boolean;
   error: string | null;
   lastSuccess: number | null;
+  configDirty: boolean;
+  configSaving: boolean;
   onRefresh: () => void;
+  onAddBinding: (agentId: string, channelId: string, accountId?: string) => void;
+  onRemoveBinding: (bindingIndex: number) => void;
+  onConfigSave: () => void;
+  onConfigReload: () => void;
 }) {
   const context = buildAgentContext(
     params.agent,
@@ -1828,6 +1845,16 @@ function renderAgentChannels(params: {
   );
   const entries = resolveChannelEntries(params.snapshot);
   const lastSuccessLabel = params.lastSuccess ? formatAgo(params.lastSuccess) : "never";
+
+  // Current agent bindings
+  const agentId = params.agent.id;
+  const agentBindings = getAgentBindings(params.configForm, agentId);
+  const allBindings = getBindingsFromConfig(params.configForm);
+
+  // Available channels for the add-binding dropdown (exclude already-bound ones)
+  const boundChannelIds = new Set(agentBindings.map((b) => b.match.channel?.toLowerCase()));
+  const availableChannels = entries.filter((e) => !boundChannelIds.has(e.id.toLowerCase()));
+
   return html`
     <section class="grid grid-cols-2">
       ${renderAgentContextCard(context, "Workspace, identity, and model configuration.")}
@@ -1882,7 +1909,103 @@ function renderAgentChannels(params: {
         }
       </section>
     </section>
+
+    <!-- Agent Channel Bindings -->
+    <section class="card" style="margin-top: 16px;">
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <div>
+          <div class="card-title">Channel Bindings</div>
+          <div class="card-sub">Gán agent <strong>${agentId}</strong> cho các kênh liên lạc.</div>
+        </div>
+        <div class="row" style="gap: 8px;">
+          ${
+            params.configDirty
+              ? html`
+                <button class="btn btn--sm" @click=${params.onConfigReload}>Hủy</button>
+                <button class="btn btn--sm btn--primary" ?disabled=${params.configSaving}
+                  @click=${params.onConfigSave}>
+                  ${params.configSaving ? "Đang lưu…" : "Lưu"}
+                </button>
+              `
+              : nothing
+          }
+        </div>
+      </div>
+
+      ${
+        agentBindings.length === 0
+          ? html`
+              <div class="muted" style="margin-top: 12px">Chưa có binding nào cho agent này.</div>
+            `
+          : html`
+          <div class="list" style="margin-top: 12px;">
+            ${agentBindings.map((binding) => {
+              // Find the global index for removal
+              const globalIndex = allBindings.findIndex(
+                (b) =>
+                  b.agentId?.toLowerCase() === agentId.toLowerCase() &&
+                  b.match.channel === binding.match.channel &&
+                  (b.match.accountId ?? "") === (binding.match.accountId ?? ""),
+              );
+              const channelLabel = resolveChannelLabelFromEntries(entries, binding.match.channel);
+              const parts = [channelLabel];
+              if (binding.match.accountId) parts.push(`account: ${binding.match.accountId}`);
+              if (binding.match.guildId) parts.push(`guild: ${binding.match.guildId}`);
+              if (binding.match.teamId) parts.push(`team: ${binding.match.teamId}`);
+              if (binding.match.peer)
+                parts.push(`${binding.match.peer.kind}: ${binding.match.peer.id}`);
+              return html`
+                <div class="list-item">
+                  <div class="list-main">
+                    <div class="list-title">${parts[0]}</div>
+                    <div class="list-sub mono">${parts.slice(1).join(" · ") || binding.match.channel}</div>
+                  </div>
+                  <button class="btn btn--sm btn--danger" title="Xóa binding"
+                    @click=${() => params.onRemoveBinding(globalIndex)}>
+                    Xóa
+                  </button>
+                </div>
+              `;
+            })}
+          </div>
+        `
+      }
+
+      <!-- Add binding -->
+      ${
+        availableChannels.length > 0
+          ? html`
+          <div class="row" style="margin-top: 12px; gap: 8px; align-items: center;">
+            <select id="add-binding-channel" class="input" style="flex: 1;">
+              <option value="">-- Chọn kênh --</option>
+              ${availableChannels.map((ch) => html`<option value="${ch.id}">${ch.label} (${ch.id})</option>`)}
+            </select>
+            <button class="btn btn--sm btn--primary" @click=${(e: Event) => {
+              const select = (e.target as HTMLElement).parentElement?.querySelector(
+                "select",
+              ) as HTMLSelectElement | null;
+              const channelId = select?.value;
+              if (channelId) {
+                params.onAddBinding(agentId, channelId);
+                if (select) select.value = "";
+              }
+            }}>Thêm</button>
+          </div>
+        `
+          : params.snapshot
+            ? html`
+                <div class="muted" style="margin-top: 12px">Tất cả kênh đã được gán.</div>
+              `
+            : nothing
+      }
+    </section>
   `;
+}
+
+/** Resolve channel label from pre-built entries list. */
+function resolveChannelLabelFromEntries(entries: ChannelSummaryEntry[], channelId: string): string {
+  const entry = entries.find((e) => e.id.toLowerCase() === channelId.toLowerCase());
+  return entry?.label ?? channelId;
 }
 
 // ─── Cron ────────────────────────────────────────────────

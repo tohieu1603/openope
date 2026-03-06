@@ -2,12 +2,34 @@ import type { Conversation } from "../../chat-api";
 import type { ModelEntry } from "./model-selector";
 import type { ThinkingLevel } from "./thinking-control";
 
+/** Content block inside a message (matches gateway format). */
+export type MessageContentItem = {
+  type: string;
+  text?: string;
+  /** Image source (base64 or URL) */
+  source?: { type: string; media_type?: string; data?: string };
+  /** Tool call fields */
+  name?: string;
+  args?: unknown;
+};
+
 export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  timestamp?: string | Date;
-  /** Base64 image previews attached to this message */
+  role: string; // "user" | "assistant" | "system" | "toolResult" etc.
+  content: string | MessageContentItem[];
+  timestamp?: number; // milliseconds (matches gateway)
+  id?: string;
+  /** Base64 image previews attached to this message (client-side only) */
   images?: Array<{ preview: string }>;
+}
+
+/** Extract plain text from a ChatMessage's content (handles both string and content blocks). */
+export function extractMessageText(content: string | MessageContentItem[]): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text!)
+    .join("\n");
 }
 
 export interface ToolCallInfo {

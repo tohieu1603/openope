@@ -277,6 +277,76 @@ export async function loadAgentChannels(host: AgentsHost) {
   }
 }
 
+// --- Agent-Channel Bindings ---
+
+export type AgentBinding = {
+  agentId: string;
+  match: {
+    channel: string;
+    accountId?: string;
+    peer?: { kind: "dm" | "group" | "channel"; id: string };
+    guildId?: string;
+    teamId?: string;
+  };
+};
+
+/** Extract current bindings from loaded config. */
+export function getBindingsFromConfig(configForm: Record<string, unknown> | null): AgentBinding[] {
+  if (!configForm) return [];
+  const bindings = configForm.bindings;
+  return Array.isArray(bindings) ? (bindings as AgentBinding[]) : [];
+}
+
+/** Get bindings filtered by agent ID. */
+export function getAgentBindings(
+  configForm: Record<string, unknown> | null,
+  agentId: string,
+): AgentBinding[] {
+  return getBindingsFromConfig(configForm).filter(
+    (b) => b.agentId?.toLowerCase() === agentId.toLowerCase(),
+  );
+}
+
+/** Add a binding for an agent to a channel and save via config.patch. */
+export async function handleAddBinding(
+  host: AgentsHost,
+  agentId: string,
+  channelId: string,
+  accountId?: string,
+) {
+  if (!host.agentConfigForm) {
+    showToast("Config chưa được tải", "error");
+    return;
+  }
+  const existing = getBindingsFromConfig(host.agentConfigForm);
+  // Check for duplicate
+  const isDuplicate = existing.some(
+    (b) =>
+      b.agentId?.toLowerCase() === agentId.toLowerCase() &&
+      b.match.channel?.toLowerCase() === channelId.toLowerCase() &&
+      (b.match.accountId ?? "") === (accountId ?? ""),
+  );
+  if (isDuplicate) {
+    showToast("Binding đã tồn tại", "error");
+    return;
+  }
+  const match: AgentBinding["match"] = { channel: channelId };
+  if (accountId) match.accountId = accountId;
+  const newBindings = [...existing, { agentId, match }];
+  host.agentConfigForm = { ...host.agentConfigForm, bindings: newBindings };
+  host.agentConfigDirty = true;
+}
+
+/** Remove a binding by index and save. */
+export function handleRemoveBinding(host: AgentsHost, bindingIndex: number) {
+  if (!host.agentConfigForm) return;
+  const existing = getBindingsFromConfig(host.agentConfigForm);
+  if (bindingIndex < 0 || bindingIndex >= existing.length) return;
+  const newBindings = existing.filter((_, i) => i !== bindingIndex);
+  host.agentConfigForm = { ...host.agentConfigForm, bindings: newBindings };
+  host.agentConfigDirty = true;
+}
+
 export async function loadAgentIdentity(host: AgentsHost, agentId: string) {
   host.agentIdentityLoading = true;
   host.agentIdentityError = null;
@@ -536,11 +606,11 @@ export async function handleSkillInstall(
   try {
     const client = await waitForConnection();
     showToast(`Đang cài đặt ${name}...`, "info");
-    const res = await client.request<{ message?: string }>(
-      "skills.install",
-      { name, installId, timeoutMs: 120_000 },
-      130_000, // client timeout must exceed server-side timeoutMs
-    );
+    const res = await client.request<{ message?: string }>("skills.install", {
+      name,
+      installId,
+      timeoutMs: 120_000,
+    });
     await loadSkills(host);
     host.skillsMessages = {
       ...host.skillsMessages,

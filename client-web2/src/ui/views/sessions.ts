@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { pathForTab } from "../navigation";
+import { resolveSessionFallbackName } from "./chat/chat-session-display";
 
 // Inline types (mirrored from original UI types)
 type GatewaySessionRow = {
@@ -121,6 +122,8 @@ export type SessionsProps = {
   includeGlobal: boolean;
   includeUnknown: boolean;
   basePath: string;
+  /** Available agents for session creation */
+  agents?: { id: string; name?: string }[];
   onFiltersChange: (next: {
     activeMinutes: string;
     limit: string;
@@ -139,6 +142,7 @@ export type SessionsProps = {
   ) => void;
   onDelete: (key: string) => void;
   onOpenSession: (key: string) => void;
+  onCreateSession?: (key: string) => void;
 };
 
 export function renderSessions(props: SessionsProps) {
@@ -453,6 +457,82 @@ export function renderSessions(props: SessionsProps) {
         background-size: 200% 100%;
         animation: ses-shimmer 1.5s infinite ease-in-out;
       }
+
+      /* ── Create session ── */
+      .ses-create {
+        border: 1px dashed var(--border); border-radius: 12px;
+        background: rgba(99,102,241,0.03); padding: 14px 16px;
+        transition: border-color 0.2s, background 0.2s;
+      }
+      .ses-create:hover {
+        border-color: rgba(99,102,241,0.3);
+        background: rgba(99,102,241,0.05);
+      }
+      .ses-create-row {
+        display: flex; gap: 8px; align-items: flex-end;
+      }
+      .ses-create-field {
+        display: flex; flex-direction: column; gap: 4px;
+      }
+      .ses-create-label {
+        font-size: 10px; font-weight: 600; color: var(--muted, #71717a);
+        text-transform: uppercase; letter-spacing: 0.06em;
+      }
+      .ses-create-type {
+        padding: 7px 10px; font-size: 13px;
+        border: 1px solid var(--border); border-radius: 8px;
+        background: var(--card); color: var(--text);
+        appearance: none; cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 8px center;
+        padding-right: 26px; min-width: 110px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .ses-create-type:focus {
+        outline: none; border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+      }
+      .ses-create-input {
+        flex: 1; padding: 7px 12px; font-size: 13px;
+        font-family: var(--mono, 'SF Mono', monospace);
+        border: 1px solid var(--border); border-radius: 8px;
+        background: transparent; color: var(--text);
+        transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+      }
+      .ses-create-input:disabled {
+        opacity: 0.5; cursor: not-allowed;
+      }
+      .ses-create-input:not(:disabled):focus {
+        outline: none; border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+      }
+      .ses-create-input::placeholder { color: var(--muted, #71717a); opacity: 0.5; }
+      .ses-create-btn {
+        padding: 7px 20px; font-size: 13px; font-weight: 600;
+        border: 1px solid var(--accent); border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), rgba(139,92,246,0.9));
+        color: #fff; cursor: pointer; white-space: nowrap;
+        transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+      }
+      .ses-create-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(99,102,241,0.3);
+      }
+      .ses-create-btn:active { transform: translateY(0) scale(0.97); }
+      .ses-create-agent {
+        padding: 7px 10px; font-size: 13px;
+        border: 1px solid var(--border); border-radius: 8px;
+        background: var(--card); color: var(--text);
+        appearance: none; cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 8px center;
+        padding-right: 26px; min-width: 120px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .ses-create-agent:focus {
+        outline: none; border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+      }
     </style>
 
     <div class="ses-wrap">
@@ -512,6 +592,81 @@ export function renderSessions(props: SessionsProps) {
         </button>
       </div>
 
+      <!-- Create new session -->
+      ${
+        props.onCreateSession
+          ? html`
+            <div class="ses-create" style="animation: ses-slide-in 0.4s ease-out;">
+              <div class="ses-create-row">
+                <div class="ses-create-field">
+                  <span class="ses-create-label">Agent</span>
+                  <select class="ses-create-agent">
+                    ${(props.agents ?? []).map(
+                      (a) => html`<option value=${a.id}>${a.name || a.id}</option>`,
+                    )}
+                    ${
+                      !props.agents || props.agents.length === 0
+                        ? html`
+                            <option value="main">main</option>
+                          `
+                        : nothing
+                    }
+                  </select>
+                </div>
+                <div class="ses-create-field">
+                  <span class="ses-create-label">Loại</span>
+                  <select class="ses-create-type"
+                    @change=${(e: Event) => {
+                      const type = (e.target as HTMLSelectElement).value;
+                      const row = (e.target as HTMLElement).closest(".ses-create-row")!;
+                      const input = row.querySelector<HTMLInputElement>(".ses-create-input");
+                      if (!input) return;
+                      if (type === "main") {
+                        input.value = "main";
+                        input.disabled = true;
+                      } else if (type === "subagent") {
+                        input.value = crypto.randomUUID().slice(0, 8);
+                        input.disabled = true;
+                      } else {
+                        input.value = "";
+                        input.disabled = false;
+                        input.focus();
+                      }
+                    }}>
+                    <option value="main">Main</option>
+                    <option value="custom">Custom</option>
+                    <option value="subagent">Subagent</option>
+                  </select>
+                </div>
+                <div class="ses-create-field" style="flex:1">
+                  <span class="ses-create-label">Session key</span>
+                  <input class="ses-create-input" placeholder="Nhập session key..."
+                    value="main" disabled />
+                </div>
+                <div class="ses-create-field">
+                  <span class="ses-create-label">&nbsp;</span>
+                  <button class="ses-create-btn" @click=${(e: Event) => {
+                    const row = (e.target as HTMLElement).closest(".ses-create-row")!;
+                    const agentId =
+                      row.querySelector<HTMLSelectElement>(".ses-create-agent")!.value;
+                    const type = row.querySelector<HTMLSelectElement>(".ses-create-type")!.value;
+                    const input = row.querySelector<HTMLInputElement>(".ses-create-input")!;
+                    const suffix = input.value.trim();
+                    if (!suffix) return;
+                    let key: string;
+                    if (type === "main") key = "agent:" + agentId + ":main";
+                    else if (type === "subagent")
+                      key = "agent:" + agentId + ":subagent:" + crypto.randomUUID();
+                    else key = "agent:" + agentId + ":" + suffix;
+                    props.onCreateSession!(key);
+                  }}>Tạo</button>
+                </div>
+              </div>
+            </div>
+          `
+          : nothing
+      }
+
       ${props.error ? html`<div class="ses-error">${props.error}</div>` : nothing}
       ${props.result ? html`<div class="ses-store">Kho: ${props.result.path}</div>` : nothing}
 
@@ -564,7 +719,7 @@ function renderCard(
   const thinkLevels = resolveThinkLevelOptions(row.modelProvider);
   const verbose = row.verboseLevel ?? "";
   const reasoning = row.reasoningLevel ?? "";
-  const name = row.label || shortName(row.key);
+  const name = row.label || row.displayName || resolveSessionFallbackName(row.key);
   const canLink = row.kind !== "global";
   const pct = tokenPercent(row);
   const alive = isAlive(row);

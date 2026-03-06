@@ -1,9 +1,14 @@
 import { t } from "../../i18n";
 import { icons, type IconName } from "../../icons";
 
-export function formatTime(timestamp?: string | Date): string {
+export function formatTime(timestamp?: string | Date | number): string {
   if (!timestamp) return "";
-  const date = typeof timestamp === "string" ? new Date(timestamp) : timestamp;
+  const date =
+    typeof timestamp === "number"
+      ? new Date(timestamp)
+      : typeof timestamp === "string"
+        ? new Date(timestamp)
+        : timestamp;
   const now = new Date();
   const time = date.toLocaleTimeString("vi-VN", {
     hour: "2-digit",

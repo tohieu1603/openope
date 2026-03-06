@@ -109,11 +109,9 @@ export async function waitZaloQrLogin(params?: {
 }): Promise<{ connected: boolean; message: string }> {
   const gw = await waitForConnection(5000);
   const serverTimeout = params?.timeoutMs ?? 120_000;
-  return gw.request<{ connected: boolean; message: string }>(
-    "web.login.wait",
-    { timeoutMs: serverTimeout },
-    serverTimeout + 10_000, // client timeout must exceed server-side timeout
-  );
+  return gw.request<{ connected: boolean; message: string }>("web.login.wait", {
+    timeoutMs: serverTimeout,
+  });
 }
 
 // Check if a specific channel is configured (has credentials)

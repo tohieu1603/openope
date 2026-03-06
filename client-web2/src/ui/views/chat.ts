@@ -17,12 +17,14 @@ import { renderThinkingControl, type ThinkingLevel } from "./chat/thinking-contr
 
 export type {
   ChatMessage,
+  MessageContentItem,
   ToolCallInfo,
   QueueItem,
   PendingImage,
   ChatProps,
 } from "./chat/chat-types";
 import type { ChatProps } from "./chat/chat-types";
+import { extractMessageText } from "./chat/chat-types";
 
 export function renderChat(props: ChatProps) {
   const {
@@ -331,46 +333,34 @@ export function renderChat(props: ChatProps) {
                   ${icons.chevronDown}
                 </button>
                 <div class="gc-messages" @scroll=${handleScrollCheck}>
-                  ${messages.map(
-                    (msg, i) => html`
+                  ${messages.map((msg, i) => {
+                    const text = extractMessageText(msg.content);
+                    const isUser = msg.role === "user";
+                    return html`
                       <div class="gc-message gc-message--${msg.role}${i === messages.length - 1 ? " gc-message--new" : ""}">
                         <div class="gc-avatar gc-avatar--${msg.role}">
-                          ${msg.role === "user" ? icons.user : icons.sparkles}
+                          ${isUser ? icons.user : icons.sparkles}
                         </div>
-                        <div
-                          class="gc-content ${
-                            msg.role === "user" ? "gc-user-content" : "gc-assistant-content"
-                          }"
-                        >
+                        <div class="gc-content ${isUser ? "gc-user-content" : "gc-assistant-content"}">
                           <div class="gc-meta">
-                            <span class="gc-name"
-                              >${msg.role === "user" ? displayName : botName}</span
-                            >
-                            ${
-                              msg.timestamp
-                                ? html`<span class="gc-time"
-                                  >${formatTime(msg.timestamp)}</span
-                                >`
-                                : nothing
-                            }
+                            <span class="gc-name">${isUser ? displayName : botName}</span>
+                            ${msg.timestamp ? html`<span class="gc-time">${formatTime(msg.timestamp)}</span>` : nothing}
                           </div>
                           <div class="gc-bubble">
                             ${
                               msg.images?.length
-                                ? html`
-                              <div class="gc-bubble-images">
-                                ${msg.images.map((img) => html`<img src=${img.preview} alt="Ảnh đính kèm" />`)}
-                              </div>
-                            `
+                                ? html`<div class="gc-bubble-images">
+                                  ${msg.images.map((img) => html`<img src=${img.preview} alt="Ảnh đính kèm" />`)}
+                                </div>`
                                 : nothing
                             }
-                            ${msg.content ? renderMarkdown(msg.content) : nothing}
+                            ${text ? renderMarkdown(text) : nothing}
                           </div>
                           <div class="gc-message-actions">
                             <button type="button" class="gc-msg-action-btn" title="Sao chép"
                               @click=${(e: Event) => {
                                 const btn = e.currentTarget as HTMLElement;
-                                navigator.clipboard.writeText(msg.content).then(() => {
+                                navigator.clipboard.writeText(text).then(() => {
                                   btn.classList.add("gc-msg-action-btn--done");
                                   btn.innerHTML =
                                     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -387,8 +377,8 @@ export function renderChat(props: ChatProps) {
                           </div>
                         </div>
                       </div>
-                    `,
-                  )}
+                    `;
+                  })}
                   ${
                     sending
                       ? html`

@@ -1,11 +1,29 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveOAuthDir, resolveStateDir, STATE_DIR } from "./config/paths.js";
+import { resolveOAuthDir } from "./config/paths.js";
 import { logVerbose, shouldLogVerbose } from "./globals.js";
+import {
+  expandHomePrefix,
+  resolveEffectiveHomeDir,
+  resolveRequiredHomeDir,
+} from "./infra/home-dir.js";
+import { isPlainObject } from "./infra/plain-object.js";
 
 export async function ensureDir(dir: string) {
   await fs.promises.mkdir(dir, { recursive: true });
+}
+
+/**
+ * Check if a file or directory exists at the given path.
+ */
+export async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.promises.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clampNumber(value: number, min: number, max: number): number {
@@ -14,6 +32,37 @@ export function clampNumber(value: number, min: number, max: number): number {
 
 export function clampInt(value: number, min: number, max: number): number {
   return clampNumber(Math.floor(value), min, max);
+}
+
+/** Alias for clampNumber (shorter, more common name) */
+export const clamp = clampNumber;
+
+/**
+ * Escapes special regex characters in a string so it can be used in a RegExp constructor.
+ */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Safely parse JSON, returning null on error instead of throwing.
+ */
+export function safeParseJson<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export { isPlainObject };
+
+/**
+ * Type guard for Record<string, unknown> (less strict than isPlainObject).
+ * Accepts any non-null object that isn't an array.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export type WebChannel = "web";
@@ -234,55 +283,74 @@ export function truncateUtf16Safe(input: string, maxLen: number): string {
 }
 
 export function resolveUserPath(input: string): string {
+  if (!input) {
+    return "";
+  }
   const trimmed = input.trim();
   if (!trimmed) {
     return trimmed;
   }
   if (trimmed.startsWith("~")) {
-    const expanded = trimmed.replace(/^~(?=$|[\\/])/, os.homedir());
+    const expanded = expandHomePrefix(trimmed, {
+      home: resolveRequiredHomeDir(process.env, os.homedir),
+      env: process.env,
+      homedir: os.homedir,
+    });
     return path.resolve(expanded);
   }
   return path.resolve(trimmed);
 }
 
-/** @deprecated Use STATE_DIR from config/paths.ts instead. Kept for backward compat. */
 export function resolveConfigDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = os.homedir,
 ): string {
-  return resolveStateDir(env, homedir);
+  const override = env.OPENCLAW_STATE_DIR?.trim() || env.CLAWDBOT_STATE_DIR?.trim();
+  if (override) {
+    return resolveUserPath(override);
+  }
+  const newDir = path.join(resolveRequiredHomeDir(env, homedir), ".openclaw");
+  try {
+    const hasNew = fs.existsSync(newDir);
+    if (hasNew) {
+      return newDir;
+    }
+  } catch {
+    // best-effort
+  }
+  return newDir;
 }
 
 export function resolveHomeDir(): string | undefined {
-  const envHome = process.env.HOME?.trim();
-  if (envHome) {
-    return envHome;
-  }
-  const envProfile = process.env.USERPROFILE?.trim();
-  if (envProfile) {
-    return envProfile;
-  }
-  try {
-    const home = os.homedir();
-    return home?.trim() ? home : undefined;
-  } catch {
+  return resolveEffectiveHomeDir(process.env, os.homedir);
+}
+
+function resolveHomeDisplayPrefix(): { home: string; prefix: string } | undefined {
+  const home = resolveHomeDir();
+  if (!home) {
     return undefined;
   }
+  const explicitHome = process.env.OPENCLAW_HOME?.trim();
+  if (explicitHome) {
+    return { home, prefix: "$OPENCLAW_HOME" };
+  }
+  return { home, prefix: "~" };
 }
 
 export function shortenHomePath(input: string): string {
   if (!input) {
     return input;
   }
-  const home = resolveHomeDir();
-  if (!home) {
+  const display = resolveHomeDisplayPrefix();
+  if (!display) {
     return input;
   }
+  const { home, prefix } = display;
   if (input === home) {
-    return "~";
+    return prefix;
   }
-  if (input.startsWith(`${home}/`)) {
-    return `~${input.slice(home.length)}`;
+  if (input.startsWith(`${home}/`) || input.startsWith(`${home}\\`)) {
+    return `${prefix}${input.slice(home.length)}`;
   }
   return input;
 }
@@ -291,11 +359,11 @@ export function shortenHomeInString(input: string): string {
   if (!input) {
     return input;
   }
-  const home = resolveHomeDir();
-  if (!home) {
+  const display = resolveHomeDisplayPrefix();
+  if (!display) {
     return input;
   }
-  return input.split(home).join("~");
+  return input.split(display.home).join(display.prefix);
 }
 
 export function displayPath(input: string): string {
@@ -322,5 +390,5 @@ export function formatTerminalLink(
   return `\u001b]8;;${safeUrl}\u0007${safeLabel}\u001b]8;;\u0007`;
 }
 
-// Configuration root; canonical alias for STATE_DIR.
-export const CONFIG_DIR = STATE_DIR;
+// Configuration root; can be overridden via OPENCLAW_STATE_DIR.
+export const CONFIG_DIR = resolveConfigDir();

@@ -25,9 +25,9 @@ export const NAV_ITEMS: Array<{
 }> = [
   {
     tab: "chat",
-    label: "Chat",
+    label: "Trò chuyện",
     icon: "messageSquare",
-    description: "Direct gateway chat session for quick interventions.",
+    description: "Trò chuyện trực tiếp với AI",
     section: "main",
   },
   {

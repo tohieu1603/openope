@@ -112,7 +112,7 @@ export async function toggleWorkflow(id: string, enabled: boolean): Promise<bool
 export async function runWorkflow(id: string): Promise<boolean> {
   try {
     const client = await waitForConnection();
-    await client.request("cron.run", { id, mode: "force" }, 600_000);
+    await client.request("cron.run", { id, mode: "force" });
     return true;
   } catch (error) {
     console.error("Failed to run workflow:", error);
