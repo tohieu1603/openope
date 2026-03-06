@@ -16,6 +16,7 @@ import type { DailyUsage, TypeUsage, UsageStats } from "./analytics-api";
 import type { PricingTier, DepositOrder } from "./deposits-api";
 import type { FeedbackReport } from "./report-api";
 import type { UserProfile } from "./user-api";
+import type { PendingImage, ChatMessage } from "./views/chat/chat-types";
 import type { ReportFormState } from "./views/report";
 import type { WorkflowStatus } from "./workflow-api";
 import type { Workflow, WorkflowFormState, CronProgressState } from "./workflow-types";
@@ -24,7 +25,21 @@ import * as analytics from "./app-analytics-actions";
 // Domain action modules
 import * as billing from "./app-billing-actions";
 import * as channel from "./app-channel-actions";
+import {
+  handleSendMessage as chatSendMessage,
+  handleStopChat as chatStopChat,
+  removeQueuedMessage as chatRemoveQueuedMessage,
+  cacheChatMessages as chatCacheMsgs,
+  restoreCachedMessages as chatRestoreMsgs,
+} from "./app-chat";
 import * as config from "./app-config-actions";
+import {
+  handleChatStreamEvent as gwHandleChatStream,
+  handleToolEvent as gwHandleTool,
+  handleLifecycleEvent as gwHandleLifecycle,
+  handleCompactionEvent as gwHandleCompaction,
+  handleReconnect as gwHandleReconnect,
+} from "./app-gateway";
 import * as settings from "./app-settings-actions";
 import * as workflow from "./app-workflow-actions";
 import {
@@ -48,7 +63,7 @@ import {
 import { getConversations, deleteConversation, type Conversation } from "./chat-api";
 import { showConfirm } from "./components/operis-confirm";
 import { showToast } from "./components/operis-toast";
-import { stripThinkingTags } from "./format";
+import { loadChatHistory } from "./controllers/chat";
 import {
   subscribeToCronEvents,
   subscribeToChatStream,
@@ -57,7 +72,6 @@ import {
   subscribeToCompactionEvents,
   stopGatewayClient,
   waitForConnection,
-  getGatewayClient,
   onGatewayReconnect,
   type CronEvent,
   type ChatStreamEvent,
@@ -77,13 +91,12 @@ import {
   type ResolvedTheme,
 } from "./theme";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
-import { getTokenBalance } from "./tokens-api";
 import { startUsageTracker, stopUsageTracker, reportCronUsage } from "./usage-tracker";
 import { renderAgents } from "./views/agents";
 import { renderAnalytics } from "./views/analytics";
 import { renderBilling } from "./views/billing";
 import { renderChannels } from "./views/channels";
-import { renderChat, type PendingImage } from "./views/chat";
+import { renderChat } from "./views/chatsend/chat-view";
 import { renderDocs } from "./views/docs";
 import { renderLogin } from "./views/login";
 // Register custom components
@@ -125,7 +138,7 @@ function titleForTab(tab: Tab): string {
 // Get page subtitle
 function subtitleForTab(tab: Tab): string {
   const subtitles: Record<Tab, string> = {
-    chat: "Phiên chat trực tiếp với gateway",
+    chat: "Trò chuyện trực tiếp với AI",
     analytics: "Xem thống kê sử dụng và chi phí",
     workflow: "Tự động hóa tác vụ với AI theo lịch",
     billing: "Xem sử dụng và quản lý gói",
@@ -150,13 +163,8 @@ export class OperisApp extends LitElement {
   @state() theme: ThemeMode = this.settings.theme ?? "system";
   @state() themeResolved: ResolvedTheme = "dark";
 
-  // Chat state
-  @state() chatMessages: Array<{
-    role: "user" | "assistant";
-    content: string;
-    timestamp?: Date;
-    images?: Array<{ preview: string }>;
-  }> = [];
+  // Chat state (messages use gateway format: content blocks or string)
+  @state() chatMessages: Array<ChatMessage> = [];
   @state() chatDraft = "";
   @state() chatSending = false;
   @state() chatConversationId: string | null = null;
@@ -175,6 +183,7 @@ export class OperisApp extends LitElement {
     output?: string;
   }> = [];
   @state() chatPendingImages: PendingImage[] = [];
+  @state() chatAttachments: Array<{ id: string; dataUrl: string; mimeType: string }> = [];
   // Session token tracking
   @state() chatSessionTokens = 0;
   // Thinking level from gateway session (off | low | medium | high)
@@ -190,12 +199,7 @@ export class OperisApp extends LitElement {
   @state() chatModelsLoading = false;
   @state() chatCurrentModel: string | null = null;
   // Current chat run ID for abort
-  private chatRunId: string | null = null;
-  // Run dedup maps (matching TUI tui-event-handlers.ts)
-  private finalizedRuns = new Map<string, number>();
-  private sessionRuns = new Map<string, number>();
-  private localRunIds = new Set<string>();
-  private lastTrackedSessionKey: string | null = null;
+  chatRunId: string | null = null;
   // Lifecycle subscription cleanup
   private lifecycleEventUnsubscribe: (() => void) | null = null;
   // Chat queue — messages sent while busy, flushed after final (like original UI)
@@ -207,7 +211,8 @@ export class OperisApp extends LitElement {
   }> = [];
   // Compaction status (agent compressing context)
   @state() chatCompactionActive = false;
-  private compactionClearTimer: ReturnType<typeof setTimeout> | null = null;
+  @state() chatAtBottom = true;
+  compactionClearTimer: ReturnType<typeof setTimeout> | null = null;
   private compactionEventUnsubscribe: (() => void) | null = null;
   // Chat sidebar state
   @state() chatConversations: Conversation[] = [];
@@ -539,21 +544,7 @@ export class OperisApp extends LitElement {
     // Reload current tab data when gateway WS reconnects after a drop
     // (Original: onHello silently resets orphaned chat run state, then refreshes active tab)
     this.reconnectUnsubscribe = onGatewayReconnect(() => {
-      console.log(
-        "[chat] WS reconnected — chatRunId:",
-        this.chatRunId,
-        "chatSending:",
-        this.chatSending,
-      );
-      // Keep chatRunId alive across reconnects — the gateway agent may still be running.
-      // Stream events will resume on the new WS connection and auto-assign chatRunId if needed.
-      // Only clear transient streaming state, not the run tracking.
-      this.chatStreamingText = "";
-      this.chatStreamingRunId = null;
-      this.chatToolCalls = [];
-      // Clear dedup maps so re-delivered events are not dropped
-      this.finalizedRuns.clear();
-      this.sessionRuns.clear();
+      gwHandleReconnect(this);
       this.loadTabData(this.tab);
     });
 
@@ -684,445 +675,36 @@ export class OperisApp extends LitElement {
     }
   }
 
-  // --- Run tracking helpers (matching TUI tui-event-handlers.ts) ---
-
-  /** Prune a run map when it exceeds 200 entries (keep 150, evict oldest). */
-  private pruneRunMap(runs: Map<string, number>) {
-    if (runs.size <= 200) return;
-    const keepUntil = Date.now() - 10 * 60 * 1000;
-    for (const [key, ts] of runs) {
-      if (runs.size <= 150) break;
-      if (ts < keepUntil) runs.delete(key);
-    }
-    if (runs.size > 200) {
-      for (const key of runs.keys()) {
-        runs.delete(key);
-        if (runs.size <= 150) break;
-      }
-    }
-  }
-
-  /** Clear run maps when session changes (like TUI syncSessionKey). */
-  private syncRunTracking() {
-    const currentKey = this.chatConversationId || "main";
-    if (currentKey === this.lastTrackedSessionKey) return;
-    this.lastTrackedSessionKey = currentKey;
-    this.finalizedRuns.clear();
-    this.sessionRuns.clear();
-    this.localRunIds.clear();
-  }
-
-  private noteSessionRun(runId: string) {
-    this.sessionRuns.set(runId, Date.now());
-    this.pruneRunMap(this.sessionRuns);
-  }
-
-  private noteFinalizedRun(runId: string) {
-    this.finalizedRuns.set(runId, Date.now());
-    this.sessionRuns.delete(runId);
-    this.localRunIds.delete(runId);
-    this.pruneRunMap(this.finalizedRuns);
-  }
-
-  /** Check if a run is known (active, in-session, or recently finalized). */
-  private isKnownRun(runId: string): boolean {
-    return runId === this.chatRunId || this.sessionRuns.has(runId) || this.finalizedRuns.has(runId);
-  }
+  // --- Event handlers — delegated to app-gateway.ts / app-chat.ts ---
 
   private handleToolEvent(evt: ToolEvent) {
-    // Filter by known runs (like TUI: active + sessionRuns + finalizedRuns)
-    if (!this.isKnownRun(evt.runId)) return;
-    const { phase, toolCallId, name, isError, args, result, partialResult } = evt.data;
-    if (!toolCallId) return;
-
-    const detail = this.extractToolDetail(name, args);
-    // Capture tool output (like original formatToolOutput)
-    const rawOutput = phase === "result" ? result : phase === "update" ? partialResult : undefined;
-    const output = rawOutput !== undefined ? this.formatToolOutput(rawOutput) : undefined;
-
-    const existing = this.chatToolCalls.findIndex((t) => t.id === toolCallId);
-    if (phase === "start" && existing < 0) {
-      this.chatToolCalls = [
-        ...this.chatToolCalls,
-        { id: toolCallId, name: name ?? "tool", phase: "start", detail },
-      ];
-    } else if (existing >= 0) {
-      const updated = [...this.chatToolCalls];
-      updated[existing] = {
-        ...updated[existing],
-        phase,
-        isError,
-        ...(detail ? { detail } : {}),
-        ...(output !== undefined ? { output } : {}),
-      };
-      this.chatToolCalls = updated;
-    }
-
-    // Trim to 50 entries max (like original TOOL_STREAM_LIMIT)
-    if (this.chatToolCalls.length > 50) {
-      this.chatToolCalls = this.chatToolCalls.slice(-50);
-    }
-  }
-
-  /** Format tool output to string (like original formatToolOutput). */
-  private formatToolOutput(value: unknown): string | undefined {
-    if (value === null || value === undefined) return undefined;
-    if (typeof value === "string") return value.slice(0, 120_000);
-    if (typeof value === "number" || typeof value === "boolean") return String(value);
-    // Extract text from content blocks
-    if (typeof value === "object") {
-      const rec = value as Record<string, unknown>;
-      if (typeof rec.text === "string") return rec.text.slice(0, 120_000);
-      if (Array.isArray(rec.content)) {
-        const parts = (rec.content as Array<Record<string, unknown>>)
-          .filter((item) => item.type === "text" && typeof item.text === "string")
-          .map((item) => item.text as string);
-        if (parts.length > 0) return parts.join("\n").slice(0, 120_000);
-      }
-    }
-    // Safety: limit stringify to avoid freezing on huge objects
-    try {
-      const json = JSON.stringify(
-        value,
-        (_key, v) => {
-          if (typeof v === "string" && v.length > 10_000) return v.slice(0, 10_000) + "…";
-          return v;
-        },
-        2,
-      );
-      return json.slice(0, 120_000);
-    } catch {
-      return String(value).slice(0, 120_000);
-    }
-  }
-
-  /** Extract a short human-readable detail from tool args (e.g. "navigate · google.com") */
-  private extractToolDetail(name: string | undefined, args: unknown): string | undefined {
-    if (!args || typeof args !== "object") return undefined;
-    const a = args as Record<string, unknown>;
-
-    // Browser tool: action + url/value
-    if (name === "browser") {
-      const action = typeof a.action === "string" ? a.action : undefined;
-      if (!action) return undefined;
-      const url = typeof a.url === "string" ? a.url : undefined;
-      if (url) {
-        try {
-          const host = new URL(url).hostname.replace(/^www\./, "");
-          return `${action} · ${host}`;
-        } catch {
-          return `${action} · ${url.slice(0, 40)}`;
-        }
-      }
-      const value = typeof a.value === "string" ? a.value : undefined;
-      if (value) return `${action} · ${value.slice(0, 40)}`;
-      const ref = typeof a.ref === "string" ? a.ref : undefined;
-      if (ref) return `${action} · ${ref}`;
-      return action;
-    }
-
-    // Shell/bash tools: show command snippet
-    if (name === "shell" || name === "bash" || name === "execute_command") {
-      const cmd = typeof a.command === "string" ? a.command : undefined;
-      if (cmd) return cmd.length > 50 ? cmd.slice(0, 47) + "…" : cmd;
-    }
-
-    // File tools: show path
-    if (name === "read_file" || name === "write_file" || name === "edit_file") {
-      const path =
-        typeof a.path === "string"
-          ? a.path
-          : typeof a.file_path === "string"
-            ? a.file_path
-            : undefined;
-      if (path) {
-        const short = path.split("/").slice(-2).join("/");
-        return short;
-      }
-    }
-
-    // Search tools
-    if (name === "search" || name === "grep" || name === "web_search") {
-      const query =
-        typeof a.query === "string"
-          ? a.query
-          : typeof a.pattern === "string"
-            ? a.pattern
-            : undefined;
-      if (query) return query.length > 50 ? query.slice(0, 47) + "…" : query;
-    }
-
-    // Generic: try action field
-    const action = typeof a.action === "string" ? a.action : undefined;
-    if (action) return action;
-
-    return undefined;
+    gwHandleTool(this, evt);
   }
 
   private handleChatStreamEvent(evt: ChatStreamEvent) {
-    // SSE streaming sets chatStreamingRunId = "sse-stream", skip WS events in that case
-    if (this.chatStreamingRunId === "sse-stream") return;
-    this.syncRunTracking();
-    // Filter by session key (like TUI: only process events for active session)
-    // Gateway broadcasts the exact sessionKey the client sent in chat.send, so compare
-    // using the same format. Normalize both to full key to handle "main" vs "agent:main:main".
-    if (evt.sessionKey) {
-      const evtKey = this.normalizeSessionKey(evt.sessionKey);
-      const currentKey = this.normalizeSessionKey(this.chatConversationId || "main");
-      if (evtKey !== currentKey) return;
-    }
-    // Dedup: skip delta/final for already-finalized runs (composite key: sessionKey+runId)
-    const dedupKey = `${evt.sessionKey || ""}:${evt.runId}`;
-    if (this.finalizedRuns.has(dedupKey)) {
-      if (evt.state === "delta" || evt.state === "final") return;
-    }
-    this.noteSessionRun(dedupKey);
-    // Cross-run guard (like TUI): if event is for a DIFFERENT run than the active one,
-    // only reload history on final — don't corrupt active stream state.
-    if (this.chatRunId && evt.runId !== this.chatRunId) {
-      if (evt.state === "final" || evt.state === "aborted" || evt.state === "error") {
-        this.noteFinalizedRun(dedupKey);
-        this.loadChatMessagesFromGateway();
-      }
-      return;
-    }
-
-    // Auto-assign chatRunId only for delta events (not final/error/aborted).
-    // A late final from a duplicate broadcast must NOT re-assign chatRunId after it was cleared.
-    if (!this.chatRunId) {
-      if (evt.state === "delta") {
-        this.chatRunId = evt.runId;
-      } else {
-        // final/error/aborted without active run — just reload history, don't track
-        if (evt.state === "final" || evt.state === "error") {
-          this.loadChatMessagesFromGateway();
-        }
-        return;
-      }
-    }
-
-    if (evt.state === "delta" && evt.message?.content) {
-      const text = evt.message.content
-        .filter((block) => block.type === "text" && block.text)
-        .map((block) => block.text)
-        .join("");
-
-      // Monotone guard: only update if new text is longer (prevents out-of-order regression)
-      if (text.length >= this.chatStreamingText.length) {
-        this.chatStreamingText = text;
-      }
-      this.chatStreamingRunId = evt.runId;
-    } else if (evt.state === "final") {
-      this.handleChatFinal(evt, dedupKey);
-    } else if (evt.state === "aborted") {
-      console.log("[chat] stream aborted — runId:", evt.runId);
-      this.noteFinalizedRun(dedupKey);
-      this.chatRunId = null;
-      this.chatStreamingText = "";
-      this.chatStreamingRunId = null;
-      this.chatToolCalls = [];
-      this.chatSending = false;
-      // Reload history if not a local run (event from another client)
-      if (!this.localRunIds.has(evt.runId)) {
-        this.loadChatMessagesFromGateway();
-      }
-      this.flushChatQueue();
-    } else if (evt.state === "error") {
-      console.log("[chat] stream error — runId:", evt.runId, "msg:", evt.errorMessage);
-      const errorMsg = evt.errorMessage || "Có lỗi xảy ra khi xử lý tin nhắn";
-      this.chatMessages = [
-        ...this.chatMessages,
-        { role: "assistant", content: `⚠️ ${errorMsg}`, timestamp: new Date() },
-      ];
-      this.noteFinalizedRun(dedupKey);
-      this.chatRunId = null;
-      this.chatStreamingText = "";
-      this.chatStreamingRunId = null;
-      this.chatToolCalls = [];
-      this.chatSending = false;
-      if (!this.localRunIds.has(evt.runId)) {
-        this.loadChatMessagesFromGateway();
-      }
-      this.flushChatQueue();
-    }
+    gwHandleChatStream(this, evt);
   }
 
-  /** Handle agent lifecycle events (start/end/error) like TUI. */
   private handleLifecycleEvent(evt: LifecycleEvent) {
-    // Only process for active run (like TUI)
-    if (evt.runId !== this.chatRunId) return;
-    const phase = evt.data?.phase;
-    if (phase === "start") {
-      // Agent started running — chatRunId is already set
-    } else if (phase === "end") {
-      // Agent finished — final chat event will handle cleanup
-    } else if (phase === "error") {
-      // Agent errored — final/error chat event will handle cleanup
-    }
+    gwHandleLifecycle(this, evt);
   }
-
-  /** Handle final chat event — append message, reset state, flush queue (like TUI). */
-  private handleChatFinal(evt: ChatStreamEvent, dedupKey?: string) {
-    console.log("[chat] stream final — runId:", evt.runId);
-    const finalText =
-      evt.message?.content
-        ?.filter((block) => block.type === "text" && block.text)
-        .map((block) => block.text)
-        .join("") || this.chatStreamingText;
-
-    // If not a local run, reload history to get server-side formatting
-    if (!this.localRunIds.has(evt.runId)) {
-      this.loadChatMessagesFromGateway();
-    } else if (finalText) {
-      this.chatMessages = [
-        ...this.chatMessages,
-        { role: "assistant", content: finalText, timestamp: new Date() },
-      ];
-    }
-
-    // Accumulate WS token usage
-    const wsUsage = evt.usage ?? evt.message?.usage;
-    if (wsUsage) {
-      this.chatSessionTokens +=
-        wsUsage.totalTokens || (wsUsage.input || 0) + (wsUsage.output || 0) || 0;
-    }
-
-    this.noteFinalizedRun(dedupKey ?? evt.runId);
-    this.chatRunId = null;
-    this.chatStreamingText = "";
-    this.chatStreamingRunId = null;
-    this.chatToolCalls = [];
-    this.chatSending = false;
-
-    // Cache to sessionStorage as backup.
-    this.cacheChatMessages();
-
-    // Refresh session selector (new sessions may have been created)
-    this.loadGatewaySessions();
-
-    // Flush queued messages (like original flushChatQueueForEvent)
-    this.flushChatQueue();
-
-    // Fetch updated token balance (fire-and-forget)
-    getTokenBalance()
-      .then((bal) => {
-        this.chatTokenBalance = bal.balance;
-        if (this.currentUser) {
-          this.currentUser = { ...this.currentUser, token_balance: bal.balance };
-        }
-      })
-      .catch(() => {});
-  }
-
-  // --- Chat message cache (localStorage — survives reload AND shared across tabs) ---
-  private static readonly CHAT_CACHE_KEY = "operis-chat-messages";
-
-  /** Save current messages to localStorage so they survive page reload and sync across tabs. */
-  private cacheChatMessages() {
-    try {
-      const sessionKey = this.chatConversationId || "main";
-      const data = {
-        sessionKey,
-        cachedAt: Date.now(),
-        messages: this.chatMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp?.toISOString(),
-        })),
-      };
-      localStorage.setItem(OperisApp.CHAT_CACHE_KEY, JSON.stringify(data));
-    } catch {
-      /* ignore quota errors */
-    }
-  }
-
-  /** Restore messages from localStorage cache (returns true if cache was used). */
-  private restoreCachedMessages(): boolean {
-    try {
-      const raw = localStorage.getItem(OperisApp.CHAT_CACHE_KEY);
-      if (!raw) return false;
-      const data = JSON.parse(raw);
-      const sessionKey = this.chatConversationId || "main";
-      if (data.sessionKey !== sessionKey) return false;
-      if (!Array.isArray(data.messages) || data.messages.length === 0) return false;
-      // Skip stale cache (older than 24h)
-      if (data.cachedAt && Date.now() - data.cachedAt > 24 * 60 * 60 * 1000) return false;
-      this.chatMessages = data.messages.map((m: Record<string, string>) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-        timestamp: m.timestamp ? new Date(m.timestamp) : undefined,
-      }));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // --- Chat queue (like original app-chat.ts) ---
-
-  /** Check if chat is busy (sending request OR waiting for run to finish). */
-  private isChatBusy() {
-    return this.chatSending || Boolean(this.chatRunId);
-  }
-
-  /** Add message to queue (sent when current run finishes). Max 20 items. */
-  private enqueueChatMessage(text: string, images?: PendingImage[]) {
-    const trimmed = text.trim();
-    if (!trimmed && (!images || images.length === 0)) return;
-    if (this.chatQueue.length >= 20) {
-      console.warn("[chat] queue full, dropping oldest message");
-      this.chatQueue = this.chatQueue.slice(1);
-    }
-    this.chatQueue = [
-      ...this.chatQueue,
-      { id: crypto.randomUUID(), text: trimmed, createdAt: Date.now(), images },
-    ];
-  }
-
-  /** Flush first queued message — called after final/aborted events (like original). */
-  private async flushChatQueue() {
-    if (this.isChatBusy() || this.chatQueue.length === 0) return;
-    const [next, ...rest] = this.chatQueue;
-    this.chatQueue = rest;
-    try {
-      // Re-use handleSendMessage logic but with queued content
-      this.chatDraft = next.text;
-      this.chatPendingImages = next.images ?? [];
-      await this.handleSendMessage();
-    } catch (err) {
-      console.error("[chat] queue flush failed:", err);
-    }
-    // If send failed (chatSending still false), always restore message to queue
-    if (!this.chatSending && !this.isChatBusy()) {
-      this.chatDraft = "";
-      this.chatPendingImages = [];
-      this.chatQueue = [next, ...this.chatQueue];
-    }
-  }
-
-  /** Remove a queued message by id (like original removeQueuedMessage). */
-  private removeQueuedMessage(id: string) {
-    this.chatQueue = this.chatQueue.filter((item) => item.id !== id);
-  }
-
-  // --- Compaction event handler (like original app-tool-stream.ts) ---
 
   private handleCompactionEvent(evt: CompactionEvent) {
-    // Clear any existing auto-dismiss timer
-    if (this.compactionClearTimer) {
-      clearTimeout(this.compactionClearTimer);
-      this.compactionClearTimer = null;
-    }
-    if (evt.phase === "start") {
-      this.chatCompactionActive = true;
-    } else if (evt.phase === "end") {
-      this.chatCompactionActive = false;
-      // Auto-clear after 5s (like original COMPACTION_TOAST_DURATION_MS)
-      this.compactionClearTimer = setTimeout(() => {
-        this.chatCompactionActive = false;
-        this.compactionClearTimer = null;
-      }, 5000);
-    }
+    gwHandleCompaction(this, evt);
+  }
+
+  // --- Chat helpers — delegated to app-chat.ts ---
+
+  cacheChatMessages() {
+    chatCacheMsgs(this);
+  }
+
+  private restoreCachedMessages(): boolean {
+    return chatRestoreMsgs(this);
+  }
+
+  private removeQueuedMessage(id: string) {
+    chatRemoveQueuedMessage(this, id);
   }
 
   private static _lastRestoreMs = 0;
@@ -1344,7 +926,7 @@ export class OperisApp extends LitElement {
   }
 
   /** Load available sessions from gateway for session selector dropdown */
-  private async loadGatewaySessions() {
+  async loadGatewaySessions() {
     try {
       const gw = await waitForConnection(5000);
       const result = await gw.request<{
@@ -1390,7 +972,7 @@ export class OperisApp extends LitElement {
   }
 
   /** Normalize session key: "main" → "agent:main:main", passthrough if already full key */
-  private normalizeSessionKey(key: string): string {
+  normalizeSessionKey(key: string): string {
     if (key.startsWith("agent:")) return key;
     return `agent:main:${key}`;
   }
@@ -1462,11 +1044,23 @@ export class OperisApp extends LitElement {
     messagesEl.scrollTop = targetScrollTop;
   }
 
-  private async scrollChatToBottom() {
+  async scrollChatToBottom() {
     await this.updateComplete;
 
+    // Try chatsend view first (.chat-thread), then old view (.gc-messages)
+    const chatThread = this.renderRoot.querySelector(".chat-thread") as HTMLElement;
+    if (chatThread) {
+      chatThread.scrollTop = chatThread.scrollHeight;
+      return;
+    }
+
     const messagesEl = this.renderRoot.querySelector(".gc-messages") as HTMLElement;
-    if (!messagesEl) return;
+    if (!messagesEl) {
+      // Fallback: scroll main content area
+      const main = this.renderRoot.querySelector("main.content") as HTMLElement;
+      if (main) main.scrollTop = main.scrollHeight;
+      return;
+    }
 
     // Hide messages to prevent flash at top while positioning scroll
     messagesEl.style.visibility = "hidden";
@@ -1607,122 +1201,23 @@ export class OperisApp extends LitElement {
   }
 
   private async handleSendMessage() {
-    const hasDraft = this.chatDraft.trim() || this.chatPendingImages.length > 0;
-    if (!hasDraft) return;
-
-    // Queue if busy (like original — enqueueChatMessage when isChatBusy)
-    if (this.isChatBusy()) {
-      this.enqueueChatMessage(
-        this.chatDraft,
-        this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined,
-      );
-      this.chatDraft = "";
-      this.chatPendingImages = [];
-      return;
-    }
-
-    const userMessage = this.chatDraft.trim();
-    const images = this.chatPendingImages.length > 0 ? [...this.chatPendingImages] : undefined;
-    this.chatDraft = "";
-    this.chatPendingImages = [];
-    this.chatSending = true;
-    this.chatError = null;
-    this.chatStreamingText = "";
-    this.chatStreamingRunId = null;
-    this.chatToolCalls = [];
-
-    // Detect /new or /reset → clear messages before sending (gateway will create new transcript)
-    const isResetCommand = /^\/(new|reset)\b/i.test(userMessage);
-    if (isResetCommand) {
-      this.chatMessages = [];
-      this.chatSessionTokens = 0;
-      this.cacheChatMessages();
-    }
-
-    // Add user message (with image previews if any)
-    this.chatMessages = [
-      ...this.chatMessages,
-      {
-        role: "user",
-        content: userMessage,
-        timestamp: new Date(),
-        ...(images ? { images: images.map((img) => ({ preview: img.preview })) } : {}),
-      },
-    ];
-    this.cacheChatMessages();
-    await this.scrollChatToBottom();
-
-    try {
-      // Send via gateway WebSocket directly (bypasses operis-api chat/stream).
-      // Token deduction still works: gateway → operis provider → operis-api proxy.
-      // Streaming response arrives via WS "chat" events → handleChatStreamEvent().
-      const gw = await waitForConnection(5000);
-      const runId = crypto.randomUUID();
-      this.chatRunId = runId;
-      this.localRunIds.add(runId);
-      await gw.request(
-        "chat.send",
-        {
-          sessionKey: this.normalizeSessionKey(this.chatConversationId || "main"),
-          message: userMessage,
-          deliver: false,
-          idempotencyKey: runId,
-          ...(this.chatThinkingLevel ? { thinking: this.chatThinkingLevel } : {}),
-          ...(images?.length
-            ? {
-                attachments: images.map((img) => ({
-                  type: "image",
-                  mimeType: img.mimeType,
-                  content: img.data,
-                })),
-              }
-            : {}),
-        },
-        30_000,
-      );
-      // chat.send returns immediately. Streaming via handleChatStreamEvent.
-    } catch (err) {
-      // Only clear chatSending on request failure — no WS events will arrive.
-      // On success, chatSending stays true until handleChatStreamEvent receives
-      // "final", "error", or "aborted" (which clear chatSending themselves).
-      const errorMsg = err instanceof Error ? err.message : "Không thể gửi tin nhắn";
-      this.chatError = errorMsg;
-      this.chatMessages = [
-        ...this.chatMessages,
-        { role: "assistant", content: `⚠️ ${errorMsg}`, timestamp: new Date() },
+    // Merge chat attachments into chatPendingImages before sending
+    if (this.chatAttachments.length > 0) {
+      this.chatPendingImages = [
+        ...this.chatPendingImages,
+        ...this.chatAttachments.map((a) => ({
+          data: a.dataUrl.replace(/^data:[^;]+;base64,/, ""),
+          mimeType: a.mimeType,
+          preview: a.dataUrl,
+        })),
       ];
-      this.chatRunId = null;
-      this.chatStreamingText = "";
-      this.chatStreamingRunId = null;
-      this.chatToolCalls = [];
-      this.chatSending = false;
+      this.chatAttachments = [];
     }
+    await chatSendMessage(this);
   }
 
   private handleStopChat() {
-    // Save partial response so user sees where it stopped
-    const partialText = this.chatStreamingText;
-    if (partialText) {
-      this.chatMessages = [
-        ...this.chatMessages,
-        { role: "assistant" as const, content: partialText, timestamp: new Date() },
-      ];
-    }
-    // Abort via gateway WS (with specific runId like OpenClaw TUI)
-    const gw = getGatewayClient();
-    if (gw.connected && this.chatRunId) {
-      gw.request("chat.abort", {
-        sessionKey: this.normalizeSessionKey(this.chatConversationId || "main"),
-        runId: this.chatRunId,
-      }).catch((err) => {
-        console.warn("[chat] abort failed:", err);
-      });
-    }
-    this.chatRunId = null;
-    this.chatStreamingText = "";
-    this.chatStreamingRunId = null;
-    this.chatToolCalls = [];
-    this.chatSending = false;
+    chatStopChat(this);
   }
 
   // --- Chat sidebar handlers ---
@@ -1806,44 +1301,18 @@ export class OperisApp extends LitElement {
    * Load chat messages from gateway WS `chat.history` — source of truth.
    * On initial load: show cache instantly as placeholder, then gateway replaces.
    */
-  private async loadChatMessagesFromGateway(isInitialLoad = false) {
-    // Show cache as placeholder while gateway loads (instant UI, no blank screen)
+  async loadChatMessagesFromGateway(isInitialLoad = false) {
     if (isInitialLoad) {
       this.restoreCachedMessages();
     }
-
-    // Capture seq to detect stale loads from concurrent session switches
     const loadSeq = this.sessionSwitchSeq;
 
     try {
       const gw = await waitForConnection(5000);
       const sessionKey = this.chatConversationId || "main";
-      const res = await gw.request<{
-        messages?: Array<Record<string, unknown>>;
-        thinkingLevel?: string;
-        sessionId?: string;
-      }>("chat.history", { sessionKey, limit: 200 });
+      const result = await loadChatHistory(gw, sessionKey);
 
-      const rawMessages = Array.isArray(res.messages) ? res.messages : [];
-      // Parse gateway content blocks → flat string format used by client-web2
-      const parsed = rawMessages
-        .map((msg) => {
-          const role = (msg.role === "user" ? "user" : "assistant") as "user" | "assistant";
-          let content = "";
-          if (typeof msg.content === "string") {
-            content = role === "assistant" ? stripThinkingTags(msg.content) : msg.content;
-          } else if (Array.isArray(msg.content)) {
-            content = (msg.content as Array<Record<string, unknown>>)
-              .filter((block) => block.type === "text" && typeof block.text === "string")
-              .map((block) => block.text as string)
-              .join("\n");
-          }
-          const ts = typeof msg.timestamp === "number" ? new Date(msg.timestamp) : undefined;
-          return { role, content, timestamp: ts };
-        })
-        .filter((m) => m.content);
-
-      // Preserve scroll position on non-initial reloads (avoid jumping to top)
+      // Preserve scroll position on non-initial reloads
       const messagesEl = !isInitialLoad
         ? (this.renderRoot.querySelector(".gc-messages") as HTMLElement)
         : null;
@@ -1853,26 +1322,21 @@ export class OperisApp extends LitElement {
       // Discard if user switched sessions during this load
       if (this.sessionSwitchSeq !== loadSeq) return;
 
-      // Gateway is source of truth — always replace local state
-      this.chatMessages = parsed;
-      // Store thinking level from session (used in chat.send)
-      if (typeof res.thinkingLevel === "string") {
-        this.chatThinkingLevel = res.thinkingLevel;
+      this.chatMessages = result.messages;
+      if (result.thinkingLevel !== null) {
+        this.chatThinkingLevel = result.thinkingLevel;
       }
       this.cacheChatMessages();
 
-      // Restore scroll position after re-render (non-initial reloads only)
       if (messagesEl) {
         await this.updateComplete;
         requestAnimationFrame(() => {
-          // If new messages were added, adjust scroll to keep same view
           const delta = messagesEl.scrollHeight - prevScrollHeight;
           messagesEl.scrollTop = prevScrollTop + delta;
         });
       }
     } catch (err) {
       console.warn("[chat] Failed to load messages from gateway:", err);
-      // If gateway failed and we have no messages, try cache as fallback
       if (this.chatMessages.length === 0) {
         this.restoreCachedMessages();
       }
@@ -2253,6 +1717,14 @@ export class OperisApp extends LitElement {
     agents.handleAgentSkillsDisableAll(this, agentId);
   }
 
+  private async handleAddBinding(agentId: string, channelId: string, accountId?: string) {
+    await agents.handleAddBinding(this, agentId, channelId, accountId);
+  }
+
+  private handleRemoveBinding(bindingIndex: number) {
+    agents.handleRemoveBinding(this, bindingIndex);
+  }
+
   private async loadAgentCron() {
     await agents.loadAgentCron(this);
   }
@@ -2571,43 +2043,113 @@ export class OperisApp extends LitElement {
 
   private renderContent() {
     switch (this.tab) {
-      case "chat":
-        return renderChat({
-          messages: this.chatMessages,
-          draft: this.chatDraft,
-          sending: this.chatSending || Boolean(this.chatRunId),
-          loading: this.chatInitializing,
-          isLoggedIn: this.settings.isLoggedIn,
-          username: this.settings.username ?? undefined,
-          botName: "Operis",
-          streamingText: this.chatStreamingText,
-          toolCalls: this.chatToolCalls,
-          pendingImages: this.chatPendingImages,
-          gatewayReady: this.gatewayStatus === "running" || this.gatewayStatus === "unknown",
-          onDraftChange: (value) => (this.chatDraft = value),
-          onSend: () => this.handleSendMessage(),
-          onStop: () => this.handleStopChat(),
-          onLoginClick: () => this.setTab("login"),
-          onImageSelect: (files) => this.handleImageSelect(files),
-          onImageRemove: (index) => this.handleImageRemove(index),
-          // Sidebar props
-          conversations: this.chatConversations,
-          conversationsLoading: this.chatConversationsLoading,
-          currentConversationId: this.chatConversationId,
-          sidebarCollapsed: this.settings.chatSidebarCollapsed,
-          onToggleSidebar: () => this.toggleChatSidebar(),
-          onNewConversation: () => this.handleNewConversation(),
-          onSwitchConversation: (id: string) => this.handleSwitchConversation(id),
-          onDeleteConversation: (id: string) => this.handleDeleteConversation(id),
-          onRefreshChat: () => this.handleRefreshChat(),
-          compactionActive: this.chatCompactionActive,
-          queue: this.chatQueue,
-          onQueueRemove: (id: string) => this.removeQueuedMessage(id),
-          sessionKey: this.normalizeSessionKey(this.chatConversationId || "main"),
-          gatewaySessions: this.gatewaySessions,
-          onSessionChange: (key: string) => this.handleSessionChange(key),
-          // thinkingLevel/model controls hidden for now
-        });
+      case "chat": {
+        // Convert flat tool calls to openclaw2 message format for extractToolCards
+        const toolMessages = (this.chatToolCalls ?? []).map((tc) => ({
+          role: tc.phase === "result" ? "toolResult" : "assistant",
+          content:
+            tc.phase === "result"
+              ? [{ type: "tool_result", name: tc.name, text: tc.output ?? "" }]
+              : [{ type: "tool_call", name: tc.name, arguments: { command: tc.detail } }],
+          timestamp: Date.now(),
+        }));
+        // Build sessions list from gatewaySessions for the session selector
+        const chatSessions: import("./types").SessionsListResult = {
+          ts: Date.now(),
+          path: "",
+          count: this.gatewaySessions.length,
+          defaults: { model: null, contextTokens: null },
+          sessions: this.gatewaySessions as import("./types").GatewaySessionRow[],
+        };
+        const chatSessionKey = this.normalizeSessionKey(this.chatConversationId || "main");
+        return html`
+          <div class="chat-controls">
+            <label class="chat-controls__session">
+              <select
+                .value=${chatSessionKey}
+                ?disabled=${this.gatewayStatus !== "running" && this.gatewayStatus !== "unknown"}
+                @change=${(e: Event) => {
+                  const next = (e.target as HTMLSelectElement).value;
+                  this.handleSessionChange(next);
+                }}
+              >
+                ${
+                  this.gatewaySessions.length === 0
+                    ? html`<option value=${chatSessionKey} selected>Main session</option>`
+                    : this.gatewaySessions.map(
+                        (s) => html`<option value=${s.key} ?selected=${s.key === chatSessionKey}>
+                        ${s.displayName ?? s.derivedTitle ?? this.shortSessionKey(s.key)}
+                      </option>`,
+                      )
+                }
+              </select>
+            </label>
+            <button
+              class="btn btn--sm btn--icon"
+              ?disabled=${this.chatSending}
+              @click=${() => this.handleRefreshChat()}
+              title="Refresh chat"
+            >
+              ${icons.refresh}
+            </button>
+            <button
+              class="btn btn--sm btn--icon"
+              @click=${() => this.handleNewConversation()}
+              title="New session"
+            >
+              ${icons.plus}
+            </button>
+          </div>
+          ${renderChat({
+            sessionKey: chatSessionKey,
+            onSessionKeyChange: (key: string) => this.handleSessionChange(key),
+            thinkingLevel: null,
+            showThinking: true,
+            loading: false,
+            sending: this.chatSending,
+            canAbort: this.chatSending || Boolean(this.chatRunId),
+            messages: this.chatMessages,
+            toolMessages,
+            stream: this.chatSending
+              ? (this.chatStreamingText ?? "")
+              : this.chatStreamingText || null,
+            streamStartedAt: this.chatSending ? Date.now() : null,
+            draft: this.chatDraft,
+            queue: this.chatQueue.map((q) => ({
+              id: q.id,
+              text: q.text,
+              createdAt: q.createdAt ?? Date.now(),
+            })),
+            connected: this.gatewayStatus === "running" || this.gatewayStatus === "unknown",
+            canSend: true,
+            disabledReason: null,
+            error: null,
+            sessions: chatSessions,
+            focusMode: false,
+            assistantName: "Operis",
+            assistantAvatar: null,
+            onRefresh: () => this.handleRefreshChat(),
+            onToggleFocusMode: () => {},
+            onDraftChange: (value) => (this.chatDraft = value),
+            onSend: () => this.handleSendMessage(),
+            onAbort: () => this.handleStopChat(),
+            onQueueRemove: (id: string) => this.removeQueuedMessage(id),
+            onNewSession: () => this.handleNewConversation(),
+            onChatScroll: (e: Event) => {
+              const el = e.target as HTMLElement;
+              this.chatAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            },
+            onScrollToBottom: this.chatAtBottom ? undefined : () => this.scrollChatToBottom(),
+            attachments: this.chatAttachments,
+            onAttachmentsChange: (atts) => {
+              this.chatAttachments = atts;
+            },
+            compactionStatus: this.chatCompactionActive
+              ? { active: true, startedAt: Date.now(), completedAt: null }
+              : null,
+          })}
+        `;
+      }
       case "analytics":
         return renderAnalytics({
           loading: this.analyticsLoading,
@@ -2898,6 +2440,9 @@ export class OperisApp extends LitElement {
           onModelFallbacksChange: (agentId: string, fallbacks: string[]) =>
             this.handleAgentModelFallbacksChange(agentId, fallbacks),
           onChannelsRefresh: () => this.loadAgentChannels(),
+          onAddBinding: (agentId: string, channelId: string, accountId?: string) =>
+            this.handleAddBinding(agentId, channelId, accountId),
+          onRemoveBinding: (bindingIndex: number) => this.handleRemoveBinding(bindingIndex),
           onCronRefresh: () => this.loadAgentCron(),
           onSkillsFilterChange: (next: string) => {
             this.agentSkillsFilter = next;
@@ -2992,6 +2537,10 @@ export class OperisApp extends LitElement {
           includeGlobal: this.sessionsIncludeGlobal,
           includeUnknown: this.sessionsIncludeUnknown,
           basePath: "",
+          agents: (this.agentsList?.agents ?? []).map((a) => ({
+            id: a.id,
+            name: a.name || a.id,
+          })),
           onFiltersChange: (next) => {
             this.sessionsActiveMinutes = next.activeMinutes;
             this.sessionsLimit = next.limit;
@@ -3003,14 +2552,12 @@ export class OperisApp extends LitElement {
           onPatch: (key, patch) => this.handleSessionsPatch(key, patch),
           onDelete: (key) => this.handleSessionsDelete(key),
           onOpenSession: (key) => {
-            const fullKey = this.normalizeSessionKey(key);
-            this.chatConversationId = fullKey === "agent:main:main" ? null : fullKey;
-            this.chatMessages = [];
-            this.chatStreamingText = "";
-            this.chatToolCalls = [];
-            this.chatInitializing = true;
-            this.persistSessionKey(fullKey);
             this.setTab("chat");
+            void this.handleSessionChange(key);
+          },
+          onCreateSession: (key) => {
+            this.setTab("chat");
+            void this.handleSessionChange(key);
           },
         });
       default:
@@ -3105,7 +2652,7 @@ export class OperisApp extends LitElement {
 
         <main class="content ${this.tab === "login" ? "content--no-scroll" : ""}">
           ${
-            this.tab !== "login"
+            this.tab !== "login" && this.tab !== "chat"
               ? html`
                 <section class="content-header">
                   <div>
