@@ -24,6 +24,7 @@ export interface AgentsHost {
 
   // Config
   agentConfigForm: Record<string, unknown> | null;
+  agentConfigBaseHash: string | null;
   agentConfigLoading: boolean;
   agentConfigSaving: boolean;
   agentConfigDirty: boolean;
@@ -219,8 +220,12 @@ export async function loadAgentConfig(host: AgentsHost) {
   host.agentConfigLoading = true;
   try {
     const client = await waitForConnection();
-    const res = await client.request<{ config?: Record<string, unknown> }>("config.get", {});
+    const res = await client.request<{ config?: Record<string, unknown>; hash?: string }>(
+      "config.get",
+      {},
+    );
     host.agentConfigForm = (res?.config as Record<string, unknown>) ?? {};
+    host.agentConfigBaseHash = res?.hash ?? null;
     host.agentConfigDirty = false;
   } catch (err) {
     showToast(err instanceof Error ? err.message : "Không thể tải config", "error");
@@ -234,12 +239,29 @@ export async function saveAgentConfig(host: AgentsHost) {
   host.agentConfigSaving = true;
   try {
     const client = await waitForConnection();
-    const raw = JSON.stringify(host.agentConfigForm ?? {});
-    await client.request("config.set", { raw });
+    // Use config.patch with only the changed sections to avoid full-config validation issues
+    const form = host.agentConfigForm ?? {};
+    const patch: Record<string, unknown> = {};
+    // Include sections that the agent settings UI can modify
+    if (form.agents !== undefined) patch.agents = form.agents;
+    if (form.primaryModel !== undefined) patch.primaryModel = form.primaryModel;
+    if (form.modelFallbacks !== undefined) patch.modelFallbacks = form.modelFallbacks;
+    const raw = JSON.stringify(patch);
+    await client.request("config.patch", { raw, baseHash: host.agentConfigBaseHash });
     showToast("Đã lưu config", "success");
     host.agentConfigDirty = false;
-  } catch (err) {
-    showToast(err instanceof Error ? err.message : "Không thể lưu config", "error");
+    // Reload config to get fresh baseHash for next save
+    const res = await client.request<{ config?: Record<string, unknown>; hash?: string }>(
+      "config.get",
+      {},
+    );
+    host.agentConfigForm = (res?.config as Record<string, unknown>) ?? {};
+    host.agentConfigBaseHash = res?.hash ?? null;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Không thể lưu config";
+    const details = (err as { details?: unknown })?.details;
+    console.error("[config save]", msg, details ?? err);
+    showToast(msg, "error");
   } finally {
     host.agentConfigSaving = false;
   }
